@@ -22,10 +22,29 @@ export type Client = {
 export type StockUpdate = {
   id: string;
   client_id: string;
+  collection_id?: string | null;
   previous_stock: number;
   counted_stock: number;
   cards_sold: number;
   cards_added: number;
   new_stock: number;
   created_at: string;
+};
+
+export type Collection = {
+  id: string;
+  name: string;
+  price: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientCollection = {
+  id: string;
+  client_id: string;
+  collection_id: string;
+  initial_stock: number;
+  current_stock: number;
+  created_at: string;
+  updated_at: string;
 };

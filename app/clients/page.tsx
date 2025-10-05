@@ -238,7 +238,16 @@ export default function ClientsPage() {
             <p className="text-slate-600">Dépôts-ventes de cartes de vœux</p>
           </div>
 
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => router.push('/')}
+              className="shadow-lg"
+            >
+              Retour à l'accueil
+            </Button>
+            
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button size="lg" className="shadow-lg">
                 <Plus className="mr-2 h-5 w-5" />
@@ -324,6 +333,7 @@ export default function ClientsPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Barre de recherche */}
