@@ -3,12 +3,16 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export type Client = {
   id: string;
   name: string;
-  address: string;
+  address: string; // Ancien champ, conservé pour compatibilité
+  street_address: string | null;
+  postal_code: string | null;
+  city: string | null;
   initial_stock: number;
   current_stock: number;
   created_at: string;
