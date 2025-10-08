@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, StockUpdate, Collection, ClientCollection } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,8 @@ import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
+import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
+import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export default function ClientDetailPage() {
@@ -26,6 +28,10 @@ export default function ClientDetailPage() {
   const [submitting, setSubmitting] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<StockUpdate | null>(null);
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
+  const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
+  const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
+  const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
@@ -95,6 +101,16 @@ export default function ClientDetailPage() {
 
       if (updatesError) throw updatesError;
       setStockUpdates(updatesData || []);
+
+      // Load global invoices
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (invoicesError) throw invoicesError;
+      setGlobalInvoices(invoicesData || []);
     } catch (error) {
       console.error('Error loading client data:', error);
       toast.error('Erreur lors du chargement des données');
@@ -103,14 +119,103 @@ export default function ClientDetailPage() {
     }
   };
 
+  const prepareCollectionUpdates = () => {
+    const updates: {
+      collection: Collection;
+      previousStock: number;
+      countedStock: number;
+      cardsSold: number;
+      cardsAdded: number;
+      newStock: number;
+      amount: number;
+    }[] = [];
+
+    for (const cc of clientCollections) {
+      const form = perCollectionForm[cc.id];
+      if (!form) continue;
+      const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
+      if (!hasAny) continue;
+
+      const countedStock = parseInt(form.counted_stock);
+      const cardsAdded = parseInt(form.cards_added) || 0;
+
+      if (isNaN(countedStock) || countedStock < 0) {
+        toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+        return null;
+      }
+      if (isNaN(cardsAdded) || cardsAdded < 0) {
+        toast.error(`Les cartes ajoutées doivent être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+        return null;
+      }
+
+      const previousStock = cc.current_stock;
+      const cardsSold = Math.max(0, previousStock - countedStock);
+      const newStock = countedStock + cardsAdded;
+      const amount = cardsSold * (cc.collection?.price || 0);
+
+      if (cc.collection) {
+        updates.push({
+          collection: cc.collection,
+          previousStock,
+          countedStock,
+          cardsSold,
+          cardsAdded,
+          newStock,
+          amount
+        });
+      }
+    }
+
+    return updates;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!client) return;
+
+    const updates = prepareCollectionUpdates();
+    if (!updates) return;
+    
+    if (updates.length === 0) {
+      toast.info('Aucun changement détecté');
+      return;
+    }
+
+    // Open confirmation dialog
+    setConfirmationDialogOpen(true);
+  };
+
+  const handleConfirmStockUpdate = async () => {
     if (!client) return;
 
     setSubmitting(true);
 
     try {
-      // For each associated collection, if user provided values, compute and persist
+      const updates = prepareCollectionUpdates();
+      if (!updates || updates.length === 0) {
+        setSubmitting(false);
+        setConfirmationDialogOpen(false);
+        return;
+      }
+
+      // Calculate totals
+      const totalCardsSold = updates.reduce((sum, u) => sum + u.cardsSold, 0);
+      const totalAmount = updates.reduce((sum, u) => sum + u.amount, 0);
+
+      // Create global invoice
+      const { data: invoiceData, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert([{
+          client_id: clientId,
+          total_cards_sold: totalCardsSold,
+          total_amount: totalAmount
+        }])
+        .select()
+        .single();
+
+      if (invoiceError) throw invoiceError;
+
+      // Prepare stock updates with invoice_id
       const updatesToInsert: any[] = [];
       const ccUpdates: { id: string; new_stock: number }[] = [];
 
@@ -122,18 +227,6 @@ export default function ClientDetailPage() {
 
         const countedStock = parseInt(form.counted_stock);
         const cardsAdded = parseInt(form.cards_added) || 0;
-
-        if (isNaN(countedStock) || countedStock < 0) {
-          toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-          setSubmitting(false);
-          return;
-        }
-        if (isNaN(cardsAdded) || cardsAdded < 0) {
-          toast.error(`Les cartes ajoutées doivent être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-          setSubmitting(false);
-          return;
-        }
-
         const previousStock = cc.current_stock;
         const cardsSold = Math.max(0, previousStock - countedStock);
         const newStock = countedStock + cardsAdded;
@@ -141,6 +234,7 @@ export default function ClientDetailPage() {
         updatesToInsert.push({
           client_id: clientId,
           collection_id: cc.collection_id,
+          invoice_id: invoiceData.id,
           previous_stock: previousStock,
           counted_stock: countedStock,
           cards_sold: cardsSold,
@@ -148,12 +242,6 @@ export default function ClientDetailPage() {
           new_stock: newStock
         });
         ccUpdates.push({ id: cc.id, new_stock: newStock });
-      }
-
-      if (updatesToInsert.length === 0) {
-        toast.info('Aucun changement détecté');
-        setSubmitting(false);
-        return;
       }
 
       const { error: updatesInsertError } = await supabase
@@ -184,7 +272,16 @@ export default function ClientDetailPage() {
         .eq('id', clientId);
       if (clientUpdateError) throw clientUpdateError;
 
-      toast.success('Mises à jour des collections enregistrées');
+      toast.success('Facture créée et stock mis à jour');
+      setConfirmationDialogOpen(false);
+      
+      // Reset form
+      const resetForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      clientCollections.forEach((cc) => {
+        resetForm[cc.id] = { counted_stock: '', cards_added: '' };
+      });
+      setPerCollectionForm(resetForm);
+      
       await loadClientData();
     } catch (error) {
       console.error('Error updating stock:', error);
@@ -429,72 +526,69 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {stockUpdates.length > 0 && (
+          {globalInvoices.length > 0 && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
-                <CardTitle>Historique des mises à jour</CardTitle>
+                <CardTitle>Historique des factures</CardTitle>
                 <CardDescription>
-                  {stockUpdates.length} mise{stockUpdates.length > 1 ? 's' : ''} à jour enregistrée{stockUpdates.length > 1 ? 's' : ''}
+                  {globalInvoices.length} facture{globalInvoices.length > 1 ? 's' : ''} enregistrée{globalInvoices.length > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {stockUpdates.map((update) => (
-                    <div
-                      key={update.id}
-                      className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="text-sm text-slate-500">
-                          {new Date(update.created_at).toLocaleDateString('fr-FR', {
-                            day: 'numeric',
-                            month: 'long',
-                            year: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedInvoice(update);
-                            setInvoiceDialogOpen(true);
-                          }}
-                        >
-                          <FileText className="mr-2 h-4 w-4" />
-                          Voir facture
-                        </Button>
-                      </div>
-                      {update.collection_id && (
-                        <div className="text-xs text-slate-600 mb-3">
-                          Collection: {allCollections.find(c => c.id === update.collection_id)?.name || update.collection_id}
+                  {globalInvoices.map((invoice) => {
+                    const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
+                    return (
+                      <div
+                        key={invoice.id}
+                        className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <span className="text-sm text-slate-500">
+                              {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                            <p className="text-xs text-slate-600 mt-1">
+                              {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedGlobalInvoice(invoice);
+                              setGlobalInvoiceDialogOpen(true);
+                            }}
+                          >
+                            <FileText className="mr-2 h-4 w-4" />
+                            Voir facture
+                          </Button>
                         </div>
-                      )}
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
-                        <div>
-                          <span className="text-slate-500 block mb-1">Stock précédent</span>
-                          <span className="font-semibold">{update.previous_stock}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block mb-1">Stock compté</span>
-                          <span className="font-semibold">{update.counted_stock}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block mb-1">Cartes vendues</span>
-                          <span className="font-semibold text-orange-600">{update.cards_sold}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block mb-1">Cartes ajoutées</span>
-                          <span className="font-semibold text-green-600">+{update.cards_added}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-500 block mb-1">Nouveau stock</span>
-                          <span className="font-semibold text-blue-600">{update.new_stock}</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-orange-50 rounded-lg p-3 border border-orange-100">
+                            <div className="flex items-center gap-2 text-orange-600 mb-1">
+                              <TrendingDown className="h-4 w-4" />
+                              <span className="text-xs font-medium">Total cartes vendues</span>
+                            </div>
+                            <p className="text-2xl font-bold text-orange-900">{invoice.total_cards_sold}</p>
+                          </div>
+                          <div className="bg-green-50 rounded-lg p-3 border border-green-100">
+                            <div className="flex items-center gap-2 text-green-600 mb-1">
+                              <Euro className="h-4 w-4" />
+                              <span className="text-xs font-medium">Montant total</span>
+                            </div>
+                            <p className="text-2xl font-bold text-green-900">{invoice.total_amount.toFixed(2)} €</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </CardContent>
             </Card>
@@ -507,6 +601,27 @@ export default function ClientDetailPage() {
             onOpenChange={setInvoiceDialogOpen}
             client={client}
             stockUpdate={selectedInvoice}
+          />
+        )}
+
+        {client && (
+          <StockUpdateConfirmationDialog
+            open={confirmationDialogOpen}
+            onOpenChange={setConfirmationDialogOpen}
+            onConfirm={handleConfirmStockUpdate}
+            collectionUpdates={prepareCollectionUpdates() || []}
+            loading={submitting}
+          />
+        )}
+
+        {client && selectedGlobalInvoice && (
+          <GlobalInvoiceDialog
+            open={globalInvoiceDialogOpen}
+            onOpenChange={setGlobalInvoiceDialogOpen}
+            client={client}
+            invoice={selectedGlobalInvoice}
+            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}
+            collections={allCollections}
           />
         )}
       </div>

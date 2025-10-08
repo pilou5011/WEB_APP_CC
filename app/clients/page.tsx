@@ -28,8 +28,7 @@ export default function ClientsPage() {
     address: '', // Ancien champ, conservé pour compatibilité
     street_address: '',
     postal_code: '',
-    city: '',
-    initial_stock: ''
+    city: ''
   });
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -96,13 +95,6 @@ export default function ClientsPage() {
     setSubmitting(true);
 
     try {
-      const initialStock = parseInt(formData.initial_stock);
-
-      if (isNaN(initialStock) || initialStock < 0) {
-        toast.error('Le stock initial doit être un nombre positif');
-        return;
-      }
-
       const { data, error } = await supabase
         .from('clients')
         .insert([{
@@ -111,8 +103,8 @@ export default function ClientsPage() {
           street_address: formData.street_address,
           postal_code: formData.postal_code,
           city: formData.city,
-          initial_stock: initialStock,
-          current_stock: initialStock
+          initial_stock: 0,
+          current_stock: 0
         }])
         .select()
         .single();
@@ -122,7 +114,7 @@ export default function ClientsPage() {
       toast.success('Client ajouté avec succès');
       setClients([data, ...clients]);
       setDialogOpen(false);
-      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', initial_stock: '' });
+      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '' });
     } catch (error) {
       console.error('Error creating client:', error);
       toast.error('Erreur lors de la création du client');
@@ -259,7 +251,7 @@ export default function ClientsPage() {
                 <DialogHeader>
                   <DialogTitle>Nouveau client</DialogTitle>
                   <DialogDescription>
-                    Ajoutez un nouveau client et définissez son stock initial
+                    Ajoutez un nouveau client. Le stock sera géré via l'ajout de collections.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
@@ -310,19 +302,6 @@ export default function ClientsPage() {
                         className="mt-1.5"
                       />
                     </div>
-                  </div>
-                  <div>
-                    <Label htmlFor="initial_stock">Stock initial</Label>
-                    <Input
-                      id="initial_stock"
-                      type="number"
-                      min="0"
-                      value={formData.initial_stock}
-                      onChange={(e) => setFormData({ ...formData, initial_stock: e.target.value })}
-                      required
-                      placeholder="Ex: 100"
-                      className="mt-1.5"
-                    />
                   </div>
                 </div>
                 <DialogFooter>

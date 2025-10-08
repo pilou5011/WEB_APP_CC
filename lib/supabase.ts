@@ -23,11 +23,20 @@ export type StockUpdate = {
   id: string;
   client_id: string;
   collection_id?: string | null;
+  invoice_id?: string | null;
   previous_stock: number;
   counted_stock: number;
   cards_sold: number;
   cards_added: number;
   new_stock: number;
+  created_at: string;
+};
+
+export type Invoice = {
+  id: string;
+  client_id: string;
+  total_cards_sold: number;
+  total_amount: number;
   created_at: string;
 };
 
