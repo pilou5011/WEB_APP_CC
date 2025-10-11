@@ -54,6 +54,24 @@ export type ClientCollection = {
   collection_id: string;
   initial_stock: number;
   current_stock: number;
+  custom_price: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type UserProfile = {
+  id: string;
+  company_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  street_address: string | null;
+  postal_code: string | null;
+  city: string | null;
+  siret: string | null;
+  ape_code: string | null;
+  tva_number: string | null;
+  email: string | null;
+  phone: string | null;
   created_at: string;
   updated_at: string;
 };

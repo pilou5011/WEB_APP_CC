@@ -14,6 +14,8 @@ interface CollectionUpdate {
   cardsAdded: number;
   newStock: number;
   amount: number;
+  effectivePrice: number;
+  isCustomPrice: boolean;
 }
 
 interface StockUpdateConfirmationDialogProps {
@@ -82,7 +84,8 @@ export function StockUpdateConfirmationDialog({
                     <div>
                       <p className="font-semibold text-slate-900">{update.collection.name}</p>
                       <p className="text-sm text-slate-500">
-                        Prix unitaire : {update.collection.price.toFixed(2)} €
+                        Prix unitaire : {update.effectivePrice.toFixed(2)} €
+                        {update.isCustomPrice && <span className="ml-1 text-blue-600">(personnalisé)</span>}
                       </p>
                     </div>
                     <div className="text-right">

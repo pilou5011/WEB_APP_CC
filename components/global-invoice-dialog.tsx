@@ -1,6 +1,6 @@
 'use client';
 
-import { Client, Invoice, StockUpdate, Collection } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Collection, ClientCollection } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ interface GlobalInvoiceDialogProps {
   invoice: Invoice;
   stockUpdates: StockUpdate[];
   collections: Collection[];
+  clientCollections?: (ClientCollection & { collection?: Collection })[];
 }
 
 export function GlobalInvoiceDialog({
@@ -21,7 +22,8 @@ export function GlobalInvoiceDialog({
   client,
   invoice,
   stockUpdates,
-  collections
+  collections,
+  clientCollections = []
 }: GlobalInvoiceDialogProps) {
   const handlePrint = () => {
     window.print();
@@ -94,7 +96,11 @@ export function GlobalInvoiceDialog({
             <div className="space-y-4">
               {stockUpdates.map((update) => {
                 const collection = collections.find(c => c.id === update.collection_id);
-                const amount = update.cards_sold * (collection?.price || 0);
+                const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
+                // Use custom price if set, otherwise use default collection price
+                const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
+                const amount = update.cards_sold * effectivePrice;
+                const isCustomPrice = clientCollection?.custom_price !== null;
                 
                 return (
                   <div key={update.id} className="border border-slate-200 rounded-lg p-4 bg-white">
@@ -104,7 +110,8 @@ export function GlobalInvoiceDialog({
                           {collection?.name || 'Collection inconnue'}
                         </p>
                         <p className="text-sm text-slate-500">
-                          Prix unitaire : {(collection?.price || 0).toFixed(2)} €
+                          Prix unitaire : {effectivePrice.toFixed(2)} €
+                          {isCustomPrice && <span className="ml-1 text-blue-600">(personnalisé)</span>}
                         </p>
                       </div>
                       <div className="text-right">

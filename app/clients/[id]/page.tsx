@@ -8,12 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export default function ClientDetailPage() {
   const router = useRouter();
@@ -32,14 +35,38 @@ export default function ClientDetailPage() {
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
+  
+  // Delete collection dialog
+  const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
+  const [collectionToDelete, setCollectionToDelete] = useState<ClientCollection & { collection?: Collection } | null>(null);
+  const [deletingCollection, setDeletingCollection] = useState(false);
+  
+  // Edit price dialog
+  const [editPriceDialogOpen, setEditPriceDialogOpen] = useState(false);
+  const [collectionToEdit, setCollectionToEdit] = useState<ClientCollection & { collection?: Collection } | null>(null);
+  const [editPriceForm, setEditPriceForm] = useState<{
+    price_type: 'default' | 'custom';
+    custom_price: string;
+  }>({
+    price_type: 'default',
+    custom_price: ''
+  });
+  const [updatingPrice, setUpdatingPrice] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
 
   // Association form
-  const [associateForm, setAssociateForm] = useState<{ collection_id: string | null; initial_stock: string }>({
+  const [associateForm, setAssociateForm] = useState<{ 
+    collection_id: string | null; 
+    initial_stock: string;
+    price_type: 'default' | 'custom';
+    custom_price: string;
+  }>({
     collection_id: null,
-    initial_stock: ''
+    initial_stock: '',
+    price_type: 'default',
+    custom_price: ''
   });
 
   useEffect(() => {
@@ -128,6 +155,8 @@ export default function ClientDetailPage() {
       cardsAdded: number;
       newStock: number;
       amount: number;
+      effectivePrice: number;
+      isCustomPrice: boolean;
     }[] = [];
 
     for (const cc of clientCollections) {
@@ -151,7 +180,10 @@ export default function ClientDetailPage() {
       const previousStock = cc.current_stock;
       const cardsSold = Math.max(0, previousStock - countedStock);
       const newStock = countedStock + cardsAdded;
-      const amount = cardsSold * (cc.collection?.price || 0);
+      // Use custom_price if set, otherwise use the default collection price
+      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+      const isCustomPrice = cc.custom_price !== null;
+      const amount = cardsSold * effectivePrice;
 
       if (cc.collection) {
         updates.push({
@@ -161,7 +193,9 @@ export default function ClientDetailPage() {
           cardsSold,
           cardsAdded,
           newStock,
-          amount
+          amount,
+          effectivePrice,
+          isCustomPrice
         });
       }
     }
@@ -291,6 +325,100 @@ export default function ClientDetailPage() {
     }
   };
 
+  const handleDeleteCollectionClick = (cc: ClientCollection & { collection?: Collection }) => {
+    setCollectionToDelete(cc);
+    setDeleteCollectionDialogOpen(true);
+  };
+
+  const handleDeleteCollectionConfirm = async () => {
+    if (!collectionToDelete) return;
+    
+    setDeletingCollection(true);
+    try {
+      const { error } = await supabase
+        .from('client_collections')
+        .delete()
+        .eq('id', collectionToDelete.id);
+      
+      if (error) throw error;
+
+      // Update client's total stock
+      const newTotal = client!.current_stock - collectionToDelete.current_stock;
+      const { error: clientUpdateError } = await supabase
+        .from('clients')
+        .update({ current_stock: Math.max(0, newTotal), updated_at: new Date().toISOString() })
+        .eq('id', clientId);
+      if (clientUpdateError) throw clientUpdateError;
+
+      toast.success('Collection dissociée avec succès');
+      setDeleteCollectionDialogOpen(false);
+      setCollectionToDelete(null);
+      await loadClientData();
+    } catch (error) {
+      console.error('Error deleting collection:', error);
+      toast.error('Erreur lors de la suppression de la collection');
+    } finally {
+      setDeletingCollection(false);
+    }
+  };
+
+  const handleEditPriceClick = (cc: ClientCollection & { collection?: Collection }) => {
+    setCollectionToEdit(cc);
+    if (cc.custom_price !== null) {
+      setEditPriceForm({
+        price_type: 'custom',
+        custom_price: cc.custom_price.toString()
+      });
+    } else {
+      setEditPriceForm({
+        price_type: 'default',
+        custom_price: ''
+      });
+    }
+    setEditPriceDialogOpen(true);
+  };
+
+  const handleEditPriceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectionToEdit) return;
+
+    setUpdatingPrice(true);
+    try {
+      let customPrice: number | null = null;
+      
+      if (editPriceForm.price_type === 'custom') {
+        const parsedPrice = parseFloat(editPriceForm.custom_price);
+        if (isNaN(parsedPrice) || parsedPrice < 0) {
+          toast.error('Le prix personnalisé doit être un nombre positif');
+          setUpdatingPrice(false);
+          return;
+        }
+        customPrice = parsedPrice;
+      }
+
+      const { error } = await supabase
+        .from('client_collections')
+        .update({
+          custom_price: customPrice,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', collectionToEdit.id);
+
+      if (error) throw error;
+
+      toast.success('Prix modifié avec succès');
+      setEditPriceDialogOpen(false);
+      setCollectionToEdit(null);
+      setEditPriceForm({ price_type: 'default', custom_price: '' });
+      await loadClientData();
+    } catch (error) {
+      console.error('Error updating price:', error);
+      toast.error('Erreur lors de la modification du prix');
+    } finally {
+      setUpdatingPrice(false);
+    }
+  };
+
   const handleAssociate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!associateForm.collection_id) {
@@ -302,10 +430,34 @@ export default function ClientDetailPage() {
       toast.error('Le stock initial doit être un nombre positif');
       return;
     }
+
+    // Validate custom price if selected
+    let customPrice: number | null = null;
+    if (associateForm.price_type === 'custom') {
+      const parsedPrice = parseFloat(associateForm.custom_price);
+      if (isNaN(parsedPrice) || parsedPrice < 0) {
+        toast.error('Le prix personnalisé doit être un nombre positif');
+        return;
+      }
+      customPrice = parsedPrice;
+    }
+
     try {
+      const insertData: any = {
+        client_id: clientId,
+        collection_id: associateForm.collection_id,
+        initial_stock: initialStock,
+        current_stock: initialStock
+      };
+
+      // Only set custom_price if it's a custom price
+      if (customPrice !== null) {
+        insertData.custom_price = customPrice;
+      }
+
       const { data, error } = await supabase
         .from('client_collections')
-        .insert([{ client_id: clientId, collection_id: associateForm.collection_id, initial_stock: initialStock, current_stock: initialStock }])
+        .insert([insertData])
         .select('*, collection:collections(*)')
         .single();
       if (error) throw error;
@@ -319,7 +471,7 @@ export default function ClientDetailPage() {
       if (clientUpdateError) throw clientUpdateError;
 
       toast.success('Collection associée au client');
-      setAssociateForm({ collection_id: null, initial_stock: '' });
+      setAssociateForm({ collection_id: null, initial_stock: '', price_type: 'default', custom_price: '' });
       await loadClientData();
     } catch (err) {
       console.error('Error associating collection:', err);
@@ -436,30 +588,75 @@ export default function ClientDetailPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleAssociate} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <div>
-                  <Label>Collection</Label>
-                  <Select value={associateForm.collection_id || ''} onValueChange={(val) => setAssociateForm(a => ({ ...a, collection_id: val }))}>
-                    <SelectTrigger className="mt-1.5">
-                      <SelectValue placeholder="Choisir une collection" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allCollections
-                        .filter(c => !clientCollections.some(cc => cc.collection_id === c.id))
-                        .map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name} — {c.price.toFixed(2)} €</SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+              <form onSubmit={handleAssociate} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Collection</Label>
+                    <Select value={associateForm.collection_id || ''} onValueChange={(val) => setAssociateForm(a => ({ ...a, collection_id: val }))}>
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue placeholder="Choisir une collection" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allCollections
+                          .filter(c => !clientCollections.some(cc => cc.collection_id === c.id))
+                          .map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name} — {c.price.toFixed(2)} €</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="assoc-initial">Stock initial</Label>
+                    <Input id="assoc-initial" type="number" min="0" value={associateForm.initial_stock}
+                      onChange={(e) => setAssociateForm(a => ({ ...a, initial_stock: e.target.value }))}
+                      placeholder="Ex: 100" className="mt-1.5" />
+                  </div>
                 </div>
-                <div>
-                  <Label htmlFor="assoc-initial">Stock initial</Label>
-                  <Input id="assoc-initial" type="number" min="0" value={associateForm.initial_stock}
-                    onChange={(e) => setAssociateForm(a => ({ ...a, initial_stock: e.target.value }))}
-                    placeholder="Ex: 100" className="mt-1.5" />
+
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                  <Label>Prix de la collection</Label>
+                  <RadioGroup
+                    value={associateForm.price_type}
+                    onValueChange={(val: 'default' | 'custom') => setAssociateForm(a => ({ ...a, price_type: val }))}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="price-default" />
+                      <Label htmlFor="price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                        {associateForm.collection_id && allCollections.find(c => c.id === associateForm.collection_id) && (
+                          <span className="ml-2 text-sm text-slate-600">
+                            ({allCollections.find(c => c.id === associateForm.collection_id)?.price.toFixed(2)} €)
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="price-custom" />
+                      <Label htmlFor="price-custom" className="font-normal cursor-pointer">
+                        Définir un prix spécifique pour ce client
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {associateForm.price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="custom-price">Prix personnalisé (€)</Label>
+                      <Input
+                        id="custom-price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={associateForm.custom_price}
+                        onChange={(e) => setAssociateForm(a => ({ ...a, custom_price: e.target.value }))}
+                        placeholder="Ex: 2.50"
+                        className="mt-1.5"
+                      />
+                    </div>
+                  )}
                 </div>
+
                 <div>
-                  <Button type="submit" className="w-full md:w-auto">Associer</Button>
+                  <Button type="submit" className="w-full md:w-auto">Associer la collection</Button>
                 </div>
               </form>
 
@@ -469,16 +666,50 @@ export default function ClientDetailPage() {
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
                 <div className="space-y-4">
-                  {clientCollections.map((cc) => (
+                  {clientCollections.map((cc) => {
+                    const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+                    const isCustomPrice = cc.custom_price !== null;
+                    
+                    return (
                     <div key={cc.id} className="border border-slate-200 rounded-lg p-4 bg-white">
-                      <div className="flex justify-between items-center mb-3">
-                        <div>
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1">
                           <p className="font-semibold">{cc.collection?.name || 'Collection'}</p>
                           <p className="text-sm text-slate-500">Stock actuel: {cc.current_stock}</p>
                         </div>
-                        {cc.collection?.price != null && (
-                          <span className="text-sm text-slate-500">Prix: {cc.collection.price.toFixed(2)} €</span>
-                        )}
+                        <div className="flex items-start gap-2">
+                          <div className="text-right mr-2">
+                            <span className="text-sm font-medium text-slate-700">
+                              Prix: {effectivePrice.toFixed(2)} €
+                            </span>
+                            {isCustomPrice && (
+                              <p className="text-xs text-blue-600">Prix personnalisé</p>
+                            )}
+                            {!isCustomPrice && cc.collection?.price != null && (
+                              <p className="text-xs text-slate-500">Prix par défaut</p>
+                            )}
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditPriceClick(cc)}
+                              className="h-8 w-8 p-0 hover:bg-blue-50"
+                              title="Modifier le prix"
+                            >
+                              <Edit2 className="h-4 w-4 text-blue-600" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteCollectionClick(cc)}
+                              className="h-8 w-8 p-0 hover:bg-red-50"
+                              title="Supprimer la collection"
+                            >
+                              <Trash2 className="h-4 w-4 text-red-600" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
@@ -505,7 +736,8 @@ export default function ClientDetailPage() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -622,8 +854,116 @@ export default function ClientDetailPage() {
             invoice={selectedGlobalInvoice}
             stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}
             collections={allCollections}
+            clientCollections={clientCollections}
           />
         )}
+
+        {/* Delete Collection Dialog */}
+        <AlertDialog open={deleteCollectionDialogOpen} onOpenChange={setDeleteCollectionDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer la collection ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir dissocier la collection "{collectionToDelete?.collection?.name}" de ce client ?
+                Cette action est irréversible.
+                {collectionToDelete && collectionToDelete.current_stock > 0 && (
+                  <span className="block mt-2 text-orange-600 font-medium">
+                    ⚠️ Attention : Cette collection a encore {collectionToDelete.current_stock} cartes en stock.
+                  </span>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletingCollection}>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteCollectionConfirm}
+                disabled={deletingCollection}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {deletingCollection ? 'Suppression...' : 'Supprimer'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Edit Price Dialog */}
+        <Dialog open={editPriceDialogOpen} onOpenChange={setEditPriceDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleEditPriceSubmit}>
+              <DialogHeader>
+                <DialogTitle>Modifier le prix</DialogTitle>
+                <DialogDescription>
+                  Modifiez le prix de "{collectionToEdit?.collection?.name}" pour ce client
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-4">
+                {collectionToEdit?.collection && (
+                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                    <p className="text-sm text-slate-600">
+                      Prix par défaut de la collection : 
+                      <span className="font-semibold text-slate-900 ml-2">
+                        {collectionToEdit.collection.price.toFixed(2)} €
+                      </span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4">
+                  <Label>Type de prix</Label>
+                  <RadioGroup
+                    value={editPriceForm.price_type}
+                    onValueChange={(val: 'default' | 'custom') => setEditPriceForm({ ...editPriceForm, price_type: val })}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="edit-price-default" />
+                      <Label htmlFor="edit-price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="edit-price-custom" />
+                      <Label htmlFor="edit-price-custom" className="font-normal cursor-pointer">
+                        Utiliser un prix spécifique
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {editPriceForm.price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="edit-custom-price">Prix personnalisé (€)</Label>
+                      <Input
+                        id="edit-custom-price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editPriceForm.custom_price}
+                        onChange={(e) => setEditPriceForm({ ...editPriceForm, custom_price: e.target.value })}
+                        placeholder="Ex: 2.50"
+                        className="mt-1.5"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEditPriceDialogOpen(false)}
+                  disabled={updatingPrice}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={updatingPrice}>
+                  {updatingPrice ? 'Enregistrement...' : 'Enregistrer'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
