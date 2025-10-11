@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone } from 'lucide-react';
+import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
 
@@ -16,6 +16,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     company_name: '',
     first_name: '',
@@ -134,6 +135,7 @@ export default function ProfilePage() {
       }
 
       await loadProfile();
+      setIsEditing(false);
     } catch (error) {
       console.error('Error saving profile:', error);
       toast.error('Erreur lors de l\'enregistrement du profil');
@@ -155,16 +157,209 @@ export default function ProfilePage() {
     );
   }
 
+  // Vue d'affichage du profil
+  if (!isEditing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="container mx-auto py-8 px-4 max-w-4xl">
+          <div className="flex gap-3 mb-6">
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/')}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour à l'accueil
+            </Button>
+          </div>
+
+          <Card className="border-slate-200 shadow-md">
+            <CardHeader>
+              <div className="flex justify-between items-start">
+                <div>
+                  <CardTitle className="text-3xl flex items-center gap-2">
+                    <User className="h-8 w-8" />
+                    Mon Profil
+                  </CardTitle>
+                  <CardDescription>
+                    Informations de votre entreprise
+                  </CardDescription>
+                </div>
+                <Button onClick={() => setIsEditing(true)}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Modifier mon profil
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!profile ? (
+                <div className="text-center py-12">
+                  <User className="h-16 w-16 mx-auto text-slate-300 mb-4" />
+                  <p className="text-slate-500 mb-4">Aucun profil configuré</p>
+                  <Button onClick={() => setIsEditing(true)}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Créer mon profil
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Informations de l'entreprise */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <Building2 className="h-5 w-5" />
+                      <h3>Informations de l'entreprise</h3>
+                    </div>
+                    <Separator />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <Label className="text-slate-500 text-sm">Nom de la société</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.company_name || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.siret || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Code APE</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.ape_code || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Numéro TVA</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.tva_number || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Responsable */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <User className="h-5 w-5" />
+                      <h3>Responsable</h3>
+                    </div>
+                    <Separator />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <Label className="text-slate-500 text-sm">Prénom</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.first_name || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Nom</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.last_name || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Adresse */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <MapPin className="h-5 w-5" />
+                      <h3>Adresse</h3>
+                    </div>
+                    <Separator />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="md:col-span-2">
+                        <Label className="text-slate-500 text-sm">Adresse</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.street_address || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Code postal</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.postal_code || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Ville</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.city || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Coordonnées */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <Mail className="h-5 w-5" />
+                      <h3>Coordonnées</h3>
+                    </div>
+                    <Separator />
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <Label className="text-slate-500 text-sm">Email</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.email || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-slate-500 text-sm">Téléphone</Label>
+                        <p className="text-lg font-medium mt-1">
+                          {profile.phone || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Vue d'édition du profil
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="container mx-auto py-8 px-4 max-w-4xl">
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => router.push('/')}
+            onClick={() => {
+              setIsEditing(false);
+              // Restaurer les données du profil si on annule l'édition
+              if (profile) {
+                setFormData({
+                  company_name: profile.company_name || '',
+                  first_name: profile.first_name || '',
+                  last_name: profile.last_name || '',
+                  street_address: profile.street_address || '',
+                  postal_code: profile.postal_code || '',
+                  city: profile.city || '',
+                  siret: profile.siret || '',
+                  ape_code: profile.ape_code || '',
+                  tva_number: profile.tva_number || '',
+                  email: profile.email || '',
+                  phone: profile.phone || ''
+                });
+              }
+            }}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour à l'accueil
+            Retour
           </Button>
         </div>
 
@@ -172,7 +367,7 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="text-3xl flex items-center gap-2">
               <User className="h-8 w-8" />
-              Profil de l'entreprise
+              {profile ? 'Modifier le profil' : 'Créer le profil'}
             </CardTitle>
             <CardDescription>
               Renseignez les informations de votre entreprise pour les factures et documents officiels
@@ -358,7 +553,25 @@ export default function ProfilePage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.push('/')}
+                  onClick={() => {
+                    setIsEditing(false);
+                    // Restaurer les données du profil si on annule l'édition
+                    if (profile) {
+                      setFormData({
+                        company_name: profile.company_name || '',
+                        first_name: profile.first_name || '',
+                        last_name: profile.last_name || '',
+                        street_address: profile.street_address || '',
+                        postal_code: profile.postal_code || '',
+                        city: profile.city || '',
+                        siret: profile.siret || '',
+                        ape_code: profile.ape_code || '',
+                        tva_number: profile.tva_number || '',
+                        email: profile.email || '',
+                        phone: profile.phone || ''
+                      });
+                    }
+                  }}
                   disabled={submitting}
                 >
                   Annuler

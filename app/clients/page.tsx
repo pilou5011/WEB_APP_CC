@@ -28,7 +28,11 @@ export default function ClientsPage() {
     address: '', // Ancien champ, conservé pour compatibilité
     street_address: '',
     postal_code: '',
-    city: ''
+    city: '',
+    phone: '',
+    rcs_number: '',
+    naf_code: '',
+    client_number: ''
   });
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -36,6 +40,10 @@ export default function ClientsPage() {
     street_address: '',
     postal_code: '',
     city: '',
+    phone: '',
+    rcs_number: '',
+    naf_code: '',
+    client_number: '',
     initial_stock: ''
   });
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +66,11 @@ export default function ClientsPage() {
           client.address?.toLowerCase().includes(searchLower) ||
           client.street_address?.toLowerCase().includes(searchLower) ||
           client.postal_code?.toLowerCase().includes(searchLower) ||
-          client.city?.toLowerCase().includes(searchLower)
+          client.city?.toLowerCase().includes(searchLower) ||
+          client.phone?.toLowerCase().includes(searchLower) ||
+          client.rcs_number?.toLowerCase().includes(searchLower) ||
+          client.naf_code?.toLowerCase().includes(searchLower) ||
+          client.client_number?.toLowerCase().includes(searchLower)
         );
       });
       setFilteredClients(filtered);
@@ -95,6 +107,13 @@ export default function ClientsPage() {
     setSubmitting(true);
 
     try {
+      // Validation du numéro de client (4 chiffres)
+      if (formData.client_number && !/^\d{4}$/.test(formData.client_number)) {
+        toast.error('Le numéro de client doit contenir exactement 4 chiffres');
+        setSubmitting(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .insert([{
@@ -103,18 +122,31 @@ export default function ClientsPage() {
           street_address: formData.street_address,
           postal_code: formData.postal_code,
           city: formData.city,
+          phone: formData.phone || null,
+          rcs_number: formData.rcs_number || null,
+          naf_code: formData.naf_code || null,
+          client_number: formData.client_number || null,
           initial_stock: 0,
           current_stock: 0
         }])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Vérifier si c'est une erreur de numéro de client dupliqué
+        if (error.code === '23505' && error.message.includes('unique_client_number')) {
+          toast.error('Ce numéro de client existe déjà');
+        } else {
+          throw error;
+        }
+        setSubmitting(false);
+        return;
+      }
 
       toast.success('Client ajouté avec succès');
       setClients([data, ...clients]);
       setDialogOpen(false);
-      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '' });
+      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '' });
     } catch (error) {
       console.error('Error creating client:', error);
       toast.error('Erreur lors de la création du client');
@@ -131,6 +163,10 @@ export default function ClientsPage() {
       street_address: client.street_address || '',
       postal_code: client.postal_code || '',
       city: client.city || '',
+      phone: client.phone || '',
+      rcs_number: client.rcs_number || '',
+      naf_code: client.naf_code || '',
+      client_number: client.client_number || '',
       initial_stock: client.initial_stock.toString()
     });
     setEditDialogOpen(true);
@@ -147,6 +183,14 @@ export default function ClientsPage() {
 
       if (isNaN(initialStock) || initialStock < 0) {
         toast.error('Le stock initial doit être un nombre positif');
+        setUpdating(false);
+        return;
+      }
+
+      // Validation du numéro de client (4 chiffres)
+      if (editFormData.client_number && !/^\d{4}$/.test(editFormData.client_number)) {
+        toast.error('Le numéro de client doit contenir exactement 4 chiffres');
+        setUpdating(false);
         return;
       }
 
@@ -162,6 +206,10 @@ export default function ClientsPage() {
           street_address: editFormData.street_address,
           postal_code: editFormData.postal_code,
           city: editFormData.city,
+          phone: editFormData.phone || null,
+          rcs_number: editFormData.rcs_number || null,
+          naf_code: editFormData.naf_code || null,
+          client_number: editFormData.client_number || null,
           initial_stock: initialStock,
           current_stock: Math.max(0, newCurrentStock) // S'assurer que le stock ne devient pas négatif
         })
@@ -169,7 +217,16 @@ export default function ClientsPage() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Vérifier si c'est une erreur de numéro de client dupliqué
+        if (error.code === '23505' && error.message.includes('unique_client_number')) {
+          toast.error('Ce numéro de client existe déjà');
+        } else {
+          throw error;
+        }
+        setUpdating(false);
+        return;
+      }
 
       // Mettre à jour la liste des clients
       setClients(clients.map(client => 
@@ -179,7 +236,7 @@ export default function ClientsPage() {
       toast.success('Client modifié avec succès');
       setEditDialogOpen(false);
       setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', initial_stock: '' });
+      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', initial_stock: '' });
     } catch (error) {
       console.error('Error updating client:', error);
       toast.error('Erreur lors de la modification du client');
@@ -212,7 +269,7 @@ export default function ClientsPage() {
       setDeleteDialogOpen(false);
       setEditDialogOpen(false);
       setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', initial_stock: '' });
+      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', initial_stock: '' });
     } catch (error) {
       console.error('Error deleting client:', error);
       toast.error('Erreur lors de la suppression du client');
@@ -256,7 +313,7 @@ export default function ClientsPage() {
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div>
-                    <Label htmlFor="name">Nom du client</Label>
+                    <Label htmlFor="name">Nom de la société *</Label>
                     <Input
                       id="name"
                       value={formData.name}
@@ -267,7 +324,7 @@ export default function ClientsPage() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="street_address">Adresse</Label>
+                    <Label htmlFor="street_address">Adresse *</Label>
                     <Input
                       id="street_address"
                       value={formData.street_address}
@@ -279,7 +336,7 @@ export default function ClientsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="postal_code">Code postal</Label>
+                      <Label htmlFor="postal_code">Code postal *</Label>
                       <Input
                         id="postal_code"
                         value={formData.postal_code}
@@ -292,7 +349,7 @@ export default function ClientsPage() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="city">Ville</Label>
+                      <Label htmlFor="city">Ville *</Label>
                       <Input
                         id="city"
                         value={formData.city}
@@ -302,6 +359,52 @@ export default function ClientsPage() {
                         className="mt-1.5"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="phone">Numéro de téléphone</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="01 23 45 67 89"
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="rcs_number">Numéro RCS</Label>
+                      <Input
+                        id="rcs_number"
+                        value={formData.rcs_number}
+                        onChange={(e) => setFormData({ ...formData, rcs_number: e.target.value })}
+                        placeholder="123 456 789"
+                        className="mt-1.5"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="naf_code">Code NAF</Label>
+                      <Input
+                        id="naf_code"
+                        value={formData.naf_code}
+                        onChange={(e) => setFormData({ ...formData, naf_code: e.target.value })}
+                        placeholder="Ex: 4759A"
+                        className="mt-1.5"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="client_number">Numéro de client</Label>
+                    <Input
+                      id="client_number"
+                      value={formData.client_number}
+                      onChange={(e) => setFormData({ ...formData, client_number: e.target.value })}
+                      placeholder="4 chiffres (ex: 0001)"
+                      pattern="[0-9]{4}"
+                      maxLength={4}
+                      className="mt-1.5"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">4 chiffres exactement</p>
                   </div>
                 </div>
                 <DialogFooter>
@@ -321,7 +424,7 @@ export default function ClientsPage() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
             <Input
               type="text"
-              placeholder="Rechercher par nom, adresse, code postal ou ville..."
+              placeholder="Rechercher par nom, adresse, numéro de client, téléphone..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 bg-white shadow-sm border-slate-200 focus:border-blue-500 focus:ring-blue-500"
@@ -347,7 +450,7 @@ export default function ClientsPage() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div>
-                  <Label htmlFor="edit-name">Nom du client</Label>
+                  <Label htmlFor="edit-name">Nom de la société *</Label>
                   <Input
                     id="edit-name"
                     value={editFormData.name}
@@ -358,7 +461,7 @@ export default function ClientsPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit-street_address">Adresse</Label>
+                  <Label htmlFor="edit-street_address">Adresse *</Label>
                   <Input
                     id="edit-street_address"
                     value={editFormData.street_address}
@@ -370,7 +473,7 @@ export default function ClientsPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="edit-postal_code">Code postal</Label>
+                    <Label htmlFor="edit-postal_code">Code postal *</Label>
                     <Input
                       id="edit-postal_code"
                       value={editFormData.postal_code}
@@ -383,7 +486,7 @@ export default function ClientsPage() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="edit-city">Ville</Label>
+                    <Label htmlFor="edit-city">Ville *</Label>
                     <Input
                       id="edit-city"
                       value={editFormData.city}
@@ -393,6 +496,52 @@ export default function ClientsPage() {
                       className="mt-1.5"
                     />
                   </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit-phone">Numéro de téléphone</Label>
+                  <Input
+                    id="edit-phone"
+                    type="tel"
+                    value={editFormData.phone}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    placeholder="01 23 45 67 89"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-rcs_number">Numéro RCS</Label>
+                    <Input
+                      id="edit-rcs_number"
+                      value={editFormData.rcs_number}
+                      onChange={(e) => setEditFormData({ ...editFormData, rcs_number: e.target.value })}
+                      placeholder="123 456 789"
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-naf_code">Code NAF</Label>
+                    <Input
+                      id="edit-naf_code"
+                      value={editFormData.naf_code}
+                      onChange={(e) => setEditFormData({ ...editFormData, naf_code: e.target.value })}
+                      placeholder="Ex: 4759A"
+                      className="mt-1.5"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="edit-client_number">Numéro de client</Label>
+                  <Input
+                    id="edit-client_number"
+                    value={editFormData.client_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, client_number: e.target.value })}
+                    placeholder="4 chiffres (ex: 0001)"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">4 chiffres exactement</p>
                 </div>
                 <div>
                   <Label htmlFor="edit-initial_stock">Stock initial</Label>

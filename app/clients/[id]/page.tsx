@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2 } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
@@ -503,19 +503,29 @@ export default function ClientDetailPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <div className="flex gap-3 mb-6">
-          <Button
-            variant="ghost"
-            onClick={() => router.push('/clients')}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux clients
-          </Button>
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/clients')}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Retour aux clients
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/')}
+            >
+              Retour à l'accueil
+            </Button>
+          </div>
           <Button
             variant="outline"
-            onClick={() => router.push('/')}
+            onClick={() => router.push(`/clients/${clientId}/info`)}
+            className="shadow-md"
           >
-            Retour à l'accueil
+            <Info className="mr-2 h-4 w-4" />
+            Infos client
           </Button>
         </div>
 
