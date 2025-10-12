@@ -403,7 +403,6 @@ export default function ProfilePage() {
                       onChange={(e) => setFormData({ ...formData, siret: e.target.value })}
                       placeholder="12345678901234"
                       maxLength={14}
-                      pattern="[0-9]{14}"
                       className="mt-1.5"
                     />
                     <p className="text-xs text-slate-500 mt-1">14 chiffres</p>
@@ -494,7 +493,6 @@ export default function ProfilePage() {
                       onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
                       placeholder="75001"
                       maxLength={5}
-                      pattern="[0-9]{5}"
                       className="mt-1.5"
                     />
                   </div>

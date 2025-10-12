@@ -104,20 +104,15 @@ export function GlobalInvoiceDialog({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       if (userProfile) {
-        // Nom/Prénom avec Téléphone à droite
+        // Nom/Prénom
         if (userProfile.first_name || userProfile.last_name) {
           const fullName = `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim();
           doc.text(fullName, leftBoxX + 2, yPosition);
-          
-          if (userProfile.phone) {
-            doc.text(`Tél: ${userProfile.phone}`, leftBoxX + leftBoxWidth - 2, yPosition, { align: 'right' });
-          }
-          yPosition += 4;
-        } else if (userProfile.phone) {
-          // Si pas de nom mais téléphone
-          doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
+        
+        // A1 - Espacement entre nom/prénom et adresse
+        yPosition += 2;
         
         if (userProfile.street_address) {
           doc.text(userProfile.street_address, leftBoxX + 2, yPosition);
@@ -131,6 +126,12 @@ export function GlobalInvoiceDialog({
           doc.text(`Email: ${userProfile.email}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
+        
+        // A2 - Espacement entre email et SIRET
+        if (userProfile.email && userProfile.siret) {
+          yPosition += 2;
+        }
+        
         if (userProfile.siret) {
           doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
           yPosition += 4;
@@ -139,12 +140,27 @@ export function GlobalInvoiceDialog({
           doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
+        
+        // Espacement entre TVA et TEL
+        if (userProfile.tva_number && userProfile.phone) {
+          yPosition += 2;
+        }
+        
+        // Téléphone en dessous de TVA en police 11 et gras
+        if (userProfile.phone) {
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(9);
+          yPosition += 3;
+        }
       } else {
         doc.text('Informations non renseignées', leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       
-      leftBoxHeight = yPosition - leftBoxY + 2;
+      leftBoxHeight = yPosition - leftBoxY + 1;
       doc.setDrawColor(0, 0, 0);
       doc.setLineWidth(0.5);
       doc.rect(leftBoxX, leftBoxY, leftBoxWidth, leftBoxHeight);
@@ -187,10 +203,7 @@ export function GlobalInvoiceDialog({
         doc.text(`${client.postal_code || ''} ${client.city || ''}`.trim(), rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
-      if (client.phone) {
-        doc.text(`Tél: ${client.phone}`, rightBoxX + 2, clientYPosition);
-        clientYPosition += 4;
-      }
+      
       if (client.rcs_number) {
         doc.text(`RCS: ${client.rcs_number}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
@@ -200,14 +213,31 @@ export function GlobalInvoiceDialog({
         clientYPosition += 4;
       }
       
-      const rightBoxHeight = clientYPosition - rightBoxY + 2;
+      // Espacement entre NAF et TEL
+      if (client.naf_code && client.phone) {
+        clientYPosition += 2;
+      }
+      
+      // Téléphone en dessous de NAF en police 11 et gras
+      if (client.phone) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Tél: ${client.phone}`, rightBoxX + 2, clientYPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        clientYPosition += 3;
+      }
+      
+      const rightBoxHeight = clientYPosition - rightBoxY + 1;
       doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
       // Encart numéro de client et numéro de facture (en dessous du DÉTAILLANT)
-      clientYPosition += 4;
+      // B3 - Abaisser l'encart pour qu'il ne soit pas caché
+      clientYPosition += 6;
       const infoBoxY = clientYPosition;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
+      clientYPosition += 4;
       
       if (client.client_number) {
         doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
@@ -217,10 +247,10 @@ export function GlobalInvoiceDialog({
       // Générer un numéro de facture basé sur la date et l'ID
       const invoiceNumber = `F${new Date(invoice.created_at).getFullYear()}${(new Date(invoice.created_at).getMonth() + 1).toString().padStart(2, '0')}${new Date(invoice.created_at).getDate().toString().padStart(2, '0')}-${invoice.id.substring(0, 8).toUpperCase()}`;
       doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
-      clientYPosition += 5;
+      clientYPosition += 3;
       
-      const infoBoxHeight = clientYPosition - infoBoxY + 2;
-      doc.rect(rightBoxX, infoBoxY - 2, rightBoxWidth, infoBoxHeight);
+      const infoBoxHeight = clientYPosition - infoBoxY + 1;
+      doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
 
       // Date de la facture
       yPosition = Math.max(yPosition, clientYPosition) + 10;
@@ -229,7 +259,7 @@ export function GlobalInvoiceDialog({
       doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, 15, yPosition);
       yPosition += 10;
 
-      // 3) Tableau des collections avec lignes de totaux
+      // 3) Tableau des collections
       const tableData = stockUpdates.map((update) => {
         const collection = collections.find(c => c.id === update.collection_id);
         const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
@@ -251,11 +281,15 @@ export function GlobalInvoiceDialog({
       const tva = totalHT * 0.20;
       const totalTTC = totalHT + tva;
 
-      // Ajouter les 3 lignes de totaux au tableau
+      // Ajouter une ligne vide de séparation (sans bordures)
+      tableData.push([{ content: '', colSpan: 6 }]);
+      
+      // Ajouter les 3 lignes de totaux (une seule colonne fusionnée par ligne)
+      // Contenu vide car le texte sera dessiné manuellement dans didDrawCell
       tableData.push(
-        ['', '', '', '', 'TOTAL H.T.', totalHT.toFixed(2) + ' €'],
-        ['', '', '', '', 'T.V.A. 20%', tva.toFixed(2) + ' €'],
-        ['', '', '', '', 'TOTAL T.T.C. À PAYER', totalTTC.toFixed(2) + ' €']
+        [{ content: '', colSpan: 6 }],
+        [{ content: '', colSpan: 6 }],
+        [{ content: '', colSpan: 6 }]
       );
 
       autoTable(doc, {
@@ -282,8 +316,14 @@ export function GlobalInvoiceDialog({
           5: { halign: 'right', fontStyle: 'bold' }
         },
         didParseCell: function(data: any) {
+          // Ligne de séparation sans bordures
+          if (data.section === 'body' && data.row.index === stockUpdates.length) {
+            data.cell.styles.lineWidth = 0;
+            data.cell.styles.cellPadding = 2;
+          }
+          
           // Mettre en gras les 3 dernières lignes (lignes de totaux)
-          if (data.section === 'body' && data.row.index >= stockUpdates.length) {
+          if (data.section === 'body' && data.row.index > stockUpdates.length) {
             data.cell.styles.fontStyle = 'bold';
             
             // Mettre en évidence la dernière ligne (TOTAL TTC)
@@ -292,19 +332,61 @@ export function GlobalInvoiceDialog({
               data.cell.styles.fontSize = 10;
             }
           }
+        },
+        didDrawCell: function(data: any) {
+          // Dessiner une bordure inférieure grise sous la dernière ligne de collection (3x plus épaisse)
+          if (data.section === 'body' && data.row.index === stockUpdates.length - 1) {
+            const cell = data.cell;
+            doc.setDrawColor(200, 200, 200); // Gris comme les autres bordures du tableau grid
+            doc.setLineWidth(0.3); // 3x l'épaisseur normale (0.1 × 3)
+            doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+          }
+          
+          // Pour les lignes de totaux, dessiner manuellement le texte aligné
+          if (data.section === 'body' && data.row.index > stockUpdates.length && data.column.index === 0) {
+            const cell = data.cell;
+            const y = cell.y + cell.height / 2 + 2;
+            
+            doc.setTextColor(0, 0, 0);
+            doc.setFont('helvetica', 'bold');
+            
+            if (data.row.index === stockUpdates.length + 1) {
+              // TOTAL H.T.
+              doc.setFontSize(9);
+              doc.text('TOTAL H.T.', cell.x + 3, y);
+              doc.text(totalHT.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
+            } else if (data.row.index === stockUpdates.length + 2) {
+              // T.V.A. 20%
+              doc.setFontSize(9);
+              doc.text('T.V.A. 20%', cell.x + 3, y);
+              doc.text(tva.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
+            } else if (data.row.index === stockUpdates.length + 3) {
+              // TOTAL T.T.C. À PAYER
+              doc.setFontSize(10);
+              doc.text('TOTAL T.T.C. À PAYER', cell.x + 3, y);
+              doc.text(totalTTC.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
+            }
+          }
         }
       });
 
-      // Pied de page
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(
-        `Document généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`,
-        pageWidth / 2,
-        pageHeight - 10,
-        { align: 'center' }
-      );
+      // Conditions de Dépôt-Vente en bas de page
+      const footerY = pageHeight - 20;
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(0, 0, 0);
+      
+      const conditionsText = [
+        "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
+        "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
+        "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
+        "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
+      ];
+      
+      conditionsText.forEach((line, index) => {
+        doc.text(line, 15, footerY + (index * 3.5));
+      });
 
       // Télécharger le PDF
       const fileName = `Facture_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(invoice.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;

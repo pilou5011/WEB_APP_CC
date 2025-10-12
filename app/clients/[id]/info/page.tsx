@@ -75,9 +75,16 @@ export default function ClientInfoPage() {
     setSubmitting(true);
 
     try {
-      // Validation du numéro de client (4 chiffres)
-      if (formData.client_number && !/^\d{4}$/.test(formData.client_number)) {
-        toast.error('Le numéro de client doit contenir exactement 4 chiffres');
+      // Validation du code postal (5 chiffres)
+      if (formData.postal_code && !/^\d{5}$/.test(formData.postal_code)) {
+        toast.error('Le code postal doit contenir exactement 5 chiffres');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du numéro de client (6 chiffres)
+      if (formData.client_number && !/^\d{6}$/.test(formData.client_number)) {
+        toast.error('Le numéro de client doit contenir exactement 6 chiffres');
         setSubmitting(false);
         return;
       }
@@ -346,12 +353,11 @@ export default function ClientInfoPage() {
                     id="client_number"
                     value={formData.client_number}
                     onChange={(e) => setFormData({ ...formData, client_number: e.target.value })}
-                    placeholder="4 chiffres (ex: 0001)"
-                    pattern="[0-9]{4}"
-                    maxLength={4}
+                    placeholder="6 chiffres (ex: 000001)"
+                    maxLength={6}
                     className="mt-1.5"
                   />
-                  <p className="text-xs text-slate-500 mt-1">4 chiffres exactement</p>
+                  <p className="text-xs text-slate-500 mt-1">6 chiffres exactement</p>
                 </div>
               </div>
 
@@ -384,7 +390,6 @@ export default function ClientInfoPage() {
                       onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
                       required
                       placeholder="92400"
-                      pattern="[0-9]{5}"
                       maxLength={5}
                       className="mt-1.5"
                     />
