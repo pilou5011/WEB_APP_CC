@@ -146,7 +146,7 @@ export default function ClientDetailPage() {
     }
   };
 
-  const prepareCollectionUpdates = () => {
+  const prepareCollectionUpdates = (validate: boolean = false) => {
     const updates: {
       collection: Collection;
       previousStock: number;
@@ -162,19 +162,42 @@ export default function ClientDetailPage() {
     for (const cc of clientCollections) {
       const form = perCollectionForm[cc.id];
       if (!form) continue;
-      const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
-      if (!hasAny) continue;
+      
+      const hasCountedStock = form.counted_stock && form.counted_stock.trim() !== '';
+      const hasNewDeposit = form.cards_added && form.cards_added.trim() !== '';
+      
+      // Si aucun des deux champs n'est rempli, on passe cette collection
+      if (!hasCountedStock && !hasNewDeposit) continue;
+
+      // Validation seulement si demandé (au moment de la soumission)
+      if (validate) {
+        // Vérifier que les deux champs sont remplis
+        if (hasCountedStock && !hasNewDeposit) {
+          toast.error(`Veuillez renseigner le "Nouveau dépôt" pour « ${cc.collection?.name || 'Collection'} »`);
+          return null;
+        }
+        if (!hasCountedStock && hasNewDeposit) {
+          toast.error(`Veuillez renseigner le "Nouveau stock compté" pour « ${cc.collection?.name || 'Collection'} »`);
+          return null;
+        }
+      }
+
+      // Si on n'a pas les deux champs et qu'on ne valide pas, on passe
+      if (!hasCountedStock || !hasNewDeposit) continue;
 
       const countedStock = parseInt(form.counted_stock);
       const newDeposit = parseInt(form.cards_added); // Nouveau dépôt = nouveau stock actuel
 
-      if (isNaN(countedStock) || countedStock < 0) {
-        toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-        return null;
-      }
-      if (isNaN(newDeposit) || newDeposit < 0) {
-        toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-        return null;
+      // Validation des valeurs numériques
+      if (validate) {
+        if (isNaN(countedStock) || countedStock < 0) {
+          toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+          return null;
+        }
+        if (isNaN(newDeposit) || newDeposit < 0) {
+          toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+          return null;
+        }
       }
 
       const previousStock = cc.current_stock;
@@ -209,7 +232,7 @@ export default function ClientDetailPage() {
     e.preventDefault();
     if (!client) return;
 
-    const updates = prepareCollectionUpdates();
+    const updates = prepareCollectionUpdates(true); // Valider au moment de la soumission
     if (!updates) return;
     
     if (updates.length === 0) {
@@ -262,10 +285,11 @@ export default function ClientDetailPage() {
         if (!hasAny) continue;
 
         const countedStock = parseInt(form.counted_stock);
-        const cardsAdded = parseInt(form.cards_added) || 0;
+        const newDeposit = parseInt(form.cards_added); // Le champ "cards_added" contient le nouveau dépôt
         const previousStock = cc.current_stock;
         const cardsSold = Math.max(0, previousStock - countedStock);
-        const newStock = countedStock + cardsAdded;
+        const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt saisi
+        const cardsAdded = Math.max(0, newStock - countedStock); // Cartes ajoutées pour l'historique
 
         updatesToInsert.push({
           client_id: clientId,
@@ -760,6 +784,7 @@ export default function ClientDetailPage() {
                             placeholder="Ex: 80"
                             className="mt-1.5"
                           />
+                          <p className="text-xs text-slate-500 mt-1">Stock constaté à l'arrivée</p>
                         </div>
                         <div>
                           <Label>Nouveau dépôt</Label>
@@ -775,9 +800,10 @@ export default function ClientDetailPage() {
                               }
                             }}
                             onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="Ex: 50"
+                            placeholder="Ex: 100"
                             className="mt-1.5"
                           />
+                          <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
                         </div>
                       </div>
                     </div>
