@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, Client } from '@/lib/supabase';
+import { supabase, Client, EstablishmentType } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -10,8 +10,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, MapPin, Package, Edit, X, Trash2, Search } from 'lucide-react';
+import { Plus, MapPin, Package, Edit, X, Trash2, Search, Building, Settings } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
 
 export default function ClientsPage() {
   const router = useRouter();
@@ -23,6 +25,11 @@ export default function ClientsPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [establishmentTypes, setEstablishmentTypes] = useState<EstablishmentType[]>([]);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [showNewTypeInput, setShowNewTypeInput] = useState(false);
+  const [addingNewType, setAddingNewType] = useState(false);
+  const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     address: '', // Ancien champ, conservé pour compatibilité
@@ -32,7 +39,8 @@ export default function ClientsPage() {
     phone: '',
     rcs_number: '',
     naf_code: '',
-    client_number: ''
+    client_number: '',
+    establishment_type_id: ''
   });
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -44,6 +52,7 @@ export default function ClientsPage() {
     rcs_number: '',
     naf_code: '',
     client_number: '',
+    establishment_type_id: '',
     initial_stock: ''
   });
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +61,7 @@ export default function ClientsPage() {
 
   useEffect(() => {
     loadClients();
+    loadEstablishmentTypes();
   }, []);
 
   // Filtrer les clients en fonction du terme de recherche
@@ -102,6 +112,57 @@ export default function ClientsPage() {
     }
   };
 
+  const loadEstablishmentTypes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('establishment_types')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setEstablishmentTypes(data || []);
+    } catch (error) {
+      console.error('Error loading establishment types:', error);
+    }
+  };
+
+  const handleAddNewType = async () => {
+    if (!newTypeName.trim()) {
+      toast.error('Veuillez saisir un nom de type d\'établissement');
+      return;
+    }
+
+    setAddingNewType(true);
+    try {
+      const { data, error } = await supabase
+        .from('establishment_types')
+        .insert([{ name: newTypeName.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce type d\'établissement existe déjà');
+        } else {
+          throw error;
+        }
+        setAddingNewType(false);
+        return;
+      }
+
+      setEstablishmentTypes([...establishmentTypes, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setFormData({ ...formData, establishment_type_id: data.id });
+      setNewTypeName('');
+      setShowNewTypeInput(false);
+      toast.success('Type d\'établissement ajouté');
+    } catch (error) {
+      console.error('Error adding establishment type:', error);
+      toast.error('Erreur lors de l\'ajout du type');
+    } finally {
+      setAddingNewType(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -133,6 +194,7 @@ export default function ClientsPage() {
           rcs_number: formData.rcs_number || null,
           naf_code: formData.naf_code || null,
           client_number: formData.client_number || null,
+          establishment_type_id: formData.establishment_type_id || null,
           initial_stock: 0,
           current_stock: 0
         }])
@@ -153,7 +215,9 @@ export default function ClientsPage() {
       toast.success('Client ajouté avec succès');
       setClients([data, ...clients]);
       setDialogOpen(false);
-      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '' });
+      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '' });
+      setShowNewTypeInput(false);
+      setNewTypeName('');
     } catch (error) {
       console.error('Error creating client:', error);
       toast.error('Erreur lors de la création du client');
@@ -174,6 +238,7 @@ export default function ClientsPage() {
       rcs_number: client.rcs_number || '',
       naf_code: client.naf_code || '',
       client_number: client.client_number || '',
+      establishment_type_id: client.establishment_type_id || '',
       initial_stock: client.initial_stock.toString()
     });
     setEditDialogOpen(true);
@@ -224,6 +289,7 @@ export default function ClientsPage() {
           rcs_number: editFormData.rcs_number || null,
           naf_code: editFormData.naf_code || null,
           client_number: editFormData.client_number || null,
+          establishment_type_id: editFormData.establishment_type_id || null,
           initial_stock: initialStock,
           current_stock: Math.max(0, newCurrentStock) // S'assurer que le stock ne devient pas négatif
         })
@@ -250,7 +316,7 @@ export default function ClientsPage() {
       toast.success('Client modifié avec succès');
       setEditDialogOpen(false);
       setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', initial_stock: '' });
+      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
     } catch (error) {
       console.error('Error updating client:', error);
       toast.error('Erreur lors de la modification du client');
@@ -283,7 +349,7 @@ export default function ClientsPage() {
       setDeleteDialogOpen(false);
       setEditDialogOpen(false);
       setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', initial_stock: '' });
+      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
     } catch (error) {
       console.error('Error deleting client:', error);
       toast.error('Erreur lors de la suppression du client');
@@ -337,6 +403,81 @@ export default function ClientsPage() {
                       className="mt-1.5"
                     />
                   </div>
+                  
+                  {/* Type d'établissement */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <Label htmlFor="establishment_type">Type d'établissement</Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setManageTypesDialogOpen(true)}
+                        className="h-7 text-xs"
+                      >
+                        <Settings className="h-3 w-3 mr-1" />
+                        Gérer les types
+                      </Button>
+                    </div>
+                    {!showNewTypeInput ? (
+                      <div className="flex gap-2">
+                        <Select
+                          value={formData.establishment_type_id}
+                          onValueChange={(value) => setFormData({ ...formData, establishment_type_id: value })}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Sélectionner un type..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {establishmentTypes.map((type) => (
+                              <SelectItem key={type.id} value={type.id}>
+                                {type.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowNewTypeInput(true)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-1.5">
+                        <Input
+                          placeholder="Nouveau type..."
+                          value={newTypeName}
+                          onChange={(e) => setNewTypeName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddNewType();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleAddNewType}
+                          disabled={addingNewType}
+                        >
+                          {addingNewType ? '...' : 'Ajouter'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setShowNewTypeInput(false);
+                            setNewTypeName('');
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  
                   <div>
                     <Label htmlFor="street_address">Adresse *</Label>
                     <Input
@@ -472,6 +613,39 @@ export default function ClientsPage() {
                     className="mt-1.5"
                   />
                 </div>
+                
+                {/* Type d'établissement */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <Label htmlFor="edit-establishment_type">Type d'établissement</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setManageTypesDialogOpen(true)}
+                      className="h-7 text-xs"
+                    >
+                      <Settings className="h-3 w-3 mr-1" />
+                      Gérer les types
+                    </Button>
+                  </div>
+                  <Select
+                    value={editFormData.establishment_type_id}
+                    onValueChange={(value) => setEditFormData({ ...editFormData, establishment_type_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un type..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {establishmentTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
                 <div>
                   <Label htmlFor="edit-street_address">Adresse *</Label>
                   <Input
@@ -557,10 +731,17 @@ export default function ClientsPage() {
                   <Label htmlFor="edit-initial_stock">Stock initial</Label>
                   <Input
                     id="edit-initial_stock"
-                    type="number"
-                    min="0"
+                    type="text"
+                    inputMode="numeric"
                     value={editFormData.initial_stock}
-                    onChange={(e) => setEditFormData({ ...editFormData, initial_stock: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // N'accepter que les nombres
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setEditFormData({ ...editFormData, initial_stock: value });
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
                     required
                     placeholder="Ex: 100"
                     className="mt-1.5"
@@ -612,6 +793,14 @@ export default function ClientsPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Dialog de gestion des types d'établissement */}
+        <EstablishmentTypesManager
+          open={manageTypesDialogOpen}
+          onOpenChange={setManageTypesDialogOpen}
+          types={establishmentTypes}
+          onTypesUpdated={loadEstablishmentTypes}
+        />
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -14,13 +14,29 @@ export type Client = {
   postal_code: string | null;
   city: string | null;
   phone: string | null;
+  phone_2: string | null;
+  phone_2_info: string | null;
+  phone_3: string | null;
+  phone_3_info: string | null;
   rcs_number: string | null;
   naf_code: string | null;
   client_number: string | null;
+  establishment_type_id: string | null;
+  opening_hours: any | null;
+  visit_frequency_number: number | null;
+  visit_frequency_unit: string | null;
+  email: string | null;
+  comment: string | null;
   initial_stock: number;
   current_stock: number;
   created_at: string;
   updated_at: string;
+};
+
+export type EstablishmentType = {
+  id: string;
+  name: string;
+  created_at: string;
 };
 
 export type StockUpdate = {

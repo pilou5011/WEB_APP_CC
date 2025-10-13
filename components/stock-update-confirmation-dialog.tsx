@@ -110,12 +110,12 @@ export function StockUpdateConfirmationDialog({
                       <span className="font-semibold text-orange-600">{update.cardsSold}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block mb-1">Cartes ajoutées</span>
-                      <span className="font-semibold text-green-600">+{update.cardsAdded}</span>
+                      <span className="text-slate-500 block mb-1">Nouveau dépôt</span>
+                      <span className="font-semibold text-blue-600">{update.newStock}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 block mb-1">Nouveau stock</span>
-                      <span className="font-semibold text-blue-600">{update.newStock}</span>
+                      <span className="text-slate-500 block mb-1">Cartes ajoutées</span>
+                      <span className="font-semibold text-green-600">+{update.cardsAdded}</span>
                     </div>
                   </div>
                 </div>

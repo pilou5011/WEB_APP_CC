@@ -166,20 +166,22 @@ export default function ClientDetailPage() {
       if (!hasAny) continue;
 
       const countedStock = parseInt(form.counted_stock);
-      const cardsAdded = parseInt(form.cards_added) || 0;
+      const newDeposit = parseInt(form.cards_added); // Nouveau dépôt = nouveau stock actuel
 
       if (isNaN(countedStock) || countedStock < 0) {
         toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
         return null;
       }
-      if (isNaN(cardsAdded) || cardsAdded < 0) {
-        toast.error(`Les cartes ajoutées doivent être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+      if (isNaN(newDeposit) || newDeposit < 0) {
+        toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
         return null;
       }
 
       const previousStock = cc.current_stock;
       const cardsSold = Math.max(0, previousStock - countedStock);
-      const newStock = countedStock + cardsAdded;
+      const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt
+      const cardsAdded = Math.max(0, newStock - countedStock); // Calculer les cartes ajoutées pour l'historique
+      
       // Use custom_price if set, otherwise use the default collection price
       const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
       const isCustomPrice = cc.custom_price !== null;
@@ -617,9 +619,22 @@ export default function ClientDetailPage() {
                   </div>
                   <div>
                     <Label htmlFor="assoc-initial">Stock initial</Label>
-                    <Input id="assoc-initial" type="number" min="0" value={associateForm.initial_stock}
-                      onChange={(e) => setAssociateForm(a => ({ ...a, initial_stock: e.target.value }))}
-                      placeholder="Ex: 100" className="mt-1.5" />
+                    <Input 
+                      id="assoc-initial" 
+                      type="text" 
+                      inputMode="numeric"
+                      value={associateForm.initial_stock}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // N'accepter que les nombres
+                        if (value === '' || /^\d+$/.test(value)) {
+                          setAssociateForm(a => ({ ...a, initial_stock: value }));
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="Ex: 100" 
+                      className="mt-1.5" 
+                    />
                   </div>
                 </div>
 
@@ -653,11 +668,17 @@ export default function ClientDetailPage() {
                       <Label htmlFor="custom-price">Prix personnalisé (€)</Label>
                       <Input
                         id="custom-price"
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={associateForm.custom_price}
-                        onChange={(e) => setAssociateForm(a => ({ ...a, custom_price: e.target.value }))}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setAssociateForm(a => ({ ...a, custom_price: value }));
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                       />
@@ -725,21 +746,35 @@ export default function ClientDetailPage() {
                         <div>
                           <Label>Nouveau stock compté</Label>
                           <Input
-                            type="number"
-                            min="0"
+                            type="text"
+                            inputMode="numeric"
                             value={perCollectionForm[cc.id]?.counted_stock || ''}
-                            onChange={(e) => setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), counted_stock: e.target.value } }))}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              // N'accepter que les nombres
+                              if (value === '' || /^\d+$/.test(value)) {
+                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), counted_stock: value } }));
+                              }
+                            }}
+                            onWheel={(e) => e.currentTarget.blur()}
                             placeholder="Ex: 80"
                             className="mt-1.5"
                           />
                         </div>
                         <div>
-                          <Label>Nouvelles cartes ajoutées</Label>
+                          <Label>Nouveau dépôt</Label>
                           <Input
-                            type="number"
-                            min="0"
+                            type="text"
+                            inputMode="numeric"
                             value={perCollectionForm[cc.id]?.cards_added || ''}
-                            onChange={(e) => setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), cards_added: e.target.value } }))}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              // N'accepter que les nombres
+                              if (value === '' || /^\d+$/.test(value)) {
+                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), cards_added: value } }));
+                              }
+                            }}
+                            onWheel={(e) => e.currentTarget.blur()}
                             placeholder="Ex: 50"
                             className="mt-1.5"
                           />
@@ -944,11 +979,17 @@ export default function ClientDetailPage() {
                       <Label htmlFor="edit-custom-price">Prix personnalisé (€)</Label>
                       <Input
                         id="edit-custom-price"
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={editPriceForm.custom_price}
-                        onChange={(e) => setEditPriceForm({ ...editPriceForm, custom_price: e.target.value })}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setEditPriceForm({ ...editPriceForm, custom_price: value });
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                         required
