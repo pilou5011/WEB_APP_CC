@@ -8,11 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
+import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -35,6 +36,7 @@ export default function ClientDetailPage() {
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
+  const [depositSlipDialogOpen, setDepositSlipDialogOpen] = useState(false);
   
   // Delete collection dialog
   const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
@@ -996,6 +998,31 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
+          {/* Bon de dépôt */}
+          <Card className="border-slate-200 shadow-md">
+            <CardHeader>
+              <CardTitle>Bon de dépôt</CardTitle>
+              <CardDescription>
+                Générez un bon de dépôt pour ce client
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                variant="outline"
+                onClick={() => setDepositSlipDialogOpen(true)}
+                disabled={clientCollections.length === 0}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Générer un bon de dépôt
+              </Button>
+              {clientCollections.length === 0 && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Veuillez d'abord associer des collections au client
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           {globalInvoices.length > 0 && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
@@ -1208,6 +1235,16 @@ export default function ClientDetailPage() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Deposit Slip Dialog */}
+        {client && (
+          <DepositSlipDialog
+            open={depositSlipDialogOpen}
+            onOpenChange={setDepositSlipDialogOpen}
+            client={client}
+            clientCollections={clientCollections}
+          />
+        )}
       </div>
     </div>
   );
