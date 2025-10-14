@@ -49,6 +49,16 @@ export type StockUpdate = {
   cards_sold: number;
   cards_added: number;
   new_stock: number;
+  collection_info?: string | null;
+  created_at: string;
+};
+
+export type InvoiceAdjustment = {
+  id: string;
+  client_id: string;
+  invoice_id: string;
+  operation_name: string;
+  amount: number;
   created_at: string;
 };
 

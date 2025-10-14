@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
@@ -54,7 +54,12 @@ export default function ClientDetailPage() {
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added } }
-  const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
+  const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; collection_info: string }>>({});
+
+  // Reprise de stock (ajustements de facture)
+  const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; amount: string }[]>([]);
+  const [addAdjustmentOpen, setAddAdjustmentOpen] = useState(false);
+  const [adjustmentForm, setAdjustmentForm] = useState<{ operation_name: string; amount: string }>({ operation_name: '', amount: '' });
 
   // Association form
   const [associateForm, setAssociateForm] = useState<{ 
@@ -114,9 +119,9 @@ export default function ClientDetailPage() {
       setClientCollections(ccWithTyped);
 
       // Initialize per-collection form defaults
-      const initialForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
       ccWithTyped.forEach((cc) => {
-        initialForm[cc.id] = { counted_stock: '', cards_added: '' };
+        initialForm[cc.id] = { counted_stock: '', cards_added: '', collection_info: '' };
       });
       setPerCollectionForm(initialForm);
 
@@ -157,6 +162,7 @@ export default function ClientDetailPage() {
       amount: number;
       effectivePrice: number;
       isCustomPrice: boolean;
+      collectionInfo: string;
     }[] = [];
 
     for (const cc of clientCollections) {
@@ -204,6 +210,7 @@ export default function ClientDetailPage() {
       const cardsSold = Math.max(0, previousStock - countedStock);
       const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt
       const cardsAdded = Math.max(0, newStock - countedStock); // Calculer les cartes ajoutées pour l'historique
+      const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
       
       // Use custom_price if set, otherwise use the default collection price
       const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
@@ -220,7 +227,8 @@ export default function ClientDetailPage() {
           newStock,
           amount,
           effectivePrice,
-          isCustomPrice
+          isCustomPrice,
+          collectionInfo
         });
       }
     }
@@ -260,6 +268,10 @@ export default function ClientDetailPage() {
       // Calculate totals
       const totalCardsSold = updates.reduce((sum, u) => sum + u.cardsSold, 0);
       const totalAmount = updates.reduce((sum, u) => sum + u.amount, 0);
+      const adjustmentsTotal = (pendingAdjustments || []).reduce((sum, a) => {
+        const val = parseFloat(a.amount);
+        return sum + (isNaN(val) ? 0 : val);
+      }, 0);
 
       // Create global invoice
       const { data: invoiceData, error: invoiceError } = await supabase
@@ -267,7 +279,7 @@ export default function ClientDetailPage() {
         .insert([{
           client_id: clientId,
           total_cards_sold: totalCardsSold,
-          total_amount: totalAmount
+          total_amount: totalAmount + adjustmentsTotal
         }])
         .select()
         .single();
@@ -290,6 +302,7 @@ export default function ClientDetailPage() {
         const cardsSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt saisi
         const cardsAdded = Math.max(0, newStock - countedStock); // Cartes ajoutées pour l'historique
+        const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
 
         updatesToInsert.push({
           client_id: clientId,
@@ -299,7 +312,8 @@ export default function ClientDetailPage() {
           counted_stock: countedStock,
           cards_sold: cardsSold,
           cards_added: cardsAdded,
-          new_stock: newStock
+          new_stock: newStock,
+          collection_info: collectionInfo
         });
         ccUpdates.push({ id: cc.id, new_stock: newStock });
       }
@@ -308,6 +322,28 @@ export default function ClientDetailPage() {
         .from('stock_updates')
         .insert(updatesToInsert);
       if (updatesInsertError) throw updatesInsertError;
+
+      // Insert invoice adjustments (reprise de stock)
+      if ((pendingAdjustments || []).length > 0) {
+        const rows = pendingAdjustments
+          .map(a => {
+            const amount = parseFloat(a.amount);
+            if (isNaN(amount)) return null;
+            return {
+              client_id: clientId,
+              invoice_id: invoiceData.id,
+              operation_name: a.operation_name,
+              amount
+            };
+          })
+          .filter(Boolean) as any[];
+        if (rows.length > 0) {
+          const { error: adjError } = await supabase
+            .from('invoice_adjustments')
+            .insert(rows);
+          if (adjError) throw adjError;
+        }
+      }
 
       // Apply per-collection stock
       for (const upd of ccUpdates) {
@@ -335,12 +371,13 @@ export default function ClientDetailPage() {
       toast.success('Facture créée et stock mis à jour');
       setConfirmationDialogOpen(false);
       
-      // Reset form
-      const resetForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      // Reset form & adjustments
+      const resetForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
       clientCollections.forEach((cc) => {
-        resetForm[cc.id] = { counted_stock: '', cards_added: '' };
+        resetForm[cc.id] = { counted_stock: '', cards_added: '', collection_info: '' };
       });
       setPerCollectionForm(resetForm);
+      setPendingAdjustments([]);
       
       await loadClientData();
     } catch (error) {
@@ -443,6 +480,31 @@ export default function ClientDetailPage() {
     } finally {
       setUpdatingPrice(false);
     }
+  };
+
+  const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = adjustmentForm.operation_name.trim();
+    const amountStr = adjustmentForm.amount.trim().replace(',', '.');
+    if (!name) {
+      toast.error("Veuillez renseigner un nom d'opération");
+      return;
+    }
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount)) {
+      toast.error('Le montant doit être un nombre');
+      return;
+    }
+    if (amount >= 0) {
+      toast.error('Le montant doit être négatif');
+      return;
+    }
+    setPendingAdjustments((list) => [
+      ...list,
+      { operation_name: name, amount: amount.toFixed(2) }
+    ]);
+    setAdjustmentForm({ operation_name: '', amount: '' });
+    setAddAdjustmentOpen(false);
   };
 
   const handleAssociate = async (e: React.FormEvent) => {
@@ -616,6 +678,96 @@ export default function ClientDetailPage() {
                </div>}  */}
             </CardContent>
                     </Card>
+        {/* Reprise de stock */}
+        <Card className="border-slate-200 shadow-md">
+          <CardHeader>
+            <CardTitle>Reprise de stock</CardTitle>
+            <CardDescription>
+              Ajoutez une opération de reprise de stock (montant négatif) qui apparaîtra sur la prochaine facture
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter une reprise de stock
+                </Button>
+              </div>
+              {pendingAdjustments.length > 0 && (
+                <div className="border border-slate-200 rounded-lg divide-y bg-white">
+                  {pendingAdjustments.map((a, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
+                        <p className="text-xs text-slate-500">Montant: {a.amount} €</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 hover:bg-red-50"
+                        title="Supprimer"
+                        onClick={() => setPendingAdjustments(list => list.filter((_, i) => i !== idx))}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Add Adjustment Dialog */}
+        <Dialog open={addAdjustmentOpen} onOpenChange={setAddAdjustmentOpen}>
+          <DialogContent>
+            <form onSubmit={handleAddAdjustmentSubmit}>
+              <DialogHeader>
+                <DialogTitle>Ajouter une reprise de stock</DialogTitle>
+                <DialogDescription>
+                  Saisissez un nom d'opération et un montant négatif (ex: -150)
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="adj-name">Nom de l'opération</Label>
+                  <Input
+                    id="adj-name"
+                    type="text"
+                    value={adjustmentForm.operation_name}
+                    onChange={(e) => setAdjustmentForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Rachat stock concurrent"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="adj-amount">Montant (€)</Label>
+                  <Input
+                    id="adj-amount"
+                    type="text"
+                    inputMode="decimal"
+                    value={adjustmentForm.amount}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                        setAdjustmentForm(f => ({ ...f, amount: value }));
+                      }
+                    }}
+                    placeholder="Ex: -150"
+                    className="mt-1.5"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(false)}>
+                  Annuler
+                </Button>
+                <Button type="submit">Ajouter</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Collections liées</CardTitle>
@@ -766,44 +918,59 @@ export default function ClientDetailPage() {
                           </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label>Nouveau stock compté</Label>
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={perCollectionForm[cc.id]?.counted_stock || ''}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              // N'accepter que les nombres
-                              if (value === '' || /^\d+$/.test(value)) {
-                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), counted_stock: value } }));
-                              }
-                            }}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="Ex: 80"
-                            className="mt-1.5"
-                          />
-                          <p className="text-xs text-slate-500 mt-1">Stock constaté à l'arrivée</p>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label>Nouveau stock compté</Label>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={perCollectionForm[cc.id]?.counted_stock || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // N'accepter que les nombres
+                                if (value === '' || /^\d+$/.test(value)) {
+                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
+                                }
+                              }}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              placeholder="Ex: 80"
+                              className="mt-1.5"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Stock constaté à l'arrivée</p>
+                          </div>
+                          <div>
+                            <Label>Nouveau dépôt</Label>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={perCollectionForm[cc.id]?.cards_added || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                // N'accepter que les nombres
+                                if (value === '' || /^\d+$/.test(value)) {
+                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
+                                }
+                              }}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              placeholder="Ex: 100"
+                              className="mt-1.5"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
+                          </div>
                         </div>
                         <div>
-                          <Label>Nouveau dépôt</Label>
+                          <Label>Info collection pour facture</Label>
                           <Input
                             type="text"
-                            inputMode="numeric"
-                            value={perCollectionForm[cc.id]?.cards_added || ''}
+                            value={perCollectionForm[cc.id]?.collection_info || ''}
                             onChange={(e) => {
-                              const value = e.target.value;
-                              // N'accepter que les nombres
-                              if (value === '' || /^\d+$/.test(value)) {
-                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '' }), cards_added: value } }));
-                              }
+                              setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
                             }}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="Ex: 100"
+                            placeholder="Ex: Livraison partielle, Retour prévu..."
                             className="mt-1.5"
                           />
-                          <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
+                          <p className="text-xs text-slate-500 mt-1">Information optionnelle affichée dans la colonne "Infos" de la facture</p>
                         </div>
                       </div>
                     </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
+import type { InvoiceAdjustment } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
@@ -30,10 +31,26 @@ export function GlobalInvoiceDialog({
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [adjustments, setAdjustments] = useState<InvoiceAdjustment[]>([]);
 
   useEffect(() => {
     if (open) {
       loadUserProfile();
+      // Load invoice adjustments for this invoice
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('invoice_adjustments')
+            .select('*')
+            .eq('invoice_id', invoice.id)
+            .order('created_at', { ascending: true });
+          if (error) throw error;
+          setAdjustments(data || []);
+        } catch (e) {
+          // Non-blocking for PDF
+          setAdjustments([]);
+        }
+      })();
     }
   }, [open]);
 
@@ -210,22 +227,7 @@ export function GlobalInvoiceDialog({
       }
       if (client.naf_code) {
         doc.text(`NAF: ${client.naf_code}`, rightBoxX + 2, clientYPosition);
-        clientYPosition += 4;
-      }
-      
-      // Espacement entre NAF et TEL
-      if (client.naf_code && client.phone) {
-        clientYPosition += 2;
-      }
-      
-      // Téléphone en dessous de NAF en police 11 et gras
-      if (client.phone) {
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${client.phone}`, rightBoxX + 2, clientYPosition);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        clientYPosition += 3;
+        clientYPosition += 3; // Même espacement que N° Facture
       }
       
       const rightBoxHeight = clientYPosition - rightBoxY + 1;
@@ -260,7 +262,7 @@ export function GlobalInvoiceDialog({
       yPosition += 10;
 
       // 3) Tableau des collections
-      const tableData = stockUpdates.map((update) => {
+      const stockRows = stockUpdates.map((update) => {
         const collection = collections.find(c => c.id === update.collection_id);
         const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
         const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
@@ -268,6 +270,7 @@ export function GlobalInvoiceDialog({
         
         return [
           collection?.name || 'Collection',
+          update.collection_info || '', // Infos optionnelles
           update.previous_stock.toString(),
           update.counted_stock.toString(),
           update.cards_sold.toString(),
@@ -276,25 +279,42 @@ export function GlobalInvoiceDialog({
         ];
       });
 
+      const adjustmentRows = (adjustments || []).map((adj) => {
+        const amt = Number(adj.amount);
+        const amtStr = (isNaN(amt) ? '0.00' : amt.toFixed(2)) + ' €';
+        return [
+          adj.operation_name || 'Ajustement',
+          '',
+          '',
+          '',
+          '',
+          '',
+          amtStr
+        ];
+      });
+
+      const dataRows = [...stockRows, ...adjustmentRows];
+      const tableData = [...dataRows];
+
       // Calculer les totaux
       const totalHT = invoice.total_amount;
       const tva = totalHT * 0.20;
       const totalTTC = totalHT + tva;
 
       // Ajouter une ligne vide de séparation (sans bordures)
-      tableData.push([{ content: '', colSpan: 6 }]);
+      tableData.push([{ content: '', colSpan: 7 }]);
       
       // Ajouter les 3 lignes de totaux (une seule colonne fusionnée par ligne)
       // Contenu vide car le texte sera dessiné manuellement dans didDrawCell
       tableData.push(
-        [{ content: '', colSpan: 6 }],
-        [{ content: '', colSpan: 6 }],
-        [{ content: '', colSpan: 6 }]
+        [{ content: '', colSpan: 7 }],
+        [{ content: '', colSpan: 7 }],
+        [{ content: '', colSpan: 7 }]
       );
 
       autoTable(doc, {
         startY: yPosition,
-        head: [['Collection', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
+        head: [['Collection', 'Infos', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
         body: tableData,
         theme: 'grid',
         headStyles: {
@@ -309,15 +329,16 @@ export function GlobalInvoiceDialog({
         },
         columnStyles: {
           0: { halign: 'left' },
-          1: { halign: 'center' },
+          1: { halign: 'left', fontSize: 8 },
           2: { halign: 'center' },
           3: { halign: 'center' },
-          4: { halign: 'right' },
-          5: { halign: 'right', fontStyle: 'bold' }
+          4: { halign: 'center' },
+          5: { halign: 'right' },
+          6: { halign: 'right', fontStyle: 'bold' }
         },
         didParseCell: function(data: any) {
           // Ligne de séparation sans bordures
-          if (data.section === 'body' && data.row.index === stockUpdates.length) {
+          if (data.section === 'body' && data.row.index === dataRows.length) {
             data.cell.styles.lineWidth = 0;
             data.cell.styles.cellPadding = 2;
           }
