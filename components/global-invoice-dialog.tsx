@@ -90,8 +90,12 @@ export function GlobalInvoiceDialog({
       const pageHeight = doc.internal.pageSize.getHeight();
       let yPosition = 20;
 
+      // Définir les marges globales pour l'alignement vertical des bordures
+      const globalLeftMargin = 15;
+      const globalRightMargin = 15;
+      
       // 1) Encart DISTRIBUTEUR (haut gauche) - ENCADRÉ
-      const leftBoxX = 15;
+      const leftBoxX = globalLeftMargin;
       const leftBoxY = yPosition;
       const leftBoxWidth = 85;
       let leftBoxHeight = 5;
@@ -183,9 +187,9 @@ export function GlobalInvoiceDialog({
       doc.rect(leftBoxX, leftBoxY, leftBoxWidth, leftBoxHeight);
 
       // 2) Encart DÉTAILLANT (haut droite) - ENCADRÉ
-      const rightBoxX = pageWidth - 95;
-      const rightBoxY = 20;
       const rightBoxWidth = 80;
+      const rightBoxX = pageWidth - globalRightMargin - rightBoxWidth;
+      const rightBoxY = 20;
       let clientYPosition = rightBoxY;
       
       // En-tête DÉTAILLANT centré et encadré
@@ -258,7 +262,7 @@ export function GlobalInvoiceDialog({
       yPosition = Math.max(yPosition, clientYPosition) + 10;
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, 15, yPosition);
+      doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
       yPosition += 10;
 
       // 3) Tableau des collections
@@ -296,22 +300,6 @@ export function GlobalInvoiceDialog({
       const dataRows = [...stockRows, ...adjustmentRows];
       const tableData = [...dataRows];
 
-      // Calculer les totaux
-      const totalHT = invoice.total_amount;
-      const tva = totalHT * 0.20;
-      const totalTTC = totalHT + tva;
-
-      // Ajouter une ligne vide de séparation (sans bordures)
-      tableData.push([{ content: '', colSpan: 7 }]);
-      
-      // Ajouter les 3 lignes de totaux (une seule colonne fusionnée par ligne)
-      // Contenu vide car le texte sera dessiné manuellement dans didDrawCell
-      tableData.push(
-        [{ content: '', colSpan: 7 }],
-        [{ content: '', colSpan: 7 }],
-        [{ content: '', colSpan: 7 }]
-      );
-
       autoTable(doc, {
         startY: yPosition,
         head: [['Collection', 'Infos', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
@@ -336,58 +324,63 @@ export function GlobalInvoiceDialog({
           5: { halign: 'right' },
           6: { halign: 'right', fontStyle: 'bold' }
         },
-        didParseCell: function(data: any) {
-          // Ligne de séparation sans bordures
-          if (data.section === 'body' && data.row.index === dataRows.length) {
-            data.cell.styles.lineWidth = 0;
-            data.cell.styles.cellPadding = 2;
-          }
-          
-          // Mettre en gras les 3 dernières lignes (lignes de totaux)
-          if (data.section === 'body' && data.row.index > stockUpdates.length) {
-            data.cell.styles.fontStyle = 'bold';
-            
-            // Mettre en évidence la dernière ligne (TOTAL TTC)
-            if (data.row.index === tableData.length - 1) {
-              data.cell.styles.fillColor = [240, 240, 240];
-              data.cell.styles.fontSize = 10;
-            }
-          }
+        margin: { left: globalLeftMargin, right: globalRightMargin }
+      });
+
+      // Calculer les totaux
+      const totalHT = stockUpdates.reduce((sum, update) => {
+        const collection = collections.find(c => c.id === update.collection_id);
+        const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
+        const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
+        return sum + (update.cards_sold * effectivePrice);
+      }, 0) + (adjustments || []).reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
+      
+      const tva = totalHT * 0.20;
+      const totalTTC = totalHT + tva;
+
+      // Tableau récapitulatif des totaux (avec espacement de 2 lignes)
+      const finalTableY = (doc as any).lastAutoTable.finalY + 8; // Espacement de 2 lignes
+      
+      // Utiliser les mêmes marges globales pour l'alignement vertical
+      autoTable(doc, {
+        startY: finalTableY,
+        body: [
+          ['TOTAL H.T.', totalHT.toFixed(2) + ' €'],
+          ['TVA 20%', tva.toFixed(2) + ' €'],
+          ['TOTAL T.T.C A PAYER', totalTTC.toFixed(2) + ' €']
+        ],
+        theme: 'plain',
+        bodyStyles: {
+          fontSize: 10,
+          fontStyle: 'bold'
         },
-        didDrawCell: function(data: any) {
-          // Dessiner une bordure inférieure grise sous la dernière ligne de collection (3x plus épaisse)
-          if (data.section === 'body' && data.row.index === stockUpdates.length - 1) {
-            const cell = data.cell;
-            doc.setDrawColor(200, 200, 200); // Gris comme les autres bordures du tableau grid
-            doc.setLineWidth(0.3); // 3x l'épaisseur normale (0.1 × 3)
-            doc.line(cell.x, cell.y + cell.height, cell.x + cell.width, cell.y + cell.height);
+        columnStyles: {
+          0: { halign: 'left' },
+          1: { halign: 'right' }
+        },
+        margin: { left: globalLeftMargin, right: globalRightMargin },
+        didDrawCell: (data: any) => {
+          const { cell, column, cursor } = data;
+          
+          // Dessiner uniquement les bordures extérieures avec des bordures plus fines
+          doc.setLineWidth(0.3);
+          doc.setDrawColor(0, 0, 0);
+          
+          // Bordure gauche (uniquement pour la première colonne)
+          if (column.index === 0) {
+            doc.line(cursor.x, cursor.y, cursor.x, cursor.y + cell.height);
           }
           
-          // Pour les lignes de totaux, dessiner manuellement le texte aligné
-          if (data.section === 'body' && data.row.index > stockUpdates.length && data.column.index === 0) {
-            const cell = data.cell;
-            const y = cell.y + cell.height / 2 + 2;
-            
-            doc.setTextColor(0, 0, 0);
-            doc.setFont('helvetica', 'bold');
-            
-            if (data.row.index === stockUpdates.length + 1) {
-              // TOTAL H.T.
-              doc.setFontSize(9);
-              doc.text('TOTAL H.T.', cell.x + 3, y);
-              doc.text(totalHT.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
-            } else if (data.row.index === stockUpdates.length + 2) {
-              // T.V.A. 20%
-              doc.setFontSize(9);
-              doc.text('T.V.A. 20%', cell.x + 3, y);
-              doc.text(tva.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
-            } else if (data.row.index === stockUpdates.length + 3) {
-              // TOTAL T.T.C. À PAYER
-              doc.setFontSize(10);
-              doc.text('TOTAL T.T.C. À PAYER', cell.x + 3, y);
-              doc.text(totalTTC.toFixed(2) + ' €', cell.x + cell.width - 3, y, { align: 'right' });
-            }
+          // Bordure droite (uniquement pour la dernière colonne)
+          if (column.index === 1) {
+            doc.line(cursor.x + cell.width, cursor.y, cursor.x + cell.width, cursor.y + cell.height);
           }
+          
+          // Bordure haut
+          doc.line(cursor.x, cursor.y, cursor.x + cell.width, cursor.y);
+          
+          // Bordure bas
+          doc.line(cursor.x, cursor.y + cell.height, cursor.x + cell.width, cursor.y + cell.height);
         }
       });
 
@@ -406,7 +399,7 @@ export function GlobalInvoiceDialog({
       ];
       
       conditionsText.forEach((line, index) => {
-        doc.text(line, 15, footerY + (index * 3.5));
+        doc.text(line, globalLeftMargin, footerY + (index * 3.5));
       });
 
       // Télécharger le PDF
