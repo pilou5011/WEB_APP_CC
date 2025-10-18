@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
-import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule } from '@/components/opening-hours-editor';
+import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, validateWeekSchedule } from '@/components/opening-hours-editor';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -37,6 +37,7 @@ export default function ClientInfoPage() {
     postal_code: '',
     city: '',
     phone: '',
+    phone_1_info: '',
     phone_2: '',
     phone_2_info: '',
     phone_3: '',
@@ -47,9 +48,15 @@ export default function ClientInfoPage() {
     establishment_type_id: '',
     visit_frequency_number: '',
     visit_frequency_unit: '',
+    average_time_hours: '',
+    average_time_minutes: '',
+    vacation_start_date: '',
+    vacation_end_date: '',
+    payment_method: '',
     email: '',
     comment: ''
   });
+  const [marketDays, setMarketDays] = useState<string[]>([]);
 
   useEffect(() => {
     loadClient();
@@ -111,6 +118,7 @@ export default function ClientInfoPage() {
         postal_code: data.postal_code || '',
         city: data.city || '',
         phone: data.phone || '',
+        phone_1_info: data.phone_1_info || '',
         phone_2: data.phone_2 || '',
         phone_2_info: data.phone_2_info || '',
         phone_3: data.phone_3 || '',
@@ -121,9 +129,15 @@ export default function ClientInfoPage() {
         establishment_type_id: data.establishment_type_id || '',
         visit_frequency_number: data.visit_frequency_number?.toString() || '',
         visit_frequency_unit: data.visit_frequency_unit || '',
+        average_time_hours: data.average_time_hours?.toString() || '',
+        average_time_minutes: data.average_time_minutes?.toString() || '',
+        vacation_start_date: data.vacation_start_date || '',
+        vacation_end_date: data.vacation_end_date || '',
+        payment_method: data.payment_method || '',
         email: data.email || '',
         comment: data.comment || ''
       });
+      setMarketDays(data.market_days || []);
     } catch (error) {
       console.error('Error loading client:', error);
       toast.error('Erreur lors du chargement du client');
@@ -213,6 +227,47 @@ export default function ClientInfoPage() {
         }
       }
 
+      // Validation des horaires d'ouverture
+      const scheduleValidation = validateWeekSchedule(openingHours);
+      if (!scheduleValidation.valid) {
+        toast.error(scheduleValidation.message || 'Erreur de validation des horaires');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du temps moyen
+      let averageTimeHours: number | null = null;
+      let averageTimeMinutes: number | null = null;
+      
+      if (formData.average_time_hours) {
+        averageTimeHours = parseInt(formData.average_time_hours);
+        if (isNaN(averageTimeHours) || averageTimeHours < 0) {
+          toast.error('Les heures doivent être un nombre positif ou zéro');
+          setSubmitting(false);
+          return;
+        }
+      }
+      
+      if (formData.average_time_minutes) {
+        averageTimeMinutes = parseInt(formData.average_time_minutes);
+        if (isNaN(averageTimeMinutes) || averageTimeMinutes < 0 || averageTimeMinutes >= 60) {
+          toast.error('Les minutes doivent être entre 0 et 59');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Validation de la période de vacances
+      if (formData.vacation_start_date && formData.vacation_end_date) {
+        const startDate = new Date(formData.vacation_start_date);
+        const endDate = new Date(formData.vacation_end_date);
+        if (endDate < startDate) {
+          toast.error('La date de fin des vacances doit être égale ou postérieure à la date de début');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .update({
@@ -222,6 +277,7 @@ export default function ClientInfoPage() {
           postal_code: formData.postal_code,
           city: formData.city,
           phone: formData.phone || null,
+          phone_1_info: formData.phone_1_info || null,
           phone_2: formData.phone_2 || null,
           phone_2_info: formData.phone_2_info || null,
           phone_3: formData.phone_3 || null,
@@ -233,6 +289,12 @@ export default function ClientInfoPage() {
           opening_hours: openingHours,
           visit_frequency_number: visitFrequencyNumber,
           visit_frequency_unit: formData.visit_frequency_unit || null,
+          average_time_hours: averageTimeHours,
+          average_time_minutes: averageTimeMinutes,
+          vacation_start_date: formData.vacation_start_date || null,
+          vacation_end_date: formData.vacation_end_date || null,
+          market_days: marketDays.length > 0 ? marketDays : null,
+          payment_method: formData.payment_method || null,
           email: formData.email || null,
           comment: formData.comment || null,
           updated_at: new Date().toISOString()
@@ -285,6 +347,9 @@ export default function ClientInfoPage() {
       } else {
         setOpeningHours(defaultSchedule);
       }
+      
+      // Mettre à jour les jours de marché
+      setMarketDays(data.market_days || []);
       
       toast.success('Informations mises à jour avec succès');
       setIsEditing(false);
@@ -429,9 +494,9 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Email</Label>
+                      <Label className="text-slate-500 text-sm">Info Tél 1</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.email || <span className="text-slate-400">Non renseigné</span>}
+                        {client.phone_1_info || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -460,6 +525,13 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Info Tél 3</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.phone_3_info || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Email</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.email || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
@@ -516,9 +588,47 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Fréquence de passage</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.visit_frequency_number && client.visit_frequency_unit 
-                          ? `Tous les ${client.visit_frequency_number} ${client.visit_frequency_unit}`
+                          ? `${client.visit_frequency_number} ${client.visit_frequency_unit}`
                           : <span className="text-slate-400">Non renseigné</span>
                         }
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Temps moyen</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {(client.average_time_hours !== null && client.average_time_hours !== undefined) || 
+                         (client.average_time_minutes !== null && client.average_time_minutes !== undefined)
+                          ? `${client.average_time_hours || 0}h${(client.average_time_minutes || 0).toString().padStart(2, '0')}`
+                          : <span className="text-slate-400">Non renseigné</span>
+                        }
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Période de vacances</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.vacation_start_date && client.vacation_end_date 
+                          ? `Du ${new Date(client.vacation_start_date).toLocaleDateString('fr-FR')} au ${new Date(client.vacation_end_date).toLocaleDateString('fr-FR')} (compris)`
+                          : <span className="text-slate-400">Non renseigné</span>
+                        }
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Jour(s) de marché</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.market_days && client.market_days.length > 0 
+                          ? client.market_days.join(', ')
+                          : <span className="text-slate-400">Non renseigné</span>
+                        }
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Règlement</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.payment_method || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -554,6 +664,7 @@ export default function ClientInfoPage() {
                 postal_code: client.postal_code || '',
                 city: client.city || '',
                 phone: client.phone || '',
+                phone_1_info: client.phone_1_info || '',
                 phone_2: client.phone_2 || '',
                 phone_2_info: client.phone_2_info || '',
                 phone_3: client.phone_3 || '',
@@ -564,9 +675,15 @@ export default function ClientInfoPage() {
                 establishment_type_id: client.establishment_type_id || '',
                 visit_frequency_number: client.visit_frequency_number?.toString() || '',
                 visit_frequency_unit: client.visit_frequency_unit || '',
+                average_time_hours: client.average_time_hours?.toString() || '',
+                average_time_minutes: client.average_time_minutes?.toString() || '',
+                vacation_start_date: client.vacation_start_date || '',
+                vacation_end_date: client.vacation_end_date || '',
+                payment_method: client.payment_method || '',
                 email: client.email || '',
                 comment: client.comment || ''
               });
+              setMarketDays(client.market_days || []);
               const defaultSchedule = getDefaultWeekSchedule();
               if (client.opening_hours) {
                 const loadedSchedule = client.opening_hours as any;
@@ -781,13 +898,12 @@ export default function ClientInfoPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="phone_1_info">Info Tél 1 (ex: nom du correspondant)</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="contact@exemple.fr"
+                      id="phone_1_info"
+                      value={formData.phone_1_info}
+                      onChange={(e) => setFormData({ ...formData, phone_1_info: e.target.value })}
+                      placeholder="Ex: Responsable"
                       className="mt-1.5"
                     />
                   </div>
@@ -834,6 +950,18 @@ export default function ClientInfoPage() {
                       value={formData.phone_3_info}
                       onChange={(e) => setFormData({ ...formData, phone_3_info: e.target.value })}
                       placeholder="Ex: Jean Martin"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="contact@exemple.fr"
                       className="mt-1.5"
                     />
                   </div>
@@ -896,7 +1024,6 @@ export default function ClientInfoPage() {
                     <div>
                       <Label>Fréquence de passage</Label>
                       <div className="flex gap-2 mt-1.5">
-                        <span className="text-sm text-slate-600 flex items-center">Passage tous les</span>
                         <Select
                           value={formData.visit_frequency_number}
                           onValueChange={(value) => setFormData({ ...formData, visit_frequency_number: value })}
@@ -920,11 +1047,96 @@ export default function ClientInfoPage() {
                             <SelectValue placeholder="..." />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="semaine(s)">semaine(s)</SelectItem>
+                            <SelectItem value="semaines">semaines</SelectItem>
                             <SelectItem value="mois">mois</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    <div>
+                      <Label>Temps moyen</Label>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <Input
+                          type="number"
+                          min="0"
+                          value={formData.average_time_hours}
+                          onChange={(e) => setFormData({ ...formData, average_time_hours: e.target.value })}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          placeholder="0"
+                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <span className="text-sm">h</span>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="59"
+                          value={formData.average_time_minutes}
+                          onChange={(e) => setFormData({ ...formData, average_time_minutes: e.target.value })}
+                          onWheel={(e) => e.currentTarget.blur()}
+                          placeholder="00"
+                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <span className="text-sm">min</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Période de vacances</Label>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-sm">Du</span>
+                        <Input
+                          type="date"
+                          value={formData.vacation_start_date}
+                          onChange={(e) => setFormData({ ...formData, vacation_start_date: e.target.value })}
+                          className="w-40"
+                        />
+                        <span className="text-sm">au</span>
+                        <Input
+                          type="date"
+                          value={formData.vacation_end_date}
+                          onChange={(e) => setFormData({ ...formData, vacation_end_date: e.target.value })}
+                          className="w-40"
+                        />
+                        <span className="text-sm">(compris)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label>Jour(s) de marché</Label>
+                      <p className="text-xs text-slate-500 mt-1">Cliquez sur un ou plusieurs jours</p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map((day) => (
+                          <Button
+                            key={day}
+                            type="button"
+                            variant={marketDays.includes(day) ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              if (marketDays.includes(day)) {
+                                setMarketDays(marketDays.filter(d => d !== day));
+                              } else {
+                                setMarketDays([...marketDays, day]);
+                              }
+                            }}
+                            className={marketDays.includes(day) ? "bg-blue-600 hover:bg-blue-700" : ""}
+                          >
+                            {day}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="payment_method">Règlement</Label>
+                      <p className="text-xs text-slate-500 mt-1">Ex: Virement, Chèque, Espèces, Carte bancaire...</p>
+                      <Input
+                        id="payment_method"
+                        value={formData.payment_method}
+                        onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
+                        placeholder="Ex: Virement"
+                        className="mt-1.5"
+                      />
                     </div>
 
                     <div>
@@ -956,6 +1168,7 @@ export default function ClientInfoPage() {
                       postal_code: client.postal_code || '',
                       city: client.city || '',
                       phone: client.phone || '',
+                      phone_1_info: client.phone_1_info || '',
                       phone_2: client.phone_2 || '',
                       phone_2_info: client.phone_2_info || '',
                       phone_3: client.phone_3 || '',
@@ -966,9 +1179,15 @@ export default function ClientInfoPage() {
                       establishment_type_id: client.establishment_type_id || '',
                       visit_frequency_number: client.visit_frequency_number?.toString() || '',
                       visit_frequency_unit: client.visit_frequency_unit || '',
+                      average_time_hours: client.average_time_hours?.toString() || '',
+                      average_time_minutes: client.average_time_minutes?.toString() || '',
+                      vacation_start_date: client.vacation_start_date || '',
+                      vacation_end_date: client.vacation_end_date || '',
+                      payment_method: client.payment_method || '',
                       email: client.email || '',
                       comment: client.comment || ''
                     });
+                    setMarketDays(client.market_days || []);
                     const defaultSchedule = getDefaultWeekSchedule();
                     if (client.opening_hours) {
                       const loadedSchedule = client.opening_hours as any;

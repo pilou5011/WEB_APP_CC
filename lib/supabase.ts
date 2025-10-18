@@ -14,6 +14,7 @@ export type Client = {
   postal_code: string | null;
   city: string | null;
   phone: string | null;
+  phone_1_info: string | null;
   phone_2: string | null;
   phone_2_info: string | null;
   phone_3: string | null;
@@ -25,6 +26,12 @@ export type Client = {
   opening_hours: any | null;
   visit_frequency_number: number | null;
   visit_frequency_unit: string | null;
+  average_time_hours: number | null;
+  average_time_minutes: number | null;
+  vacation_start_date: string | null;
+  vacation_end_date: string | null;
+  market_days: string[] | null;
+  payment_method: string | null;
   email: string | null;
   comment: string | null;
   initial_stock: number;
