@@ -59,9 +59,9 @@ export default function ClientDetailPage() {
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; collection_info: string }>>({});
 
   // Reprise de stock (ajustements de facture)
-  const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; amount: string }[]>([]);
+  const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
   const [addAdjustmentOpen, setAddAdjustmentOpen] = useState(false);
-  const [adjustmentForm, setAdjustmentForm] = useState<{ operation_name: string; amount: string }>({ operation_name: '', amount: '' });
+  const [adjustmentForm, setAdjustmentForm] = useState<{ operation_name: string; unit_price: string; quantity: string }>({ operation_name: '', unit_price: '', quantity: '' });
 
   // Association form
   const [associateForm, setAssociateForm] = useState<{ 
@@ -245,7 +245,11 @@ export default function ClientDetailPage() {
     const updates = prepareCollectionUpdates(true); // Valider au moment de la soumission
     if (!updates) return;
     
-    if (updates.length === 0) {
+    // Vérifier s'il y a des changements de stock OU des reprises de stock
+    const hasStockUpdates = updates.length > 0;
+    const hasAdjustments = pendingAdjustments.length > 0;
+    
+    if (!hasStockUpdates && !hasAdjustments) {
       toast.info('Aucun changement détecté');
       return;
     }
@@ -261,18 +265,25 @@ export default function ClientDetailPage() {
 
     try {
       const updates = prepareCollectionUpdates();
-      if (!updates || updates.length === 0) {
+      
+      // Vérifier qu'il y a au moins des mises à jour de stock OU des reprises
+      const hasStockUpdates = updates && updates.length > 0;
+      const hasAdjustments = pendingAdjustments && pendingAdjustments.length > 0;
+      
+      if (!hasStockUpdates && !hasAdjustments) {
         setSubmitting(false);
         setConfirmationDialogOpen(false);
         return;
       }
 
       // Calculate totals
-      const totalCardsSold = updates.reduce((sum, u) => sum + u.cardsSold, 0);
-      const totalAmount = updates.reduce((sum, u) => sum + u.amount, 0);
+      const totalCardsSold = hasStockUpdates ? updates.reduce((sum, u) => sum + u.cardsSold, 0) : 0;
+      const totalAmount = hasStockUpdates ? updates.reduce((sum, u) => sum + u.amount, 0) : 0;
       const adjustmentsTotal = (pendingAdjustments || []).reduce((sum, a) => {
-        const val = parseFloat(a.amount);
-        return sum + (isNaN(val) ? 0 : val);
+        const unitPrice = parseFloat(a.unit_price);
+        const quantity = parseInt(a.quantity);
+        if (isNaN(unitPrice) || isNaN(quantity)) return sum;
+        return sum + (unitPrice * quantity);
       }, 0);
 
       // Create global invoice
@@ -292,49 +303,58 @@ export default function ClientDetailPage() {
       const updatesToInsert: any[] = [];
       const ccUpdates: { id: string; new_stock: number }[] = [];
 
-      for (const cc of clientCollections) {
-        const form = perCollectionForm[cc.id];
-        if (!form) continue;
-        const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
-        if (!hasAny) continue;
+      if (hasStockUpdates) {
+        for (const cc of clientCollections) {
+          const form = perCollectionForm[cc.id];
+          if (!form) continue;
+          const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
+          if (!hasAny) continue;
 
-        const countedStock = parseInt(form.counted_stock);
-        const newDeposit = parseInt(form.cards_added); // Le champ "cards_added" contient le nouveau dépôt
-        const previousStock = cc.current_stock;
-        const cardsSold = Math.max(0, previousStock - countedStock);
-        const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt saisi
-        const cardsAdded = Math.max(0, newStock - countedStock); // Cartes ajoutées pour l'historique
-        const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
+          const countedStock = parseInt(form.counted_stock);
+          const newDeposit = parseInt(form.cards_added); // Le champ "cards_added" contient le nouveau dépôt
+          const previousStock = cc.current_stock;
+          const cardsSold = Math.max(0, previousStock - countedStock);
+          const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt saisi
+          const cardsAdded = Math.max(0, newStock - countedStock); // Cartes ajoutées pour l'historique
+          const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
 
-        updatesToInsert.push({
-          client_id: clientId,
-          collection_id: cc.collection_id,
-          invoice_id: invoiceData.id,
-          previous_stock: previousStock,
-          counted_stock: countedStock,
-          cards_sold: cardsSold,
-          cards_added: cardsAdded,
-          new_stock: newStock,
-          collection_info: collectionInfo
-        });
-        ccUpdates.push({ id: cc.id, new_stock: newStock });
+          updatesToInsert.push({
+            client_id: clientId,
+            collection_id: cc.collection_id,
+            invoice_id: invoiceData.id,
+            previous_stock: previousStock,
+            counted_stock: countedStock,
+            cards_sold: cardsSold,
+            cards_added: cardsAdded,
+            new_stock: newStock,
+            collection_info: collectionInfo
+          });
+          ccUpdates.push({ id: cc.id, new_stock: newStock });
+        }
       }
 
-      const { error: updatesInsertError } = await supabase
-        .from('stock_updates')
-        .insert(updatesToInsert);
-      if (updatesInsertError) throw updatesInsertError;
+      // Insert stock updates only if there are any
+      if (updatesToInsert.length > 0) {
+        const { error: updatesInsertError } = await supabase
+          .from('stock_updates')
+          .insert(updatesToInsert);
+        if (updatesInsertError) throw updatesInsertError;
+      }
 
       // Insert invoice adjustments (reprise de stock)
       if ((pendingAdjustments || []).length > 0) {
         const rows = pendingAdjustments
           .map(a => {
-            const amount = parseFloat(a.amount);
-            if (isNaN(amount)) return null;
+            const unitPrice = parseFloat(a.unit_price);
+            const quantity = parseInt(a.quantity);
+            if (isNaN(unitPrice) || isNaN(quantity)) return null;
+            const amount = unitPrice * quantity;
             return {
               client_id: clientId,
               invoice_id: invoiceData.id,
               operation_name: a.operation_name,
+              unit_price: unitPrice,
+              quantity: quantity,
               amount
             };
           })
@@ -356,21 +376,30 @@ export default function ClientDetailPage() {
         if (ccUpdateError) throw ccUpdateError;
       }
 
-      // Recompute client's total stock as sum of client_collections
-      const { data: sumRows, error: sumError } = await supabase
-        .from('client_collections')
-        .select('current_stock')
-        .eq('client_id', clientId);
-      if (sumError) throw sumError;
-      const total = (sumRows || []).reduce((acc: number, row: any) => acc + (row.current_stock || 0), 0);
+      // Recompute client's total stock as sum of client_collections (only if stock was updated)
+      if (hasStockUpdates) {
+        const { data: sumRows, error: sumError } = await supabase
+          .from('client_collections')
+          .select('current_stock')
+          .eq('client_id', clientId);
+        if (sumError) throw sumError;
+        const total = (sumRows || []).reduce((acc: number, row: any) => acc + (row.current_stock || 0), 0);
 
-      const { error: clientUpdateError } = await supabase
-        .from('clients')
-        .update({ current_stock: total, updated_at: new Date().toISOString() })
-        .eq('id', clientId);
-      if (clientUpdateError) throw clientUpdateError;
+        const { error: clientUpdateError } = await supabase
+          .from('clients')
+          .update({ current_stock: total, updated_at: new Date().toISOString() })
+          .eq('id', clientId);
+        if (clientUpdateError) throw clientUpdateError;
+      }
 
-      toast.success('Facture créée et stock mis à jour');
+      // Success message based on what was done
+      if (hasStockUpdates && hasAdjustments) {
+        toast.success('Facture créée avec reprises de stock et mise à jour du stock');
+      } else if (hasStockUpdates) {
+        toast.success('Facture créée et stock mis à jour');
+      } else {
+        toast.success('Facture créée avec reprises de stock');
+      }
       setConfirmationDialogOpen(false);
       
       // Reset form & adjustments
@@ -487,25 +516,39 @@ export default function ClientDetailPage() {
   const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const name = adjustmentForm.operation_name.trim();
-    const amountStr = adjustmentForm.amount.trim().replace(',', '.');
+    const unitPriceStr = adjustmentForm.unit_price.trim().replace(',', '.');
+    const quantityStr = adjustmentForm.quantity.trim();
+    
     if (!name) {
       toast.error("Veuillez renseigner un nom d'opération");
       return;
     }
-    const amount = parseFloat(amountStr);
-    if (isNaN(amount)) {
-      toast.error('Le montant doit être un nombre');
+    
+    const unitPrice = parseFloat(unitPriceStr);
+    if (isNaN(unitPrice)) {
+      toast.error('Le prix unitaire doit être un nombre');
       return;
     }
-    if (amount >= 0) {
-      toast.error('Le montant doit être négatif');
+    if (unitPrice >= 0) {
+      toast.error('Le prix unitaire doit être négatif');
       return;
     }
+    
+    const quantity = parseInt(quantityStr);
+    if (isNaN(quantity)) {
+      toast.error('La quantité doit être un nombre entier');
+      return;
+    }
+    if (quantity <= 0) {
+      toast.error('La quantité doit être positive');
+      return;
+    }
+    
     setPendingAdjustments((list) => [
       ...list,
-      { operation_name: name, amount: amount.toFixed(2) }
+      { operation_name: name, unit_price: unitPrice.toFixed(2), quantity: quantity.toString() }
     ]);
-    setAdjustmentForm({ operation_name: '', amount: '' });
+    setAdjustmentForm({ operation_name: '', unit_price: '', quantity: '' });
     setAddAdjustmentOpen(false);
   };
 
@@ -680,96 +723,6 @@ export default function ClientDetailPage() {
                </div>}  */}
             </CardContent>
                     </Card>
-        {/* Reprise de stock */}
-        <Card className="border-slate-200 shadow-md">
-          <CardHeader>
-            <CardTitle>Reprise de stock</CardTitle>
-            <CardDescription>
-              Ajoutez une opération de reprise de stock (montant négatif) qui apparaîtra sur la prochaine facture
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Ajouter une reprise de stock
-                </Button>
-              </div>
-              {pendingAdjustments.length > 0 && (
-                <div className="border border-slate-200 rounded-lg divide-y bg-white">
-                  {pendingAdjustments.map((a, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3">
-                      <div>
-                        <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
-                        <p className="text-xs text-slate-500">Montant: {a.amount} €</p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 hover:bg-red-50"
-                        title="Supprimer"
-                        onClick={() => setPendingAdjustments(list => list.filter((_, i) => i !== idx))}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-600" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Add Adjustment Dialog */}
-        <Dialog open={addAdjustmentOpen} onOpenChange={setAddAdjustmentOpen}>
-          <DialogContent>
-            <form onSubmit={handleAddAdjustmentSubmit}>
-              <DialogHeader>
-                <DialogTitle>Ajouter une reprise de stock</DialogTitle>
-                <DialogDescription>
-                  Saisissez un nom d'opération et un montant négatif (ex: -150)
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div>
-                  <Label htmlFor="adj-name">Nom de l'opération</Label>
-                  <Input
-                    id="adj-name"
-                    type="text"
-                    value={adjustmentForm.operation_name}
-                    onChange={(e) => setAdjustmentForm(f => ({ ...f, operation_name: e.target.value }))}
-                    placeholder="Ex: Rachat stock concurrent"
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="adj-amount">Montant (€)</Label>
-                  <Input
-                    id="adj-amount"
-                    type="text"
-                    inputMode="decimal"
-                    value={adjustmentForm.amount}
-                    onChange={(e) => {
-                      const value = e.target.value.replace(',', '.');
-                      if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
-                        setAdjustmentForm(f => ({ ...f, amount: value }));
-                      }
-                    }}
-                    placeholder="Ex: -150"
-                    className="mt-1.5"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(false)}>
-                  Annuler
-                </Button>
-                <Button type="submit">Ajouter</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Collections liées</CardTitle>
@@ -982,6 +935,124 @@ export default function ClientDetailPage() {
               )}
             </CardContent>
           </Card>
+
+        {/* Reprise de stock */}
+        <Card className="border-slate-200 shadow-md">
+          <CardHeader>
+            <CardTitle>Reprise de stock</CardTitle>
+            <CardDescription>
+              Ajoutez une opération de reprise de stock avec le prix unitaire et le nombre de cartes reprises
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter une reprise de stock
+                </Button>
+              </div>
+              {pendingAdjustments.length > 0 && (
+                <div className="border border-slate-200 rounded-lg divide-y bg-white">
+                  {pendingAdjustments.map((a, idx) => {
+                    const totalAmount = (parseFloat(a.unit_price) * parseInt(a.quantity)).toFixed(2);
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
+                          <p className="text-xs text-slate-500">
+                            {a.quantity} carte(s) × {a.unit_price} € = {totalAmount} €
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 hover:bg-red-50"
+                          title="Supprimer"
+                          onClick={() => setPendingAdjustments(list => list.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Add Adjustment Dialog */}
+        <Dialog open={addAdjustmentOpen} onOpenChange={setAddAdjustmentOpen}>
+          <DialogContent>
+            <form onSubmit={handleAddAdjustmentSubmit}>
+              <DialogHeader>
+                <DialogTitle>Ajouter une reprise de stock</DialogTitle>
+                <DialogDescription>
+                  Saisissez le nom de l'opération, le prix unitaire (négatif) et le nombre de cartes reprises
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="adj-name">Nom de l'opération</Label>
+                  <Input
+                    id="adj-name"
+                    type="text"
+                    value={adjustmentForm.operation_name}
+                    onChange={(e) => setAdjustmentForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Rachat stock concurrent"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="adj-unit-price">Prix unitaire par carte (€)</Label>
+                  <Input
+                    id="adj-unit-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={adjustmentForm.unit_price}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                        setAdjustmentForm(f => ({ ...f, unit_price: value }));
+                      }
+                    }}
+                    placeholder="Ex: -2.00"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Le prix doit être négatif (reprise)</p>
+                </div>
+                <div>
+                  <Label htmlFor="adj-quantity">Nombre de cartes reprises</Label>
+                  <Input
+                    id="adj-quantity"
+                    type="number"
+                    min="1"
+                    value={adjustmentForm.quantity}
+                    onChange={(e) => setAdjustmentForm(f => ({ ...f, quantity: e.target.value }))}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Ex: 50"
+                    className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+                {adjustmentForm.unit_price && adjustmentForm.quantity && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700">
+                      Montant total : {(parseFloat(adjustmentForm.unit_price.replace(',', '.')) * parseInt(adjustmentForm.quantity || '0')).toFixed(2)} €
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(false)}>
+                  Annuler
+                </Button>
+                <Button type="submit">Ajouter</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Mise à jour du stock</CardTitle>
@@ -1107,6 +1178,7 @@ export default function ClientDetailPage() {
             onOpenChange={setConfirmationDialogOpen}
             onConfirm={handleConfirmStockUpdate}
             collectionUpdates={prepareCollectionUpdates() || []}
+            pendingAdjustments={pendingAdjustments}
             loading={submitting}
           />
         )}
