@@ -66,6 +66,8 @@ export type InvoiceAdjustment = {
   invoice_id: string;
   operation_name: string;
   amount: number;
+  unit_price?: number | null;
+  quantity?: number | null;
   created_at: string;
 };
 

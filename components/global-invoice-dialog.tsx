@@ -286,13 +286,15 @@ export function GlobalInvoiceDialog({
       const adjustmentRows = (adjustments || []).map((adj) => {
         const amt = Number(adj.amount);
         const amtStr = (isNaN(amt) ? '0.00' : amt.toFixed(2)) + ' €';
+        const quantity = adj.quantity || '';
+        const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
         return [
           adj.operation_name || 'Ajustement',
           '',
           '',
           '',
-          '',
-          '',
+          quantity.toString(),
+          unitPrice,
           amtStr
         ];
       });
