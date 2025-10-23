@@ -31,6 +31,7 @@ export type Client = {
   vacation_start_date: string | null;
   vacation_end_date: string | null;
   market_days: string[] | null;
+  closing_day: string | null;
   payment_method: string | null;
   email: string | null;
   comment: string | null;
@@ -83,6 +84,7 @@ export type Collection = {
   id: string;
   name: string;
   price: number;
+  barcode: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -111,6 +113,19 @@ export type UserProfile = {
   tva_number: string | null;
   email: string | null;
   phone: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DraftStockUpdateData = {
+  perCollectionForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }>;
+  pendingAdjustments: { operation_name: string; unit_price: string; quantity: string }[];
+};
+
+export type DraftStockUpdate = {
+  id: string;
+  client_id: string;
+  draft_data: DraftStockUpdateData;
   created_at: string;
   updated_at: string;
 };

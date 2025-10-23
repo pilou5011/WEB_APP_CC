@@ -18,7 +18,8 @@ export default function CollectionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    price: ''
+    price: '',
+    barcode: ''
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -52,6 +53,14 @@ export default function CollectionsPage() {
 
       if (isNaN(price) || price < 0) {
         toast.error('Le prix doit être un nombre positif');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du code barre s'il est renseigné
+      if (formData.barcode && !/^\d{13}$/.test(formData.barcode)) {
+        toast.error('Le code barre doit contenir exactement 13 chiffres');
+        setSubmitting(false);
         return;
       }
 
@@ -59,7 +68,8 @@ export default function CollectionsPage() {
         .from('collections')
         .insert([{
           name: formData.name,
-          price: price
+          price: price,
+          barcode: formData.barcode || null
         }])
         .select()
         .single();
@@ -69,7 +79,7 @@ export default function CollectionsPage() {
       toast.success('Collection ajoutée avec succès');
       setCollections([data, ...collections]);
       setDialogOpen(false);
-      setFormData({ name: '', price: '' });
+      setFormData({ name: '', price: '', barcode: '' });
     } catch (error) {
       console.error('Error creating collection:', error);
       toast.error('Erreur lors de la création de la collection');
@@ -137,6 +147,26 @@ export default function CollectionsPage() {
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                       />
+                    </div>
+                    <div>
+                      <Label htmlFor="barcode">Code Barre Produit (optionnel)</Label>
+                      <Input
+                        id="barcode"
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={13}
+                        value={formData.barcode}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les chiffres
+                          if (value === '' || /^\d+$/.test(value)) {
+                            setFormData({ ...formData, barcode: value });
+                          }
+                        }}
+                        placeholder="13 chiffres (Ex: 3254560001234)"
+                        className="mt-1.5"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
                     </div>
                   </div>
                   <DialogFooter>

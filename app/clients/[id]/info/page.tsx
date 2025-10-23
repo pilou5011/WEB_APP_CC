@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
-import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, validateWeekSchedule } from '@/components/opening-hours-editor';
+import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, formatWeekScheduleData, validateWeekSchedule } from '@/components/opening-hours-editor';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -52,6 +52,7 @@ export default function ClientInfoPage() {
     average_time_minutes: '',
     vacation_start_date: '',
     vacation_end_date: '',
+    closing_day: '',
     payment_method: '',
     email: '',
     comment: ''
@@ -133,6 +134,7 @@ export default function ClientInfoPage() {
         average_time_minutes: data.average_time_minutes?.toString() || '',
         vacation_start_date: data.vacation_start_date || '',
         vacation_end_date: data.vacation_end_date || '',
+        closing_day: data.closing_day || '',
         payment_method: data.payment_method || '',
         email: data.email || '',
         comment: data.comment || ''
@@ -293,6 +295,7 @@ export default function ClientInfoPage() {
           average_time_minutes: averageTimeMinutes,
           vacation_start_date: formData.vacation_start_date || null,
           vacation_end_date: formData.vacation_end_date || null,
+          closing_day: formData.closing_day || null,
           market_days: marketDays.length > 0 ? marketDays : null,
           payment_method: formData.payment_method || null,
           email: formData.email || null,
@@ -575,9 +578,14 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Horaires d'ouverture</Label>
                       <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-200">
                         {client.opening_hours ? (
-                          <pre className="text-sm font-medium whitespace-pre-wrap text-slate-700">
-                            {formatWeekSchedule(client.opening_hours)}
-                          </pre>
+                          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
+                            {formatWeekScheduleData(client.opening_hours).map((item, index) => (
+                              <>
+                                <div key={`day-${index}`} className="text-slate-600">{item.day}</div>
+                                <div key={`hours-${index}`} className="text-slate-800">{item.hours}</div>
+                              </>
+                            ))}
+                          </div>
                         ) : (
                           <span className="text-slate-400">Non renseigné</span>
                         )}
@@ -622,6 +630,13 @@ export default function ClientInfoPage() {
                           ? client.market_days.join(', ')
                           : <span className="text-slate-400">Non renseigné</span>
                         }
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Jour de fermeture</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.closing_day || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -679,6 +694,7 @@ export default function ClientInfoPage() {
                 average_time_minutes: client.average_time_minutes?.toString() || '',
                 vacation_start_date: client.vacation_start_date || '',
                 vacation_end_date: client.vacation_end_date || '',
+                closing_day: client.closing_day || '',
                 payment_method: client.payment_method || '',
                 email: client.email || '',
                 comment: client.comment || ''
@@ -1128,6 +1144,18 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
+                      <Label htmlFor="closing_day">Jour de fermeture</Label>
+                      <p className="text-xs text-slate-500 mt-1">Ex: Lundi, Dimanche...</p>
+                      <Input
+                        id="closing_day"
+                        value={formData.closing_day}
+                        onChange={(e) => setFormData({ ...formData, closing_day: e.target.value })}
+                        placeholder="Ex: Lundi"
+                        className="mt-1.5"
+                      />
+                    </div>
+
+                    <div>
                       <Label htmlFor="payment_method">Règlement</Label>
                       <p className="text-xs text-slate-500 mt-1">Ex: Virement, Chèque, Espèces, Carte bancaire...</p>
                       <Input
@@ -1183,6 +1211,7 @@ export default function ClientInfoPage() {
                       average_time_minutes: client.average_time_minutes?.toString() || '',
                       vacation_start_date: client.vacation_start_date || '',
                       vacation_end_date: client.vacation_end_date || '',
+                      closing_day: client.closing_day || '',
                       payment_method: client.payment_method || '',
                       email: client.email || '',
                       comment: client.comment || ''
