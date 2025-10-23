@@ -275,6 +275,7 @@ export function GlobalInvoiceDialog({
         return [
           collection?.name || 'Collection',
           update.collection_info || '', // Infos optionnelles
+          collection?.barcode || '', // Code barre produit
           update.previous_stock.toString(),
           update.counted_stock.toString(),
           update.cards_sold.toString(),
@@ -291,6 +292,7 @@ export function GlobalInvoiceDialog({
         return [
           adj.operation_name || 'Ajustement',
           '',
+          '', // Code barre vide pour les ajustements
           '',
           '',
           quantity.toString(),
@@ -304,7 +306,7 @@ export function GlobalInvoiceDialog({
 
       autoTable(doc, {
         startY: yPosition,
-        head: [['Collection', 'Infos', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
+        head: [['Collection', 'Infos', 'Code Barre\nProduit', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
         body: tableData,
         theme: 'grid',
         headStyles: {
@@ -320,11 +322,12 @@ export function GlobalInvoiceDialog({
         columnStyles: {
           0: { halign: 'left' },
           1: { halign: 'left', fontSize: 8 },
-          2: { halign: 'center' },
+          2: { halign: 'center', fontSize: 8 },
           3: { halign: 'center' },
           4: { halign: 'center' },
-          5: { halign: 'right' },
-          6: { halign: 'right', fontStyle: 'bold' }
+          5: { halign: 'center' },
+          6: { halign: 'right' },
+          7: { halign: 'right', fontStyle: 'bold' }
         },
         margin: { left: globalLeftMargin, right: globalRightMargin }
       });

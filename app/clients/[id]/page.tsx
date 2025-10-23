@@ -3,21 +3,27 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash } from 'lucide-react';
 import { toast } from 'sonner';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
+import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { useStockUpdateDraft } from '@/hooks/use-stock-update-draft';
 
 export default function ClientDetailPage() {
   const router = useRouter();
@@ -37,6 +43,12 @@ export default function ClientDetailPage() {
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
   const [depositSlipDialogOpen, setDepositSlipDialogOpen] = useState(false);
+  const [lastVisitDate, setLastVisitDate] = useState<string | null>(null);
+  
+  // Draft recovery
+  const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState<string>('');
+  const [hasDraft, setHasDraft] = useState(false);
   
   // Delete collection dialog
   const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
@@ -75,10 +87,43 @@ export default function ClientDetailPage() {
     price_type: 'default',
     custom_price: ''
   });
+  
+  // Combobox state for collection selector
+  const [collectionComboboxOpen, setCollectionComboboxOpen] = useState(false);
+
+  // Initialize draft management hook
+  const draft = useStockUpdateDraft(clientId);
 
   useEffect(() => {
     loadClientData();
   }, [clientId]);
+
+  // Check for existing draft on mount
+  useEffect(() => {
+    const checkForDraft = async () => {
+      const draftInfo = await draft.getDraftInfo();
+      if (draftInfo) {
+        setDraftDate(draftInfo.createdAt);
+        setHasDraft(true);
+        setDraftRecoveryOpen(true);
+      }
+    };
+
+    // Only check after client data is loaded
+    if (!loading && client) {
+      checkForDraft();
+    }
+  }, [loading, client]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-save draft whenever form data changes
+  useEffect(() => {
+    if (!loading && client && clientCollections.length > 0) {
+      draft.autoSave({
+        perCollectionForm,
+        pendingAdjustments
+      });
+    }
+  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -120,13 +165,7 @@ export default function ClientDetailPage() {
       const ccWithTyped = (ccData || []).map((row: any) => ({ ...row, collection: row.collection as Collection }));
       setClientCollections(ccWithTyped);
 
-      // Initialize per-collection form defaults
-      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
-      ccWithTyped.forEach((cc) => {
-        initialForm[cc.id] = { counted_stock: '', cards_added: '', collection_info: '' };
-      });
-      setPerCollectionForm(initialForm);
-
+      // Load stock updates to get last collection_info for each collection
       const { data: updatesData, error: updatesError } = await supabase
         .from('stock_updates')
         .select('*')
@@ -135,6 +174,25 @@ export default function ClientDetailPage() {
 
       if (updatesError) throw updatesError;
       setStockUpdates(updatesData || []);
+
+      // Initialize per-collection form defaults with last collection_info
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      ccWithTyped.forEach((cc) => {
+        // Find the last stock update for this collection that has collection_info
+        const lastUpdateWithInfo = (updatesData || []).find(
+          (update: StockUpdate) => 
+            update.collection_id === cc.collection_id && 
+            update.collection_info && 
+            update.collection_info.trim() !== ''
+        );
+        
+        initialForm[cc.id] = { 
+          counted_stock: '', 
+          cards_added: '', 
+          collection_info: lastUpdateWithInfo?.collection_info || '' 
+        };
+      });
+      setPerCollectionForm(initialForm);
 
       // Load global invoices
       const { data: invoicesData, error: invoicesError } = await supabase
@@ -145,6 +203,13 @@ export default function ClientDetailPage() {
 
       if (invoicesError) throw invoicesError;
       setGlobalInvoices(invoicesData || []);
+      
+      // Calculate last visit date (date of last invoice)
+      if (invoicesData && invoicesData.length > 0) {
+        setLastVisitDate(invoicesData[0].created_at);
+      } else {
+        setLastVisitDate(null);
+      }
     } catch (error) {
       console.error('Error loading client data:', error);
       toast.error('Erreur lors du chargement des données');
@@ -256,6 +321,45 @@ export default function ClientDetailPage() {
 
     // Open confirmation dialog
     setConfirmationDialogOpen(true);
+  };
+
+  const handleResumeDraft = async () => {
+    try {
+      // Try local first
+      let draftData = draft.loadDraftLocally();
+      
+      // If not found locally, try server
+      if (!draftData) {
+        draftData = await draft.loadDraftFromServer();
+      }
+
+      if (draftData) {
+        setPerCollectionForm(draftData.perCollectionForm);
+        setPendingAdjustments(draftData.pendingAdjustments);
+        toast.success('Brouillon restauré avec succès');
+      } else {
+        toast.error('Impossible de charger le brouillon');
+      }
+    } catch (error) {
+      console.error('Error resuming draft:', error);
+      toast.error('Erreur lors de la restauration du brouillon');
+    } finally {
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
+  };
+
+  const handleDiscardDraft = async () => {
+    try {
+      await draft.deleteDraft();
+      toast.info('Brouillon supprimé');
+    } catch (error) {
+      console.error('Error discarding draft:', error);
+      toast.error('Erreur lors de la suppression du brouillon');
+    } finally {
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
   };
 
   const handleConfirmStockUpdate = async () => {
@@ -402,14 +506,13 @@ export default function ClientDetailPage() {
       }
       setConfirmationDialogOpen(false);
       
-      // Reset form & adjustments
-      const resetForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
-      clientCollections.forEach((cc) => {
-        resetForm[cc.id] = { counted_stock: '', cards_added: '', collection_info: '' };
-      });
-      setPerCollectionForm(resetForm);
+      // Delete draft on successful submission
+      await draft.deleteDraft();
+      
+      // Reset adjustments only
       setPendingAdjustments([]);
       
+      // Reload client data which will reset the form with pre-filled collection_info
       await loadClientData();
     } catch (error) {
       console.error('Error updating stock:', error);
@@ -670,6 +773,86 @@ export default function ClientDetailPage() {
                 <MapPin className="h-5 w-5 mt-0.5 flex-shrink-0" />
                 <span>{client.address}</span>
               </CardDescription>
+              
+              {/* Informations complémentaires */}
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Date de dernier passage */}
+                    {lastVisitDate && (
+                      <div className="flex items-start gap-2">
+                        <Calendar className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-slate-700 text-base">Dernier passage : </span>
+                          <span className="text-slate-900 font-semibold text-base">
+                            {new Date(lastVisitDate).toLocaleDateString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Code client */}
+                    {client.client_number && (
+                      <div className="flex items-start gap-2">
+                        <Hash className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-slate-700 text-base">Code client : </span>
+                          <span className="text-slate-900 font-bold text-lg font-mono">{client.client_number}</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Téléphone 1 */}
+                    {client.phone && (
+                      <div className="flex items-start gap-2">
+                        <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-slate-700 text-base">Tél : </span>
+                          <span className="text-slate-900 font-bold text-base">{client.phone}</span>
+                          {client.phone_1_info && (
+                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Jour de fermeture */}
+                    {client.closing_day && (
+                      <div className="flex items-start gap-2">
+                        <XCircle className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-slate-700 text-sm">Fermeture : </span>
+                          <span className="text-slate-600 text-sm">{client.closing_day}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Horaires d'ouverture */}
+                  {client.opening_hours && (
+                    <div className="mt-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Clock className="h-5 w-5 text-slate-500 flex-shrink-0" />
+                        <span className="font-medium text-slate-700 text-base">Horaires d'ouverture</span>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
+                          {formatWeekScheduleData(client.opening_hours).map((item, index) => (
+                            <>
+                              <div key={`day-${index}`} className="text-slate-600">{item.day}</div>
+                              <div key={`hours-${index}`} className="text-slate-800">{item.hours}</div>
+                            </>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -735,18 +918,51 @@ export default function ClientDetailPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Collection</Label>
-                    <Select value={associateForm.collection_id || ''} onValueChange={(val) => setAssociateForm(a => ({ ...a, collection_id: val }))}>
-                      <SelectTrigger className="mt-1.5">
-                        <SelectValue placeholder="Choisir une collection" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allCollections
-                          .filter(c => !clientCollections.some(cc => cc.collection_id === c.id))
-                          .map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.name} — {c.price.toFixed(2)} €</SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <Popover open={collectionComboboxOpen} onOpenChange={setCollectionComboboxOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={collectionComboboxOpen}
+                          className="w-full justify-between mt-1.5"
+                        >
+                          {associateForm.collection_id
+                            ? allCollections.find((c) => c.id === associateForm.collection_id)?.name
+                            : "Choisir une collection"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Rechercher une collection..." />
+                          <CommandList>
+                            <CommandEmpty>Aucune collection trouvée.</CommandEmpty>
+                            <CommandGroup>
+                              {allCollections
+                                .filter(c => !clientCollections.some(cc => cc.collection_id === c.id))
+                                .map((c) => (
+                                  <CommandItem
+                                    key={c.id}
+                                    value={c.name}
+                                    onSelect={() => {
+                                      setAssociateForm(a => ({ ...a, collection_id: c.id }));
+                                      setCollectionComboboxOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        associateForm.collection_id === c.id ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {c.name} — {c.price.toFixed(2)} €
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                   <div>
                     <Label htmlFor="assoc-initial">Stock initial</Label>
@@ -874,7 +1090,7 @@ export default function ClientDetailPage() {
                         </div>
                       </div>
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                             <Label>Nouveau stock compté</Label>
                             <Input
@@ -913,19 +1129,19 @@ export default function ClientDetailPage() {
                             />
                             <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
                           </div>
-                        </div>
-                        <div>
-                          <Label>Info collection pour facture</Label>
-                          <Input
-                            type="text"
-                            value={perCollectionForm[cc.id]?.collection_info || ''}
-                            onChange={(e) => {
-                              setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
-                            }}
-                            placeholder="Ex: Livraison partielle, Retour prévu..."
-                            className="mt-1.5"
-                          />
-                          <p className="text-xs text-slate-500 mt-1">Information optionnelle affichée dans la colonne "Infos" de la facture</p>
+                          <div>
+                            <Label>Info collection pour facture</Label>
+                            <Input
+                              type="text"
+                              value={perCollectionForm[cc.id]?.collection_info || ''}
+                              onChange={(e) => {
+                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
+                              }}
+                              placeholder="Ex: Livraison partielle, Retour prévu..."
+                              className="mt-1.5"
+                            />
+                            <p className="text-xs text-slate-500 mt-1">Information optionnelle affichée dans la colonne "Infos" de la facture</p>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1317,6 +1533,15 @@ export default function ClientDetailPage() {
             clientCollections={clientCollections}
           />
         )}
+
+        {/* Draft Recovery Dialog */}
+        <DraftRecoveryDialog
+          open={draftRecoveryOpen}
+          onOpenChange={setDraftRecoveryOpen}
+          onResume={handleResumeDraft}
+          onDiscard={handleDiscardDraft}
+          draftDate={draftDate}
+        />
       </div>
     </div>
   );

@@ -456,6 +456,20 @@ export function OpeningHoursEditor({ value, onChange }: OpeningHoursEditorProps)
 }
 
 // Helper pour formater les horaires pour l'affichage
+// Helper pour formater une heure de "09:00" à "9h"
+function formatTime(time: string): string {
+  if (!time || time === '--:--') return '--:--';
+  const [hours, minutes] = time.split(':');
+  const h = parseInt(hours, 10);
+  const m = parseInt(minutes, 10);
+  
+  if (m === 0) {
+    return `${h}h`;
+  } else {
+    return `${h}h${m.toString().padStart(2, '0')}`;
+  }
+}
+
 export function formatWeekSchedule(schedule: any): string {
   if (!schedule) return 'Non renseigné';
 
@@ -482,20 +496,62 @@ export function formatWeekSchedule(schedule: any): string {
     
     if (day.isOpen === true) {
       if (day.hasLunchBreak === true) {
-        const morningOpen = day.morningOpen || '--:--';
-        const morningClose = day.morningClose || '--:--';
-        const afternoonOpen = day.afternoonOpen || '--:--';
-        const afternoonClose = day.afternoonClose || '--:--';
+        const morningOpen = formatTime(day.morningOpen || '--:--');
+        const morningClose = formatTime(day.morningClose || '--:--');
+        const afternoonOpen = formatTime(day.afternoonOpen || '--:--');
+        const afternoonClose = formatTime(day.afternoonClose || '--:--');
         lines.push(`${label}: ${morningOpen} - ${morningClose} / ${afternoonOpen} - ${afternoonClose}`);
       } else {
-        const openTime = day.openTime || '--:--';
-        const closeTime = day.closeTime || '--:--';
+        const openTime = formatTime(day.openTime || '--:--');
+        const closeTime = formatTime(day.closeTime || '--:--');
         lines.push(`${label}: ${openTime} - ${closeTime}`);
       }
     }
   });
 
   return lines.join('\n');
+}
+
+// Helper pour formater les horaires avec séparation jour/horaire
+export function formatWeekScheduleData(schedule: any): Array<{ day: string; hours: string }> {
+  if (!schedule) return [];
+
+  const data: Array<{ day: string; hours: string }> = [];
+  
+  DAYS.forEach(({ key, label }) => {
+    const day = schedule[key];
+    
+    if (!day) {
+      data.push({ day: label, hours: 'Non renseigné' });
+      return;
+    }
+    
+    if (day.notSet === true) {
+      data.push({ day: label, hours: 'Non renseigné' });
+      return;
+    }
+    
+    if (day.isOpen === false || day.isOpen === undefined) {
+      data.push({ day: label, hours: 'Fermé' });
+      return;
+    }
+    
+    if (day.isOpen === true) {
+      if (day.hasLunchBreak === true) {
+        const morningOpen = formatTime(day.morningOpen || '--:--');
+        const morningClose = formatTime(day.morningClose || '--:--');
+        const afternoonOpen = formatTime(day.afternoonOpen || '--:--');
+        const afternoonClose = formatTime(day.afternoonClose || '--:--');
+        data.push({ day: label, hours: `${morningOpen} - ${morningClose} / ${afternoonOpen} - ${afternoonClose}` });
+      } else {
+        const openTime = formatTime(day.openTime || '--:--');
+        const closeTime = formatTime(day.closeTime || '--:--');
+        data.push({ day: label, hours: `${openTime} - ${closeTime}` });
+      }
+    }
+  });
+
+  return data;
 }
 
 // Helper pour initialiser un horaire vide
