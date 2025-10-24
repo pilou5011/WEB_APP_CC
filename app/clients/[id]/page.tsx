@@ -98,7 +98,7 @@ export default function ClientDetailPage() {
     loadClientData();
   }, [clientId]);
 
-  // Check for existing draft on mount
+  // Check for existing draft on mount (once only)
   useEffect(() => {
     const checkForDraft = async () => {
       const draftInfo = await draft.getDraftInfo();
@@ -109,21 +109,21 @@ export default function ClientDetailPage() {
       }
     };
 
-    // Only check after client data is loaded
-    if (!loading && client) {
+    // Only check after client data is loaded, and only on initial load
+    if (!loading && client && !hasDraft && !draftRecoveryOpen) {
       checkForDraft();
     }
-  }, [loading, client]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-save draft whenever form data changes
+  // Auto-save draft whenever form data changes (but not during submission)
   useEffect(() => {
-    if (!loading && client && clientCollections.length > 0) {
+    if (!loading && client && clientCollections.length > 0 && !submitting) {
       draft.autoSave({
         perCollectionForm,
         pendingAdjustments
       });
     }
-  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length, submitting]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -496,7 +496,11 @@ export default function ClientDetailPage() {
         if (clientUpdateError) throw clientUpdateError;
       }
 
-      // ✅ CRITICAL: Débloquer l'interface IMMÉDIATEMENT après la sauvegarde
+      // ✅ CRITICAL: Supprimer le brouillon EN PREMIER pour éviter qu'il se rouvre
+      await draft.deleteDraft();
+      setHasDraft(false);
+      
+      // ✅ Débloquer l'interface IMMÉDIATEMENT
       setConfirmationDialogOpen(false);
       setSubmitting(false);
 
@@ -509,22 +513,13 @@ export default function ClientDetailPage() {
         toast.success('Facture créée avec reprises de stock');
       }
       
-      // ✅ Opérations de nettoyage en arrière-plan (non-bloquantes)
-      // Reset adjustments immédiatement
+      // ✅ Reset adjustments et reload data
       setPendingAdjustments([]);
       
-      // Delete draft en arrière-plan
-      setTimeout(() => {
-        draft.deleteDraft().catch(err => console.error('Draft deletion error:', err));
-      }, 0);
-      
-      // Reload client data en arrière-plan pour rafraîchir les données
-      setTimeout(() => {
-        loadClientData().catch(err => {
-          console.error('Error reloading client data:', err);
-          // Ne pas afficher d'erreur car c'est en arrière-plan
-        });
-      }, 100);
+      // Reload client data pour rafraîchir (sans await pour ne pas bloquer)
+      loadClientData().catch(err => {
+        console.error('Error reloading client data:', err);
+      });
       
     } catch (error) {
       console.error('Error updating stock:', error);
