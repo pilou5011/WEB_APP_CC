@@ -496,6 +496,10 @@ export default function ClientDetailPage() {
         if (clientUpdateError) throw clientUpdateError;
       }
 
+      // ✅ CRITICAL: Débloquer l'interface IMMÉDIATEMENT après la sauvegarde
+      setConfirmationDialogOpen(false);
+      setSubmitting(false);
+
       // Success message based on what was done
       if (hasStockUpdates && hasAdjustments) {
         toast.success('Facture créée avec reprises de stock et mise à jour du stock');
@@ -504,21 +508,29 @@ export default function ClientDetailPage() {
       } else {
         toast.success('Facture créée avec reprises de stock');
       }
-      setConfirmationDialogOpen(false);
       
-      // Delete draft on successful submission
-      await draft.deleteDraft();
-      
-      // Reset adjustments only
+      // ✅ Opérations de nettoyage en arrière-plan (non-bloquantes)
+      // Reset adjustments immédiatement
       setPendingAdjustments([]);
       
-      // Reload client data which will reset the form with pre-filled collection_info
-      await loadClientData();
+      // Delete draft en arrière-plan
+      setTimeout(() => {
+        draft.deleteDraft().catch(err => console.error('Draft deletion error:', err));
+      }, 0);
+      
+      // Reload client data en arrière-plan pour rafraîchir les données
+      setTimeout(() => {
+        loadClientData().catch(err => {
+          console.error('Error reloading client data:', err);
+          // Ne pas afficher d'erreur car c'est en arrière-plan
+        });
+      }, 100);
+      
     } catch (error) {
       console.error('Error updating stock:', error);
       toast.error('Erreur lors de la mise à jour du stock');
-    } finally {
       setSubmitting(false);
+      setConfirmationDialogOpen(false);
     }
   };
 
