@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -49,6 +49,7 @@ export default function ClientDetailPage() {
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
+  const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
   
   // Delete collection dialog
   const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
@@ -95,35 +96,81 @@ export default function ClientDetailPage() {
   const draft = useStockUpdateDraft(clientId);
 
   useEffect(() => {
-    loadClientData();
-  }, [clientId]);
-
-  // Check for existing draft on mount (once only)
-  useEffect(() => {
-    const checkForDraft = async () => {
+    // Reset draft check flag when clientId changes (navigating to different client)
+    draftCheckDoneRef.current = false;
+    
+    // Check for draft BEFORE loading client data
+    const initPage = async () => {
+      // First, check if there's a draft
       const draftInfo = await draft.getDraftInfo();
+      let hasDraftData = false;
+      
       if (draftInfo) {
-        setDraftDate(draftInfo.createdAt);
-        setHasDraft(true);
-        setDraftRecoveryOpen(true);
+        console.log('[Draft] Found draft info before loading client data');
+        // Load the draft data to check if it contains meaningful stock update data
+        let draftData = draft.loadDraftLocally();
+        if (!draftData) {
+          draftData = await draft.loadDraftFromServer();
+        }
+        
+        if (draftData && draft.hasMeaningfulDraft(draftData)) {
+          hasDraftData = true;
+          console.log('[Draft] Has meaningful draft, will skip form initialization');
+        }
       }
+      
+      // Load client data (which will initialize the form if no draft)
+      await loadClientData();
+      
+      // AFTER client data is loaded, show draft recovery dialog if needed
+      if (hasDraftData) {
+        const draftInfo = await draft.getDraftInfo();
+        if (draftInfo) {
+          let draftData = draft.loadDraftLocally();
+          if (!draftData) {
+            draftData = await draft.loadDraftFromServer();
+          }
+          
+          if (draftData && draft.hasMeaningfulDraft(draftData)) {
+            setDraftDate(draftInfo.createdAt);
+            setHasDraft(true);
+            setDraftRecoveryOpen(true);
+            // Immediately restore draft data to prevent it from being overwritten
+            setPerCollectionForm(draftData.perCollectionForm);
+            setPendingAdjustments(draftData.pendingAdjustments);
+          }
+        }
+      }
+      
+      // Mark draft check as done
+      draftCheckDoneRef.current = true;
     };
+    
+    initPage();
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Only check after client data is loaded, and only on initial load
-    if (!loading && client && !hasDraft && !draftRecoveryOpen) {
-      checkForDraft();
-    }
-  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-save draft whenever form data changes (but not during submission)
+  // Auto-save draft whenever form data changes (but not during submission or before draft check)
   useEffect(() => {
+    // Don't autosave until we've checked for existing draft
+    if (!draftCheckDoneRef.current) {
+      console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
+      return;
+    }
+    
+    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+    if (draftRecoveryOpen) {
+      console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
+      return;
+    }
+    
     if (!loading && client && clientCollections.length > 0 && !submitting) {
       draft.autoSave({
         perCollectionForm,
         pendingAdjustments
       });
     }
-  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length, submitting]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -325,21 +372,8 @@ export default function ClientDetailPage() {
 
   const handleResumeDraft = async () => {
     try {
-      // Try local first
-      let draftData = draft.loadDraftLocally();
-      
-      // If not found locally, try server
-      if (!draftData) {
-        draftData = await draft.loadDraftFromServer();
-      }
-
-      if (draftData) {
-        setPerCollectionForm(draftData.perCollectionForm);
-        setPendingAdjustments(draftData.pendingAdjustments);
-        toast.success('Brouillon restauré avec succès');
-      } else {
-        toast.error('Impossible de charger le brouillon');
-      }
+      console.log('[Draft] User confirmed to resume draft (data already loaded)');
+      toast.success('Brouillon restauré avec succès');
     } catch (error) {
       console.error('Error resuming draft:', error);
       toast.error('Erreur lors de la restauration du brouillon');
@@ -352,6 +386,27 @@ export default function ClientDetailPage() {
   const handleDiscardDraft = async () => {
     try {
       await draft.deleteDraft();
+      
+      // Reinitialize form with default values (from last invoice)
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      clientCollections.forEach((cc) => {
+        // Find the last stock update for this collection that has collection_info
+        const lastUpdateWithInfo = stockUpdates.find(
+          (update: StockUpdate) => 
+            update.collection_id === cc.collection_id && 
+            update.collection_info && 
+            update.collection_info.trim() !== ''
+        );
+        
+        initialForm[cc.id] = { 
+          counted_stock: '', 
+          cards_added: '', 
+          collection_info: lastUpdateWithInfo?.collection_info || '' 
+        };
+      });
+      setPerCollectionForm(initialForm);
+      setPendingAdjustments([]);
+      
       toast.info('Brouillon supprimé');
     } catch (error) {
       console.error('Error discarding draft:', error);
@@ -849,10 +904,10 @@ export default function ClientDetailPage() {
                       <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
                           {formatWeekScheduleData(client.opening_hours).map((item, index) => (
-                            <>
-                              <div key={`day-${index}`} className="text-slate-600">{item.day}</div>
-                              <div key={`hours-${index}`} className="text-slate-800">{item.hours}</div>
-                            </>
+                            <React.Fragment key={`schedule-${index}`}>
+                              <div className="text-slate-600">{item.day}</div>
+                              <div className="text-slate-800">{item.hours}</div>
+                            </React.Fragment>
                           ))}
                         </div>
                       </div>

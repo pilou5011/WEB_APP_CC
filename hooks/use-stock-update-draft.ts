@@ -208,13 +208,29 @@ export function useStockUpdateDraft(clientId: string) {
     return !hasCollectionData && !hasAdjustments;
   }, []);
 
+  // Check if draft has meaningful data that warrants showing recovery dialog
+  // Only check counted_stock and cards_added (stock update fields), ignore collection_info
+  const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
+    // Check if any collection form has stock data (not just collection_info)
+    const hasStockData = Object.values(data.perCollectionForm).some(
+      form => form.counted_stock !== '' || form.cards_added !== ''
+    );
+
+    // Adjustments also count as meaningful data
+    const hasAdjustments = data.pendingAdjustments.length > 0;
+
+    return hasStockData || hasAdjustments;
+  }, []);
+
   // Auto-save function (saves to local immediately, syncs to server periodically)
   const autoSave = useCallback((data: DraftStockUpdateData) => {
     // Don't save if data is empty
     if (isDraftEmpty(data)) {
+      console.log('[Draft] AutoSave: Data is empty, not saving');
       return;
     }
 
+    console.log('[Draft] AutoSave: Saving draft data', data);
     // Save to localStorage immediately
     saveDraftLocally(data);
   }, [saveDraftLocally, isDraftEmpty]);
@@ -284,7 +300,8 @@ export function useStockUpdateDraft(clientId: string) {
     loadDraftFromServer,
     getDraftInfo,
     deleteDraft,
-    saveDraftToServer
+    saveDraftToServer,
+    hasMeaningfulDraft
   };
 }
 
