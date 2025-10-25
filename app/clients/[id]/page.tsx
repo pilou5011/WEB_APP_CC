@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash } from 'lucide-react';
 import { toast } from 'sonner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
@@ -1105,110 +1106,113 @@ export default function ClientDetailPage() {
               {clientCollections.length === 0 ? (
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
-                <div className="space-y-4">
-                  {clientCollections.map((cc) => {
-                    const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-                    const isCustomPrice = cc.custom_price !== null;
-                    
-                    return (
-                    <div key={cc.id} className="border border-slate-200 rounded-lg p-4 bg-white">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <p className="font-semibold">{cc.collection?.name || 'Collection'}</p>
-                          <p className="text-sm text-slate-500">Stock actuel: {cc.current_stock}</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <div className="text-right mr-2">
-                            <span className="text-sm font-medium text-slate-700">
-                              Prix: {effectivePrice.toFixed(2)} €
-                            </span>
-                            {isCustomPrice && (
-                              <p className="text-xs text-blue-600">Prix personnalisé</p>
-                            )}
-                            {!isCustomPrice && cc.collection?.price != null && (
-                              <p className="text-xs text-slate-500">Prix par défaut</p>
-                            )}
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditPriceClick(cc)}
-                              className="h-8 w-8 p-0 hover:bg-blue-50"
-                              title="Modifier le prix"
-                            >
-                              <Edit2 className="h-4 w-4 text-blue-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteCollectionClick(cc)}
-                              className="h-8 w-8 p-0 hover:bg-red-50"
-                              title="Supprimer la collection"
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <Label>Nouveau stock compté</Label>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              value={perCollectionForm[cc.id]?.counted_stock || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                // N'accepter que les nombres
-                                if (value === '' || /^\d+$/.test(value)) {
-                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
-                                }
-                              }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              placeholder="Ex: 80"
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Stock constaté à l'arrivée</p>
-                          </div>
-                          <div>
-                            <Label>Nouveau dépôt</Label>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              value={perCollectionForm[cc.id]?.cards_added || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                // N'accepter que les nombres
-                                if (value === '' || /^\d+$/.test(value)) {
-                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
-                                }
-                              }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              placeholder="Ex: 100"
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
-                          </div>
-                          <div>
-                            <Label>Info collection pour facture</Label>
-                            <Input
-                              type="text"
-                              value={perCollectionForm[cc.id]?.collection_info || ''}
-                              onChange={(e) => {
-                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
-                              }}
-                              placeholder="Ex: Livraison partielle, Retour prévu..."
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Information optionnelle affichée dans la colonne "Infos" de la facture</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    );
-                  })}
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="w-[18%] font-semibold">Collection</TableHead>
+                        <TableHead className="w-[12%] font-semibold">Ancien dépôt</TableHead>
+                        <TableHead className="w-[14%] font-semibold">Stock compté</TableHead>
+                        <TableHead className="w-[14%] font-semibold">Nouveau dépôt</TableHead>
+                        <TableHead className="w-[24%] font-semibold">Info collection pour facture</TableHead>
+                        <TableHead className="w-[10%] text-right font-semibold">Prix</TableHead>
+                        <TableHead className="w-[8%] text-right font-semibold">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {clientCollections.map((cc) => {
+                        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+                        const isCustomPrice = cc.custom_price !== null;
+                        
+                        return (
+                          <TableRow key={cc.id} className="hover:bg-slate-50/50">
+                            <TableCell className="align-middle py-3">
+                              <p className="font-medium text-slate-900">{cc.collection?.name || 'Collection'}</p>
+                            </TableCell>
+                            <TableCell className="align-middle py-3 text-center">
+                              <p className="text-sm font-medium text-slate-600">{cc.current_stock}</p>
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={perCollectionForm[cc.id]?.counted_stock || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || /^\d+$/.test(value)) {
+                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
+                                  }
+                                }}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={perCollectionForm[cc.id]?.cards_added || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || /^\d+$/.test(value)) {
+                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
+                                  }
+                                }}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                value={perCollectionForm[cc.id]?.collection_info || ''}
+                                onChange={(e) => {
+                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
+                                }}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3 text-right">
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+                                {isCustomPrice && (
+                                  <p className="text-xs text-blue-600">Personnalisé</p>
+                                )}
+                                {!isCustomPrice && cc.collection?.price != null && (
+                                  <p className="text-xs text-slate-500">Par défaut</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="align-top py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditPriceClick(cc)}
+                                  className="h-8 w-8 p-0 hover:bg-blue-50"
+                                  title="Modifier le prix"
+                                >
+                                  <Edit2 className="h-4 w-4 text-blue-600" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteCollectionClick(cc)}
+                                  className="h-8 w-8 p-0 hover:bg-red-50"
+                                  title="Supprimer la collection"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
