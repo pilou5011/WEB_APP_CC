@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, EstablishmentType } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -580,10 +580,10 @@ export default function ClientInfoPage() {
                         {client.opening_hours ? (
                           <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
                             {formatWeekScheduleData(client.opening_hours).map((item, index) => (
-                              <>
-                                <div key={`day-${index}`} className="text-slate-600">{item.day}</div>
-                                <div key={`hours-${index}`} className="text-slate-800">{item.hours}</div>
-                              </>
+                              <React.Fragment key={`schedule-${index}`}>
+                                <div className="text-slate-600">{item.day}</div>
+                                <div className="text-slate-800">{item.hours}</div>
+                              </React.Fragment>
                             ))}
                           </div>
                         ) : (
