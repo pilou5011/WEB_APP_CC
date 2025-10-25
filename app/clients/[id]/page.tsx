@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash } from 'lucide-react';
 import { toast } from 'sonner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
@@ -49,6 +50,7 @@ export default function ClientDetailPage() {
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
+  const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
   
   // Delete collection dialog
   const [deleteCollectionDialogOpen, setDeleteCollectionDialogOpen] = useState(false);
@@ -95,35 +97,81 @@ export default function ClientDetailPage() {
   const draft = useStockUpdateDraft(clientId);
 
   useEffect(() => {
-    loadClientData();
-  }, [clientId]);
-
-  // Check for existing draft on mount
-  useEffect(() => {
-    const checkForDraft = async () => {
+    // Reset draft check flag when clientId changes (navigating to different client)
+    draftCheckDoneRef.current = false;
+    
+    // Check for draft BEFORE loading client data
+    const initPage = async () => {
+      // First, check if there's a draft
       const draftInfo = await draft.getDraftInfo();
+      let hasDraftData = false;
+      
       if (draftInfo) {
-        setDraftDate(draftInfo.createdAt);
-        setHasDraft(true);
-        setDraftRecoveryOpen(true);
+        console.log('[Draft] Found draft info before loading client data');
+        // Load the draft data to check if it contains meaningful stock update data
+        let draftData = draft.loadDraftLocally();
+        if (!draftData) {
+          draftData = await draft.loadDraftFromServer();
+        }
+        
+        if (draftData && draft.hasMeaningfulDraft(draftData)) {
+          hasDraftData = true;
+          console.log('[Draft] Has meaningful draft, will skip form initialization');
+        }
       }
+      
+      // Load client data (which will initialize the form if no draft)
+      await loadClientData();
+      
+      // AFTER client data is loaded, show draft recovery dialog if needed
+      if (hasDraftData) {
+        const draftInfo = await draft.getDraftInfo();
+        if (draftInfo) {
+          let draftData = draft.loadDraftLocally();
+          if (!draftData) {
+            draftData = await draft.loadDraftFromServer();
+          }
+          
+          if (draftData && draft.hasMeaningfulDraft(draftData)) {
+            setDraftDate(draftInfo.createdAt);
+            setHasDraft(true);
+            setDraftRecoveryOpen(true);
+            // Immediately restore draft data to prevent it from being overwritten
+            setPerCollectionForm(draftData.perCollectionForm);
+            setPendingAdjustments(draftData.pendingAdjustments);
+          }
+        }
+      }
+      
+      // Mark draft check as done
+      draftCheckDoneRef.current = true;
     };
+    
+    initPage();
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Only check after client data is loaded
-    if (!loading && client) {
-      checkForDraft();
-    }
-  }, [loading, client]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-save draft whenever form data changes
+  // Auto-save draft whenever form data changes (but not during submission or before draft check)
   useEffect(() => {
-    if (!loading && client && clientCollections.length > 0) {
+    // Don't autosave until we've checked for existing draft
+    if (!draftCheckDoneRef.current) {
+      console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
+      return;
+    }
+    
+    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+    if (draftRecoveryOpen) {
+      console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
+      return;
+    }
+    
+    if (!loading && client && clientCollections.length > 0 && !submitting) {
       draft.autoSave({
         perCollectionForm,
         pendingAdjustments
       });
     }
-  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -325,21 +373,8 @@ export default function ClientDetailPage() {
 
   const handleResumeDraft = async () => {
     try {
-      // Try local first
-      let draftData = draft.loadDraftLocally();
-      
-      // If not found locally, try server
-      if (!draftData) {
-        draftData = await draft.loadDraftFromServer();
-      }
-
-      if (draftData) {
-        setPerCollectionForm(draftData.perCollectionForm);
-        setPendingAdjustments(draftData.pendingAdjustments);
-        toast.success('Brouillon restauré avec succès');
-      } else {
-        toast.error('Impossible de charger le brouillon');
-      }
+      console.log('[Draft] User confirmed to resume draft (data already loaded)');
+      toast.success('Brouillon restauré avec succès');
     } catch (error) {
       console.error('Error resuming draft:', error);
       toast.error('Erreur lors de la restauration du brouillon');
@@ -352,6 +387,27 @@ export default function ClientDetailPage() {
   const handleDiscardDraft = async () => {
     try {
       await draft.deleteDraft();
+      
+      // Reinitialize form with default values (from last invoice)
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      clientCollections.forEach((cc) => {
+        // Find the last stock update for this collection that has collection_info
+        const lastUpdateWithInfo = stockUpdates.find(
+          (update: StockUpdate) => 
+            update.collection_id === cc.collection_id && 
+            update.collection_info && 
+            update.collection_info.trim() !== ''
+        );
+        
+        initialForm[cc.id] = { 
+          counted_stock: '', 
+          cards_added: '', 
+          collection_info: lastUpdateWithInfo?.collection_info || '' 
+        };
+      });
+      setPerCollectionForm(initialForm);
+      setPendingAdjustments([]);
+      
       toast.info('Brouillon supprimé');
     } catch (error) {
       console.error('Error discarding draft:', error);
@@ -496,6 +552,14 @@ export default function ClientDetailPage() {
         if (clientUpdateError) throw clientUpdateError;
       }
 
+      // ✅ CRITICAL: Supprimer le brouillon EN PREMIER pour éviter qu'il se rouvre
+      await draft.deleteDraft();
+      setHasDraft(false);
+      
+      // ✅ Débloquer l'interface IMMÉDIATEMENT
+      setConfirmationDialogOpen(false);
+      setSubmitting(false);
+
       // Success message based on what was done
       if (hasStockUpdates && hasAdjustments) {
         toast.success('Facture créée avec reprises de stock et mise à jour du stock');
@@ -504,21 +568,20 @@ export default function ClientDetailPage() {
       } else {
         toast.success('Facture créée avec reprises de stock');
       }
-      setConfirmationDialogOpen(false);
       
-      // Delete draft on successful submission
-      await draft.deleteDraft();
-      
-      // Reset adjustments only
+      // ✅ Reset adjustments et reload data
       setPendingAdjustments([]);
       
-      // Reload client data which will reset the form with pre-filled collection_info
-      await loadClientData();
+      // Reload client data pour rafraîchir (sans await pour ne pas bloquer)
+      loadClientData().catch(err => {
+        console.error('Error reloading client data:', err);
+      });
+      
     } catch (error) {
       console.error('Error updating stock:', error);
       toast.error('Erreur lors de la mise à jour du stock');
-    } finally {
       setSubmitting(false);
+      setConfirmationDialogOpen(false);
     }
   };
 
@@ -842,10 +905,10 @@ export default function ClientDetailPage() {
                       <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
                           {formatWeekScheduleData(client.opening_hours).map((item, index) => (
-                            <>
-                              <div key={`day-${index}`} className="text-slate-600">{item.day}</div>
-                              <div key={`hours-${index}`} className="text-slate-800">{item.hours}</div>
-                            </>
+                            <React.Fragment key={`schedule-${index}`}>
+                              <div className="text-slate-600">{item.day}</div>
+                              <div className="text-slate-800">{item.hours}</div>
+                            </React.Fragment>
                           ))}
                         </div>
                       </div>
@@ -1043,110 +1106,113 @@ export default function ClientDetailPage() {
               {clientCollections.length === 0 ? (
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
-                <div className="space-y-4">
-                  {clientCollections.map((cc) => {
-                    const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-                    const isCustomPrice = cc.custom_price !== null;
-                    
-                    return (
-                    <div key={cc.id} className="border border-slate-200 rounded-lg p-4 bg-white">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1">
-                          <p className="font-semibold">{cc.collection?.name || 'Collection'}</p>
-                          <p className="text-sm text-slate-500">Stock actuel: {cc.current_stock}</p>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <div className="text-right mr-2">
-                            <span className="text-sm font-medium text-slate-700">
-                              Prix: {effectivePrice.toFixed(2)} €
-                            </span>
-                            {isCustomPrice && (
-                              <p className="text-xs text-blue-600">Prix personnalisé</p>
-                            )}
-                            {!isCustomPrice && cc.collection?.price != null && (
-                              <p className="text-xs text-slate-500">Prix par défaut</p>
-                            )}
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditPriceClick(cc)}
-                              className="h-8 w-8 p-0 hover:bg-blue-50"
-                              title="Modifier le prix"
-                            >
-                              <Edit2 className="h-4 w-4 text-blue-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteCollectionClick(cc)}
-                              className="h-8 w-8 p-0 hover:bg-red-50"
-                              title="Supprimer la collection"
-                            >
-                              <Trash2 className="h-4 w-4 text-red-600" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <Label>Nouveau stock compté</Label>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              value={perCollectionForm[cc.id]?.counted_stock || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                // N'accepter que les nombres
-                                if (value === '' || /^\d+$/.test(value)) {
-                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
-                                }
-                              }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              placeholder="Ex: 80"
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Stock constaté à l'arrivée</p>
-                          </div>
-                          <div>
-                            <Label>Nouveau dépôt</Label>
-                            <Input
-                              type="text"
-                              inputMode="numeric"
-                              value={perCollectionForm[cc.id]?.cards_added || ''}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                // N'accepter que les nombres
-                                if (value === '' || /^\d+$/.test(value)) {
-                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
-                                }
-                              }}
-                              onWheel={(e) => e.currentTarget.blur()}
-                              placeholder="Ex: 100"
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Stock total après mise à jour</p>
-                          </div>
-                          <div>
-                            <Label>Info collection pour facture</Label>
-                            <Input
-                              type="text"
-                              value={perCollectionForm[cc.id]?.collection_info || ''}
-                              onChange={(e) => {
-                                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
-                              }}
-                              placeholder="Ex: Livraison partielle, Retour prévu..."
-                              className="mt-1.5"
-                            />
-                            <p className="text-xs text-slate-500 mt-1">Information optionnelle affichée dans la colonne "Infos" de la facture</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    );
-                  })}
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead className="w-[18%] font-semibold">Collection</TableHead>
+                        <TableHead className="w-[12%] font-semibold">Ancien dépôt</TableHead>
+                        <TableHead className="w-[14%] font-semibold">Stock compté</TableHead>
+                        <TableHead className="w-[14%] font-semibold">Nouveau dépôt</TableHead>
+                        <TableHead className="w-[24%] font-semibold">Info collection pour facture</TableHead>
+                        <TableHead className="w-[10%] text-right font-semibold">Prix</TableHead>
+                        <TableHead className="w-[8%] text-right font-semibold">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {clientCollections.map((cc) => {
+                        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+                        const isCustomPrice = cc.custom_price !== null;
+                        
+                        return (
+                          <TableRow key={cc.id} className="hover:bg-slate-50/50">
+                            <TableCell className="align-middle py-3">
+                              <p className="font-medium text-slate-900">{cc.collection?.name || 'Collection'}</p>
+                            </TableCell>
+                            <TableCell className="align-middle py-3 text-center">
+                              <p className="text-sm font-medium text-slate-600">{cc.current_stock}</p>
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={perCollectionForm[cc.id]?.counted_stock || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || /^\d+$/.test(value)) {
+                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
+                                  }
+                                }}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={perCollectionForm[cc.id]?.cards_added || ''}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  if (value === '' || /^\d+$/.test(value)) {
+                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
+                                  }
+                                }}
+                                onWheel={(e) => e.currentTarget.blur()}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3">
+                              <Input
+                                type="text"
+                                value={perCollectionForm[cc.id]?.collection_info || ''}
+                                onChange={(e) => {
+                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
+                                }}
+                                placeholder="......"
+                                className="h-9 placeholder:text-slate-400"
+                              />
+                            </TableCell>
+                            <TableCell className="align-top py-3 text-right">
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+                                {isCustomPrice && (
+                                  <p className="text-xs text-blue-600">Personnalisé</p>
+                                )}
+                                {!isCustomPrice && cc.collection?.price != null && (
+                                  <p className="text-xs text-slate-500">Par défaut</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="align-top py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleEditPriceClick(cc)}
+                                  className="h-8 w-8 p-0 hover:bg-blue-50"
+                                  title="Modifier le prix"
+                                >
+                                  <Edit2 className="h-4 w-4 text-blue-600" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteCollectionClick(cc)}
+                                  className="h-8 w-8 p-0 hover:bg-red-50"
+                                  title="Supprimer la collection"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
