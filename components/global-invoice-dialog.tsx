@@ -5,7 +5,7 @@ import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile
 import type { InvoiceAdjustment } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface GlobalInvoiceDialogProps {
@@ -34,6 +34,7 @@ export function GlobalInvoiceDialog({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -456,6 +457,66 @@ export function GlobalInvoiceDialog({
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!client.email) {
+      toast.error('Aucune adresse email renseignée pour ce client');
+      return;
+    }
+
+    if (!pdfBlob) {
+      toast.error('Veuillez patienter, le PDF est en cours de génération');
+      return;
+    }
+
+    try {
+      setSendingEmail(true);
+      
+      // Convertir le blob en base64
+      const reader = new FileReader();
+      reader.readAsDataURL(pdfBlob);
+      
+      reader.onloadend = async () => {
+        const base64data = reader.result?.toString().split(',')[1];
+        
+        if (!base64data) {
+          throw new Error('Erreur de conversion du PDF');
+        }
+        
+        const fileName = `Facture_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(invoice.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;
+        
+        const response = await fetch('/api/send-invoice', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientEmail: client.email,
+            clientName: client.name,
+            pdfBase64: base64data,
+            fileName: fileName,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Erreur lors de l\'envoi');
+        }
+
+        toast.success(`Facture envoyée avec succès à ${client.email}`);
+        setSendingEmail(false);
+      };
+      
+      reader.onerror = () => {
+        throw new Error('Erreur de lecture du PDF');
+      };
+    } catch (error) {
+      console.error('Erreur:', error);
+      toast.error('Erreur lors de l\'envoi de l\'email');
+      setSendingEmail(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
@@ -482,14 +543,43 @@ export function GlobalInvoiceDialog({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Fermer
-          </Button>
-          <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating}>
-            <Download className="mr-2 h-4 w-4" />
-            Télécharger la facture
-          </Button>
+        <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
+          <div className="flex gap-2">
+            {client.email && (
+              <Button 
+                variant="outline" 
+                onClick={handleSendEmail}
+                disabled={!pdfBlob || generating || sendingEmail}
+              >
+                {sendingEmail ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Envoyer par email
+                  </>
+                )}
+              </Button>
+            )}
+            {!client.email && (
+              <div className="text-sm text-slate-500 italic flex items-center">
+                Aucun email renseigné pour ce client
+              </div>
+            )}
+          </div>
+          
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Fermer
+            </Button>
+            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating}>
+              <Download className="mr-2 h-4 w-4" />
+              Télécharger
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
