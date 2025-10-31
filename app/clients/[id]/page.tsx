@@ -895,6 +895,16 @@ export default function ClientDetailPage() {
                     )}
                   </div>
                   
+                  {/* Commentaire */}
+                  {client.comment && (
+                    <div className="mt-3">
+                      <div className="flex items-start gap-2">
+                        <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <p className="text-slate-900 text-base flex-1">{client.comment}</p>
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Horaires d'ouverture */}
                   {client.opening_hours && (
                     <div className="mt-3">
@@ -918,32 +928,6 @@ export default function ClientDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-{/*                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-                  <div className="flex items-center gap-2 text-blue-600 mb-2">
-                    <Package className="h-5 w-5" />
-                    <span className="text-sm font-medium">Stock initial</span>
-                  </div>
-                  <p className="text-3xl font-bold text-blue-900">{client.initial_stock}</p>
-                </div> */}
-
-                <div className="bg-green-50 rounded-lg p-4 border border-green-100">
-                  <div className="flex items-center gap-2 text-green-600 mb-2">
-                    <TrendingUp className="h-5 w-5" />
-                    <span className="text-sm font-medium">Stock actuel</span>
-                  </div>
-                  <p className="text-3xl font-bold text-green-900">{client.current_stock}</p>
-                </div>
-
-{/*                 <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
-                  <div className="flex items-center gap-2 text-orange-600 mb-2">
-                    <TrendingDown className="h-5 w-5" />
-                    <span className="text-sm font-medium">Cartes vendues</span>
-                  </div>
-                  <p className="text-3xl font-bold text-orange-900">{cardsSold}</p>
-                </div> */}
-              </div>
-
               <Separator className="my-6" />
 
 {/* {              <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">

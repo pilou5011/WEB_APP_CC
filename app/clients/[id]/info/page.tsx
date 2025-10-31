@@ -14,6 +14,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, formatWeekScheduleData, validateWeekSchedule } from '@/components/opening-hours-editor';
+import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, formatMarketDaysScheduleData, validateMarketDaysSchedule } from '@/components/market-days-editor';
+import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -31,6 +33,8 @@ export default function ClientInfoPage() {
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
+  const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
+  const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     street_address: '',
@@ -222,8 +226,8 @@ export default function ClientInfoPage() {
       let visitFrequencyNumber: number | null = null;
       if (formData.visit_frequency_number) {
         visitFrequencyNumber = parseInt(formData.visit_frequency_number);
-        if (isNaN(visitFrequencyNumber) || visitFrequencyNumber < 1 || visitFrequencyNumber > 12) {
-          toast.error('La fréquence de passage doit être entre 1 et 12');
+        if (isNaN(visitFrequencyNumber) || visitFrequencyNumber < 1 || visitFrequencyNumber > 52) {
+          toast.error('La fréquence de passage doit être entre 1 et 52');
           setSubmitting(false);
           return;
         }
@@ -630,13 +634,6 @@ export default function ClientInfoPage() {
                           ? client.market_days.join(', ')
                           : <span className="text-slate-400">Non renseigné</span>
                         }
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label className="text-slate-500 text-sm">Jour de fermeture</Label>
-                      <p className="text-lg font-medium mt-1">
-                        {client.closing_day || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1048,7 +1045,7 @@ export default function ClientInfoPage() {
                             <SelectValue placeholder="..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map((num) => (
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map((num) => (
                               <SelectItem key={num} value={num.toString()}>
                                 {num}
                               </SelectItem>
@@ -1141,18 +1138,6 @@ export default function ClientInfoPage() {
                           </Button>
                         ))}
                       </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="closing_day">Jour de fermeture</Label>
-                      <p className="text-xs text-slate-500 mt-1">Ex: Lundi, Dimanche...</p>
-                      <Input
-                        id="closing_day"
-                        value={formData.closing_day}
-                        onChange={(e) => setFormData({ ...formData, closing_day: e.target.value })}
-                        placeholder="Ex: Lundi"
-                        className="mt-1.5"
-                      />
                     </div>
 
                     <div>
