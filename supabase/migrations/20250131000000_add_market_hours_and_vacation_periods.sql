@@ -29,14 +29,14 @@ SET market_days_schedule = (
   SELECT jsonb_object_agg(
     day,
     CASE 
-      WHEN market_days @> to_jsonb(ARRAY[day]) 
+      WHEN market_days @> ARRAY[day]::text[]
       THEN '[]'::jsonb  -- Jour avec marché mais sans horaires définis
       ELSE '[]'::jsonb  -- Pas de marché ce jour
     END
   )
   FROM unnest(ARRAY['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']) AS day
 )
-WHERE market_days IS NOT NULL AND market_days != '[]'::jsonb;
+WHERE market_days IS NOT NULL AND array_length(market_days, 1) > 0;
 
 -- 4. Migrer les données existantes de vacation_start_date et vacation_end_date
 -- vers vacation_periods (si renseignées)
