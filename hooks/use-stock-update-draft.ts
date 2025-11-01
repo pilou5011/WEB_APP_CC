@@ -174,24 +174,64 @@ export function useStockUpdateDraft(clientId: string) {
   // Delete drafts (both local and server)
   const deleteDraft = useCallback(async () => {
     try {
-      // Delete from localStorage
+      console.log('[Draft] Starting deletion for client:', clientId);
+      
+      // Delete from localStorage FIRST
       const key = getLocalStorageKey();
       localStorage.removeItem(key);
       console.log('[Draft] Deleted local draft for client:', clientId);
 
-      // Delete from server
-      const { error } = await supabase
+      // Delete from server - use .select() to get confirmation
+      const { error, data } = await supabase
         .from('draft_stock_updates')
         .delete()
-        .eq('client_id', clientId);
+        .eq('client_id', clientId)
+        .select();
 
-      if (error) throw error;
-      console.log('[Draft] Deleted server draft for client:', clientId);
+      if (error) {
+        console.error('[Draft] Server deletion error:', error);
+        throw error;
+      }
+      
+      console.log('[Draft] Deleted server draft for client:', clientId, 'Rows deleted:', data?.length || 0);
 
       // Clear last sync data
       lastSyncDataRef.current = '';
+      
+      // Verify deletion by checking directly (not using getDraftInfo to avoid circular dependency)
+      const { data: verifyData } = await supabase
+        .from('draft_stock_updates')
+        .select('id')
+        .eq('client_id', clientId)
+        .maybeSingle();
+      
+      if (verifyData) {
+        console.warn('[Draft] WARNING: Draft still exists after deletion attempt! Retrying...');
+        // Try one more time to delete from server
+        const { error: retryError } = await supabase
+          .from('draft_stock_updates')
+          .delete()
+          .eq('client_id', clientId);
+        
+        if (retryError) {
+          console.error('[Draft] Retry deletion also failed:', retryError);
+          throw retryError;
+        } else {
+          console.log('[Draft] Successfully deleted draft on retry');
+        }
+      } else {
+        console.log('[Draft] Deletion verified: no draft remains in database');
+      }
+      
+      // Double-check localStorage is cleared
+      if (localStorage.getItem(key)) {
+        console.warn('[Draft] WARNING: LocalStorage still contains draft data, removing...');
+        localStorage.removeItem(key);
+      }
     } catch (error) {
       console.error('[Draft] Error deleting draft:', error);
+      // Re-throw error so caller knows deletion failed
+      throw error;
     }
   }, [clientId, getLocalStorageKey]);
 
