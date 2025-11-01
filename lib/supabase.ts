@@ -13,6 +13,7 @@ export type Client = {
   street_address: string | null;
   postal_code: string | null;
   city: string | null;
+  department: string | null;
   phone: string | null;
   phone_1_info: string | null;
   phone_2: string | null;

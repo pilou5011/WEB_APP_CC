@@ -17,6 +17,7 @@ import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSch
 import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, formatMarketDaysScheduleData, validateMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 import { ClientCalendar } from '@/components/client-calendar';
+import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -41,6 +42,7 @@ export default function ClientInfoPage() {
     street_address: '',
     postal_code: '',
     city: '',
+    department: '',
     phone: '',
     phone_1_info: '',
     phone_2: '',
@@ -165,11 +167,15 @@ export default function ClientInfoPage() {
         setVacationPeriods([]);
       }
       
+      // Auto-compléter le département si non présent mais code postal disponible
+      const department = data.department || (data.postal_code ? getDepartmentFromPostalCode(data.postal_code) : null);
+      
       setFormData({
         name: data.name || '',
         street_address: data.street_address || '',
         postal_code: data.postal_code || '',
         city: data.city || '',
+        department: department || '',
         phone: data.phone || '',
         phone_1_info: data.phone_1_info || '',
         phone_2: data.phone_2 || '',
@@ -335,6 +341,7 @@ export default function ClientInfoPage() {
           street_address: formData.street_address,
           postal_code: formData.postal_code,
           city: formData.city,
+          department: formData.department || null,
           phone: formData.phone || null,
           phone_1_info: formData.phone_1_info || null,
           phone_2: formData.phone_2 || null,
@@ -553,6 +560,19 @@ export default function ClientInfoPage() {
                         {client.city || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Département</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.department ? formatDepartment(client.department) : (
+                          client.postal_code ? (
+                            formatDepartment(getDepartmentFromPostalCode(client.postal_code)) || <span className="text-slate-400">Non renseigné</span>
+                          ) : (
+                            <span className="text-slate-400">Non renseigné</span>
+                          )
+                        )}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -766,11 +786,13 @@ export default function ClientInfoPage() {
             onClick={() => {
               setIsEditing(false);
               // Restaurer les données du client si on annule l'édition
+              const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
               setFormData({
                 name: client.name || '',
                 street_address: client.street_address || '',
                 postal_code: client.postal_code || '',
                 city: client.city || '',
+                department: department || '',
                 phone: client.phone || '',
                 phone_1_info: client.phone_1_info || '',
                 phone_2: client.phone_2 || '',
@@ -982,7 +1004,11 @@ export default function ClientInfoPage() {
                     <Input
                       id="postal_code"
                       value={formData.postal_code}
-                      onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
+                      onChange={(e) => {
+                        const postalCode = e.target.value;
+                        const department = getDepartmentFromPostalCode(postalCode);
+                        setFormData({ ...formData, postal_code: postalCode, department: department || '' });
+                      }}
                       required
                       placeholder="92400"
                       maxLength={5}
@@ -1000,6 +1026,18 @@ export default function ClientInfoPage() {
                       placeholder="Courbevoie"
                       className="mt-1.5"
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="department">Département</Label>
+                    <Input
+                      id="department"
+                      value={formData.department ? formatDepartment(formData.department) : ''}
+                      readOnly
+                      placeholder="Auto-complété depuis le code postal"
+                      className="mt-1.5 bg-slate-50"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Auto-complété en fonction du code postal</p>
                   </div>
                 </div>
               </div>
@@ -1261,11 +1299,13 @@ export default function ClientInfoPage() {
                   onClick={() => {
                     setIsEditing(false);
                     // Restaurer les données du client si on annule l'édition
+                    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
                     setFormData({
                       name: client.name || '',
                       street_address: client.street_address || '',
                       postal_code: client.postal_code || '',
                       city: client.city || '',
+                      department: department || '',
                       phone: client.phone || '',
                       phone_1_info: client.phone_1_info || '',
                       phone_2: client.phone_2 || '',
