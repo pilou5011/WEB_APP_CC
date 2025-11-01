@@ -386,7 +386,16 @@ export default function ClientDetailPage() {
 
   const handleDiscardDraft = async () => {
     try {
+      console.log('[Draft] Discarding draft for client:', clientId);
+      
+      // CRITICAL: Mark draft check as not done temporarily to prevent auto-save
+      // from recreating the draft while we're deleting it
+      draftCheckDoneRef.current = false;
+      
+      // Delete the draft
       await draft.deleteDraft();
+      
+      console.log('[Draft] Draft deleted successfully, reinitializing form');
       
       // Reinitialize form with default values (from last invoice)
       const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
@@ -405,14 +414,27 @@ export default function ClientDetailPage() {
           collection_info: lastUpdateWithInfo?.collection_info || '' 
         };
       });
+      
+      // Set form data - this will trigger auto-save, but we've disabled it temporarily
       setPerCollectionForm(initialForm);
       setPendingAdjustments([]);
       
-      toast.info('Brouillon supprimé');
+      // CRITICAL: Re-enable draft check and auto-save AFTER a delay to ensure
+      // the deletion is complete and no new draft is created
+      setTimeout(() => {
+        draftCheckDoneRef.current = true;
+        console.log('[Draft] Auto-save re-enabled after draft deletion');
+      }, 1000);
+      
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+      
+      toast.success('Brouillon supprimé avec succès');
     } catch (error) {
-      console.error('Error discarding draft:', error);
+      console.error('[Draft] Error discarding draft:', error);
       toast.error('Erreur lors de la suppression du brouillon');
-    } finally {
+      // Re-enable draft check even on error
+      draftCheckDoneRef.current = true;
       setDraftRecoveryOpen(false);
       setHasDraft(false);
     }
