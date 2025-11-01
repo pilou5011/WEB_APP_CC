@@ -10,7 +10,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, MapPin, Package, Edit, X, Trash2, Search, Building, Settings, Check, ChevronsUpDown, Filter } from 'lucide-react';
+import { Plus, MapPin, Package, Edit, X, Search, Building, Settings, Check, ChevronsUpDown, Filter, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -33,7 +33,9 @@ export default function ClientsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [clientToDelete, setClientToDelete] = useState<{ id: string; name: string } | null>(null);
   const [establishmentTypes, setEstablishmentTypes] = useState<EstablishmentType[]>([]);
   const [newTypeName, setNewTypeName] = useState('');
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
@@ -66,7 +68,6 @@ export default function ClientsPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [updating, setUpdating] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadClients();
@@ -104,16 +105,42 @@ export default function ClientsPage() {
     return Array.from(citySet).sort((a, b) => a.localeCompare(b));
   }, [clients]);
 
+  // Nettoyer le body après suppression (retirer overflow: hidden si nécessaire)
+  useEffect(() => {
+    if (!deleting && !deleteDialogOpen && !editDialogOpen) {
+      // S'assurer que le body n'est pas bloqué
+      document.body.style.overflow = '';
+      document.body.style.paddingRight = '';
+      
+      // Vérifier et supprimer les overlays Radix UI orphelins
+      const overlays = document.querySelectorAll('[data-radix-portal]');
+      overlays.forEach(overlay => {
+        const element = overlay as HTMLElement;
+        const dialogInside = element.querySelector('[role="dialog"], [role="alertdialog"]');
+        if (!dialogInside || dialogInside.getAttribute('data-state') === 'closed') {
+          // Overlay orphelin, le supprimer
+          element.remove();
+        }
+      });
+    }
+  }, [deleting, deleteDialogOpen, editDialogOpen]);
+
   // Filtrer et regrouper les clients par ville
   useEffect(() => {
-    let filtered: Client[] = [];
+    console.log('[FILTER] useEffect de filtrage déclenché', { 
+      clientsCount: clients.length, 
+      searchTerm, 
+      selectedDepartments, 
+      selectedCities 
+    });
+    
+    // Créer une copie du tableau clients pour éviter de modifier l'original
+    let filtered: Client[] = [...clients];
     
     // Filtrage par recherche textuelle
-    if (!searchTerm.trim()) {
-      filtered = clients;
-    } else {
-      filtered = clients.filter(client => {
+    if (searchTerm.trim()) {
         const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(client => {
         return (
           client.name.toLowerCase().includes(searchLower) ||
           client.address?.toLowerCase().includes(searchLower) ||
@@ -143,8 +170,9 @@ export default function ClientsPage() {
       });
     }
 
-    // Trier par ville puis par nom
-    filtered.sort((a, b) => {
+    // Créer une copie pour le tri (ne pas modifier filtered directement)
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
       const cityA = (a.city || '').toLowerCase();
       const cityB = (b.city || '').toLowerCase();
       if (cityA !== cityB) {
@@ -153,7 +181,8 @@ export default function ClientsPage() {
       return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
     });
 
-    setFilteredClients(filtered);
+    console.log('[FILTER] Clients filtrés:', sorted.length);
+    setFilteredClients(sorted);
   }, [clients, searchTerm, selectedDepartments, selectedCities]);
 
   // Grouper les clients par ville
@@ -188,7 +217,7 @@ export default function ClientsPage() {
     return client.address || 'Adresse non renseignée';
   };
 
-  const loadClients = async () => {
+  const loadClients = async (silent = false) => {
     try {
       const { data, error } = await supabase
         .from('clients')
@@ -199,9 +228,13 @@ export default function ClientsPage() {
       setClients(data || []);
     } catch (error) {
       console.error('Error loading clients:', error);
+      if (!silent) {
       toast.error('Erreur lors du chargement des clients');
+      }
     } finally {
+      if (!silent) {
       setLoading(false);
+      }
     }
   };
 
@@ -419,35 +452,163 @@ export default function ClientsPage() {
   };
 
   const handleDeleteClick = () => {
-    setDeleteDialogOpen(true);
+    if (!editingClient) {
+      console.warn('[DELETE] handleDeleteClick: aucun editingClient');
+      return;
+    }
+    
+    console.log('[DELETE] handleDeleteClick: stockage du client à supprimer', { 
+      id: editingClient.id, 
+      name: editingClient.name 
+    });
+    
+    // Stocker les infos du client AVANT d'ouvrir l'AlertDialog
+    setClientToDelete({ id: editingClient.id, name: editingClient.name });
+    
+    // Fermer le Dialog parent AVANT d'ouvrir l'AlertDialog pour éviter les conflits de focus
+    console.log('[DELETE] Fermeture du Dialog parent');
+    setEditDialogOpen(false);
+    
+    // Petite délai pour que le Dialog se ferme proprement avant d'ouvrir l'AlertDialog
+    setTimeout(() => {
+      console.log('[DELETE] Ouverture de l\'AlertDialog');
+      setDeleteDialogOpen(true);
+    }, 100);
   };
 
   const handleDeleteConfirm = async () => {
-    if (!editingClient) return;
+    console.log('[DELETE] handleDeleteConfirm appelé');
+    console.log('[DELETE] clientToDelete:', clientToDelete);
+    
+    // Utiliser clientToDelete au lieu de editingClient
+    if (!clientToDelete) {
+      console.warn('[DELETE] Aucun client à supprimer (clientToDelete est null)');
+      setDeleteDialogOpen(false);
+      return;
+    }
 
+    const clientIdToDelete = clientToDelete.id;
+    const clientNameToDelete = clientToDelete.name;
+    
+    console.log('[DELETE] Client à supprimer:', { id: clientIdToDelete, name: clientNameToDelete });
+    
+    // CRITIQUE: Réinitialiser editingClient IMMÉDIATEMENT pour éviter qu'il soit utilisé
+    // pendant la fermeture des dialogues ou dans d'autres effets
+    console.log('[DELETE] Réinitialisation IMMÉDIATE de editingClient');
+    setEditingClient(null);
+    setEditFormData({ 
+      name: '', 
+      address: '', 
+      street_address: '', 
+      postal_code: '', 
+      city: '', 
+      phone: '', 
+      rcs_number: '', 
+      naf_code: '', 
+      client_number: '', 
+      establishment_type_id: '', 
+      initial_stock: '' 
+    });
+    
+    console.log('[DELETE] Mise à jour de l\'état deleting à true');
     setDeleting(true);
 
+    // Fermer TOUS les dialogues AVANT la suppression pour éviter les conflits
+    console.log('[DELETE] Fermeture de tous les dialogues AVANT suppression');
+    setDeleteDialogOpen(false);
+    setEditDialogOpen(false);
+    setDepartmentFilterOpen(false);
+    setCityFilterOpen(false);
+
     try {
+      console.log('[DELETE] Appel à Supabase pour supprimer le client');
       const { error } = await supabase
         .from('clients')
         .delete()
-        .eq('id', editingClient.id);
+        .eq('id', clientIdToDelete);
 
-      if (error) throw error;
+      console.log('[DELETE] Réponse Supabase:', { error });
 
-      // Supprimer le client de la liste
-      setClients(clients.filter(client => client.id !== editingClient.id));
+      if (error) {
+        console.error('[DELETE] Erreur lors de la suppression:', error);
+        let errorMessage = 'Erreur lors de la suppression du client';
+        
+        if (error.code === '23503') {
+          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements';
+        } else if (error.message) {
+          errorMessage = `Erreur : ${error.message}`;
+        }
+        
+        toast.error(errorMessage);
+        console.log('[DELETE] Mise à jour de l\'état deleting à false (erreur)');
+        setDeleting(false);
+        setClientToDelete(null);
+        return;
+      }
 
-      toast.success('Client supprimé avec succès');
-      setDeleteDialogOpen(false);
-      setEditDialogOpen(false);
-      setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
-    } catch (error) {
-      console.error('Error deleting client:', error);
-      toast.error('Erreur lors de la suppression du client');
+      console.log('[DELETE] Suppression réussie, mise à jour de la liste locale');
+      // Mise à jour locale de la liste IMMÉDIATEMENT
+      setClients(prevClients => {
+        const filtered = prevClients.filter(client => client.id !== clientIdToDelete);
+        console.log('[DELETE] Liste mise à jour, nouveau nombre de clients:', filtered.length);
+        return filtered;
+      });
+
+      console.log('[DELETE] Affichage du message de succès');
+      // Afficher le message de succès IMMÉDIATEMENT
+      toast.success(`Client "${clientNameToDelete}" supprimé avec succès`);
+
+      console.log('[DELETE] Réinitialisation finale des états');
+      // Réinitialiser clientToDelete
+      setClientToDelete(null);
+      
+    } catch (error: any) {
+      console.error('[DELETE] Erreur inattendue:', error);
+      toast.error(error?.message || 'Erreur inattendue lors de la suppression du client');
+      setClientToDelete(null);
     } finally {
+      console.log('[DELETE] Finalement, mise à jour de deleting à false');
       setDeleting(false);
+      
+      // NETTOYAGE FORCÉ après un court délai pour s'assurer que tout est bien fermé
+      setTimeout(() => {
+        console.log('[DELETE] Nettoyage forcé des overlays et du body');
+        
+        // Nettoyer le body en premier
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        document.body.style.pointerEvents = '';
+        
+        // Désactiver tous les overlays qui pourraient bloquer
+        const allOverlays = document.querySelectorAll('[data-radix-portal], [data-radix-dialog-overlay], [data-radix-alert-dialog-overlay]');
+        allOverlays.forEach(overlay => {
+          const element = overlay as HTMLElement;
+          const dialog = element.querySelector('[role="dialog"], [role="alertdialog"]');
+          const state = dialog?.getAttribute('data-state');
+          
+          // Si le dialog est fermé ou n'existe pas, désactiver l'overlay
+          if (!dialog || state === 'closed' || state === null) {
+            element.style.pointerEvents = 'none';
+            element.style.display = 'none';
+          }
+        });
+        
+        // Forcer la fermeture de tous les dialogues (encore une fois pour être sûr)
+        setDeleteDialogOpen(false);
+        setEditDialogOpen(false);
+        setDepartmentFilterOpen(false);
+        setCityFilterOpen(false);
+        
+        // Remettre le focus sur le body pour permettre les interactions
+        if (document.activeElement && document.activeElement !== document.body) {
+          (document.activeElement as HTMLElement).blur();
+        }
+        document.body.focus();
+        
+        console.log('[DELETE] Nettoyage terminé');
+      }, 150);
+      
+      console.log('[DELETE] Fin de handleDeleteConfirm');
     }
   };
 
@@ -865,7 +1026,18 @@ export default function ClientsPage() {
         </div>
 
         {/* Dialog de modification */}
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <Dialog 
+          open={editDialogOpen} 
+          onOpenChange={(open) => {
+            setEditDialogOpen(open);
+            // Ne réinitialiser que si on ferme ET qu'on n'est pas en train de supprimer
+            // ET qu'on ne va pas ouvrir l'AlertDialog
+            if (!open && !clientToDelete && !deleting) {
+              setEditingClient(null);
+              setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
+            }
+          }}
+        >
           <DialogContent>
             <form onSubmit={handleEditSubmit}>
               <DialogHeader>
@@ -1046,20 +1218,43 @@ export default function ClientsPage() {
         </Dialog>
 
         {/* Dialog de confirmation de suppression */}
-        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialog 
+          open={deleteDialogOpen} 
+          onOpenChange={(open) => {
+            // Ne permettre la fermeture que si on n'est pas en train de supprimer
+            if (!deleting) {
+              setDeleteDialogOpen(open);
+              // Si on ferme l'AlertDialog sans supprimer, réinitialiser clientToDelete
+              if (!open) {
+                setClientToDelete(null);
+                // Rouvrir le Dialog d'édition si on avait un client en cours d'édition
+                if (editingClient) {
+                  // Utiliser requestAnimationFrame pour éviter les conflits
+                  requestAnimationFrame(() => {
+                    setEditDialogOpen(true);
+                  });
+                }
+              }
+            }
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Êtes-vous sûr de vouloir supprimer ce client ?</AlertDialogTitle>
               <AlertDialogDescription>
-                Cette action est irréversible. Le client "{editingClient?.name}" et toutes ses données associées seront définitivement supprimés.
+                Cette action est irréversible. Le client "{clientToDelete?.name || editingClient?.name}" et toutes ses données associées seront définitivement supprimés.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
               <AlertDialogAction
-                onClick={handleDeleteConfirm}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteConfirm();
+                }}
                 disabled={deleting}
-                className="bg-red-600 hover:bg-red-700"
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deleting ? 'Suppression en cours...' : 'Supprimer définitivement'}
               </AlertDialogAction>
@@ -1115,8 +1310,8 @@ export default function ClientsPage() {
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                   {cityClients.map((client) => (
-                    <Card
-                      key={client.id}
+                <Card
+                  key={client.id}
                       className="hover:shadow-md transition-all duration-200 border-slate-200 cursor-pointer"
                       onClick={() => router.push(`/clients/${client.id}`)}
                     >
@@ -1128,25 +1323,25 @@ export default function ClientsPage() {
                             </CardTitle>
                             <CardDescription className="text-xs text-slate-600 mt-1.5 line-clamp-2">
                               {formatAddress(client)}
-                            </CardDescription>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditClick(client);
-                            }}
+                        </CardDescription>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditClick(client);
+                        }}
                             className="h-6 w-6 p-0 hover:bg-slate-100 flex-shrink-0"
-                          >
+                      >
                             <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </CardHeader>
+                      </Button>
+                    </div>
+                  </CardHeader>
                     </Card>
                   ))}
-                </div>
-              </div>
+                      </div>
+                    </div>
             ))}
           </div>
         )}
