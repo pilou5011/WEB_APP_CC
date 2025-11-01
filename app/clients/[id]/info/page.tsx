@@ -14,6 +14,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, formatWeekScheduleData, validateWeekSchedule } from '@/components/opening-hours-editor';
+import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, formatMarketDaysScheduleData, validateMarketDaysSchedule } from '@/components/market-days-editor';
+import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
+import { ClientCalendar } from '@/components/client-calendar';
+import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -31,11 +35,14 @@ export default function ClientInfoPage() {
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
+  const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
+  const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     street_address: '',
     postal_code: '',
     city: '',
+    department: '',
     phone: '',
     phone_1_info: '',
     phone_2: '',
@@ -57,7 +64,6 @@ export default function ClientInfoPage() {
     email: '',
     comment: ''
   });
-  const [marketDays, setMarketDays] = useState<string[]>([]);
 
   useEffect(() => {
     loadClient();
@@ -112,12 +118,64 @@ export default function ClientInfoPage() {
       } else {
         setOpeningHours(defaultSchedule);
       }
+
+      // Charger les jours de marché avec horaires
+      const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+      if (data.market_days_schedule) {
+        const loadedMarketSchedule = data.market_days_schedule as any;
+        const mergedMarketSchedule = { ...defaultMarketSchedule };
+        
+        Object.keys(defaultMarketSchedule).forEach((day) => {
+          if (loadedMarketSchedule[day]) {
+            mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+          }
+        });
+        
+        setMarketDaysSchedule(mergedMarketSchedule);
+      } else {
+        setMarketDaysSchedule(defaultMarketSchedule);
+      }
+
+      // Charger les périodes de vacances avec migration des anciennes données
+      if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
+        const migratedPeriods = data.vacation_periods.map((period: any) => {
+          // Migration : si inputType n'existe pas, c'est une ancienne donnée
+          if (!period.inputType) {
+            let year: number | undefined = undefined;
+            
+            if (!period.isRecurring && period.startDate) {
+              const dateYear = new Date(period.startDate).getFullYear();
+              // Si l'année n'est pas 2000, c'est une vraie année
+              // Si c'est 2000, on cherche dans period.year s'il existe
+              if (dateYear !== 2000) {
+                year = dateYear;
+              } else if (period.year) {
+                year = period.year;
+              }
+            }
+            
+            return {
+              ...period,
+              inputType: 'dates' as const,
+              year
+            };
+          }
+          return period;
+        });
+        setVacationPeriods(migratedPeriods as VacationPeriod[]);
+      } else {
+        setVacationPeriods([]);
+      }
+      
+      // Auto-compléter le département si non présent mais code postal disponible
+      const department = data.department || (data.postal_code ? getDepartmentFromPostalCode(data.postal_code) : null);
       
       setFormData({
         name: data.name || '',
         street_address: data.street_address || '',
         postal_code: data.postal_code || '',
         city: data.city || '',
+        department: department || '',
         phone: data.phone || '',
         phone_1_info: data.phone_1_info || '',
         phone_2: data.phone_2 || '',
@@ -139,7 +197,6 @@ export default function ClientInfoPage() {
         email: data.email || '',
         comment: data.comment || ''
       });
-      setMarketDays(data.market_days || []);
     } catch (error) {
       console.error('Error loading client:', error);
       toast.error('Erreur lors du chargement du client');
@@ -222,8 +279,8 @@ export default function ClientInfoPage() {
       let visitFrequencyNumber: number | null = null;
       if (formData.visit_frequency_number) {
         visitFrequencyNumber = parseInt(formData.visit_frequency_number);
-        if (isNaN(visitFrequencyNumber) || visitFrequencyNumber < 1 || visitFrequencyNumber > 12) {
-          toast.error('La fréquence de passage doit être entre 1 et 12');
+        if (isNaN(visitFrequencyNumber) || visitFrequencyNumber < 1 || visitFrequencyNumber > 52) {
+          toast.error('La fréquence de passage doit être entre 1 et 52');
           setSubmitting(false);
           return;
         }
@@ -233,6 +290,22 @@ export default function ClientInfoPage() {
       const scheduleValidation = validateWeekSchedule(openingHours);
       if (!scheduleValidation.valid) {
         toast.error(scheduleValidation.message || 'Erreur de validation des horaires');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation des jours de marché avec horaires
+      const marketDaysValidation = validateMarketDaysSchedule(marketDaysSchedule);
+      if (!marketDaysValidation.valid) {
+        toast.error(marketDaysValidation.message || 'Erreur de validation des jours de marché');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation des périodes de vacances
+      const vacationPeriodsValidation = validateVacationPeriods(vacationPeriods);
+      if (!vacationPeriodsValidation.valid) {
+        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de vacances');
         setSubmitting(false);
         return;
       }
@@ -259,16 +332,6 @@ export default function ClientInfoPage() {
         }
       }
 
-      // Validation de la période de vacances
-      if (formData.vacation_start_date && formData.vacation_end_date) {
-        const startDate = new Date(formData.vacation_start_date);
-        const endDate = new Date(formData.vacation_end_date);
-        if (endDate < startDate) {
-          toast.error('La date de fin des vacances doit être égale ou postérieure à la date de début');
-          setSubmitting(false);
-          return;
-        }
-      }
 
       const { data, error } = await supabase
         .from('clients')
@@ -278,6 +341,7 @@ export default function ClientInfoPage() {
           street_address: formData.street_address,
           postal_code: formData.postal_code,
           city: formData.city,
+          department: formData.department || null,
           phone: formData.phone || null,
           phone_1_info: formData.phone_1_info || null,
           phone_2: formData.phone_2 || null,
@@ -293,10 +357,8 @@ export default function ClientInfoPage() {
           visit_frequency_unit: formData.visit_frequency_unit || null,
           average_time_hours: averageTimeHours,
           average_time_minutes: averageTimeMinutes,
-          vacation_start_date: formData.vacation_start_date || null,
-          vacation_end_date: formData.vacation_end_date || null,
-          closing_day: formData.closing_day || null,
-          market_days: marketDays.length > 0 ? marketDays : null,
+          market_days_schedule: marketDaysSchedule,
+          vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
           payment_method: formData.payment_method || null,
           email: formData.email || null,
           comment: formData.comment || null,
@@ -350,9 +412,30 @@ export default function ClientInfoPage() {
       } else {
         setOpeningHours(defaultSchedule);
       }
-      
-      // Mettre à jour les jours de marché
-      setMarketDays(data.market_days || []);
+
+      // Mettre à jour les jours de marché avec horaires
+      const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+      if (data.market_days_schedule) {
+        const loadedMarketSchedule = data.market_days_schedule as any;
+        const mergedMarketSchedule = { ...defaultMarketSchedule };
+        
+        Object.keys(defaultMarketSchedule).forEach((day) => {
+          if (loadedMarketSchedule[day]) {
+            mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+          }
+        });
+        
+        setMarketDaysSchedule(mergedMarketSchedule);
+      } else {
+        setMarketDaysSchedule(defaultMarketSchedule);
+      }
+
+      // Mettre à jour les périodes de vacances
+      if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
+        setVacationPeriods(data.vacation_periods as VacationPeriod[]);
+      } else {
+        setVacationPeriods([]);
+      }
       
       toast.success('Informations mises à jour avec succès');
       setIsEditing(false);
@@ -475,6 +558,19 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Ville</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.city || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Département</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.department ? formatDepartment(client.department) : (
+                          client.postal_code ? (
+                            formatDepartment(getDepartmentFromPostalCode(client.postal_code)) || <span className="text-slate-400">Non renseigné</span>
+                          ) : (
+                            <span className="text-slate-400">Non renseigné</span>
+                          )
+                        )}
                       </p>
                     </div>
                   </div>
@@ -614,29 +710,30 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Période de vacances</Label>
-                      <p className="text-lg font-medium mt-1">
-                        {client.vacation_start_date && client.vacation_end_date 
-                          ? `Du ${new Date(client.vacation_start_date).toLocaleDateString('fr-FR')} au ${new Date(client.vacation_end_date).toLocaleDateString('fr-FR')} (compris)`
-                          : <span className="text-slate-400">Non renseigné</span>
-                        }
-                      </p>
-                    </div>
-
-                    <div>
                       <Label className="text-slate-500 text-sm">Jour(s) de marché</Label>
-                      <p className="text-lg font-medium mt-1">
-                        {client.market_days && client.market_days.length > 0 
-                          ? client.market_days.join(', ')
-                          : <span className="text-slate-400">Non renseigné</span>
-                        }
-                      </p>
+                      <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-200">
+                        {client.market_days_schedule ? (
+                          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
+                            {formatMarketDaysScheduleData(client.market_days_schedule as any).map((item, index) => (
+                              <React.Fragment key={`market-${index}`}>
+                                <div className="text-slate-600">{item.day}</div>
+                                <div className="text-slate-800">{item.hours}</div>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">Non renseigné</span>
+                        )}
+                      </div>
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Jour de fermeture</Label>
+                      <Label className="text-slate-500 text-sm">Période(s) de vacances</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.closing_day || <span className="text-slate-400">Non renseigné</span>}
+                        {client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0
+                          ? formatVacationPeriods(client.vacation_periods as VacationPeriod[])
+                          : <span className="text-slate-400">Non renseigné</span>
+                        }
                       </p>
                     </div>
 
@@ -654,6 +751,22 @@ export default function ClientInfoPage() {
                       </p>
                     </div>
                   </div>
+                </div>
+
+                {/* Calendrier des ouvertures/fermetures */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                    <Calendar className="h-5 w-5" />
+                    <h3>Calendrier des ouvertures</h3>
+                  </div>
+                  <Separator />
+                  
+                  <ClientCalendar
+                    openingHours={openingHours}
+                    vacationPeriods={vacationPeriods}
+                    marketDaysSchedule={marketDaysSchedule}
+                    clientName={client.name}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -673,11 +786,13 @@ export default function ClientInfoPage() {
             onClick={() => {
               setIsEditing(false);
               // Restaurer les données du client si on annule l'édition
+              const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
               setFormData({
                 name: client.name || '',
                 street_address: client.street_address || '',
                 postal_code: client.postal_code || '',
                 city: client.city || '',
+                department: department || '',
                 phone: client.phone || '',
                 phone_1_info: client.phone_1_info || '',
                 phone_2: client.phone_2 || '',
@@ -699,7 +814,6 @@ export default function ClientInfoPage() {
                 email: client.email || '',
                 comment: client.comment || ''
               });
-              setMarketDays(client.market_days || []);
               const defaultSchedule = getDefaultWeekSchedule();
               if (client.opening_hours) {
                 const loadedSchedule = client.opening_hours as any;
@@ -714,6 +828,26 @@ export default function ClientInfoPage() {
                 setOpeningHours(mergedSchedule);
               } else {
                 setOpeningHours(defaultSchedule);
+              }
+              const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+              if (client.market_days_schedule) {
+                const loadedMarketSchedule = client.market_days_schedule as any;
+                const mergedMarketSchedule = { ...defaultMarketSchedule };
+                
+                Object.keys(defaultMarketSchedule).forEach((day) => {
+                  if (loadedMarketSchedule[day]) {
+                    mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+                  }
+                });
+                
+                setMarketDaysSchedule(mergedMarketSchedule);
+              } else {
+                setMarketDaysSchedule(defaultMarketSchedule);
+              }
+              if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
+                setVacationPeriods(client.vacation_periods as VacationPeriod[]);
+              } else {
+                setVacationPeriods([]);
               }
               setShowNewTypeInput(false);
               setNewTypeName('');
@@ -870,7 +1004,11 @@ export default function ClientInfoPage() {
                     <Input
                       id="postal_code"
                       value={formData.postal_code}
-                      onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
+                      onChange={(e) => {
+                        const postalCode = e.target.value;
+                        const department = getDepartmentFromPostalCode(postalCode);
+                        setFormData({ ...formData, postal_code: postalCode, department: department || '' });
+                      }}
                       required
                       placeholder="92400"
                       maxLength={5}
@@ -888,6 +1026,18 @@ export default function ClientInfoPage() {
                       placeholder="Courbevoie"
                       className="mt-1.5"
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="department">Département</Label>
+                    <Input
+                      id="department"
+                      value={formData.department ? formatDepartment(formData.department) : ''}
+                      readOnly
+                      placeholder="Auto-complété depuis le code postal"
+                      className="mt-1.5 bg-slate-50"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Auto-complété en fonction du code postal</p>
                   </div>
                 </div>
               </div>
@@ -1048,7 +1198,7 @@ export default function ClientInfoPage() {
                             <SelectValue placeholder="..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {Array.from({ length: 12 }, (_, i) => i + 1).map((num) => (
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map((num) => (
                               <SelectItem key={num} value={num.toString()}>
                                 {num}
                               </SelectItem>
@@ -1098,62 +1248,21 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label>Période de vacances</Label>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-sm">Du</span>
-                        <Input
-                          type="date"
-                          value={formData.vacation_start_date}
-                          onChange={(e) => setFormData({ ...formData, vacation_start_date: e.target.value })}
-                          className="w-40"
-                        />
-                        <span className="text-sm">au</span>
-                        <Input
-                          type="date"
-                          value={formData.vacation_end_date}
-                          onChange={(e) => setFormData({ ...formData, vacation_end_date: e.target.value })}
-                          className="w-40"
-                        />
-                        <span className="text-sm">(compris)</span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label>Jour(s) de marché</Label>
-                      <p className="text-xs text-slate-500 mt-1">Cliquez sur un ou plusieurs jours</p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'].map((day) => (
-                          <Button
-                            key={day}
-                            type="button"
-                            variant={marketDays.includes(day) ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              if (marketDays.includes(day)) {
-                                setMarketDays(marketDays.filter(d => d !== day));
-                              } else {
-                                setMarketDays([...marketDays, day]);
-                              }
-                            }}
-                            className={marketDays.includes(day) ? "bg-blue-600 hover:bg-blue-700" : ""}
-                          >
-                            {day}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="closing_day">Jour de fermeture</Label>
-                      <p className="text-xs text-slate-500 mt-1">Ex: Lundi, Dimanche...</p>
-                      <Input
-                        id="closing_day"
-                        value={formData.closing_day}
-                        onChange={(e) => setFormData({ ...formData, closing_day: e.target.value })}
-                        placeholder="Ex: Lundi"
-                        className="mt-1.5"
+                      <VacationPeriodsEditor
+                        value={vacationPeriods}
+                        onChange={setVacationPeriods}
                       />
                     </div>
+
+                    <div>
+                      <Label className="text-base font-medium mb-3 block">Jour(s) de marché</Label>
+                      <MarketDaysEditor
+                        value={marketDaysSchedule}
+                        onChange={setMarketDaysSchedule}
+                      />
+                    </div>
+
+                    <Separator />
 
                     <div>
                       <Label htmlFor="payment_method">Règlement</Label>
@@ -1190,11 +1299,13 @@ export default function ClientInfoPage() {
                   onClick={() => {
                     setIsEditing(false);
                     // Restaurer les données du client si on annule l'édition
+                    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
                     setFormData({
                       name: client.name || '',
                       street_address: client.street_address || '',
                       postal_code: client.postal_code || '',
                       city: client.city || '',
+                      department: department || '',
                       phone: client.phone || '',
                       phone_1_info: client.phone_1_info || '',
                       phone_2: client.phone_2 || '',
@@ -1216,7 +1327,6 @@ export default function ClientInfoPage() {
                       email: client.email || '',
                       comment: client.comment || ''
                     });
-                    setMarketDays(client.market_days || []);
                     const defaultSchedule = getDefaultWeekSchedule();
                     if (client.opening_hours) {
                       const loadedSchedule = client.opening_hours as any;
@@ -1231,6 +1341,26 @@ export default function ClientInfoPage() {
                       setOpeningHours(mergedSchedule);
                     } else {
                       setOpeningHours(defaultSchedule);
+                    }
+                    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+                    if (client.market_days_schedule) {
+                      const loadedMarketSchedule = client.market_days_schedule as any;
+                      const mergedMarketSchedule = { ...defaultMarketSchedule };
+                      
+                      Object.keys(defaultMarketSchedule).forEach((day) => {
+                        if (loadedMarketSchedule[day]) {
+                          mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+                        }
+                      });
+                      
+                      setMarketDaysSchedule(mergedMarketSchedule);
+                    } else {
+                      setMarketDaysSchedule(defaultMarketSchedule);
+                    }
+                    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
+                      setVacationPeriods(client.vacation_periods as VacationPeriod[]);
+                    } else {
+                      setVacationPeriods([]);
                     }
                     setShowNewTypeInput(false);
                     setNewTypeName('');

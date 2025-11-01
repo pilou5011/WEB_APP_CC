@@ -13,6 +13,7 @@ export type Client = {
   street_address: string | null;
   postal_code: string | null;
   city: string | null;
+  department: string | null;
   phone: string | null;
   phone_1_info: string | null;
   phone_2: string | null;
@@ -31,6 +32,8 @@ export type Client = {
   vacation_start_date: string | null;
   vacation_end_date: string | null;
   market_days: string[] | null;
+  market_days_schedule: any | null;  // Structure: {"Lundi": [{"start": "08:00", "end": "12:00"}], ...}
+  vacation_periods: any | null;      // Structure: [{"id": "period-123", "startDate": "2024-07-01", "endDate": "2024-07-31", "isRecurring": true}]
   closing_day: string | null;
   payment_method: string | null;
   email: string | null;
