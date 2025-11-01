@@ -2,9 +2,8 @@
 
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, X } from 'lucide-react';
 
 export interface MarketDaySchedule {
@@ -28,6 +27,66 @@ interface MarketDaysEditorProps {
 }
 
 const DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'] as const;
+
+// Générer les options d'heures (00 à 23)
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+
+// Options de minutes
+const MINUTE_OPTIONS = ['00', '15', '30', '45'];
+
+// Composant pour sélectionner une heure avec deux listes déroulantes
+interface TimeSelectorProps {
+  value: string | undefined;
+  onChange: (time: string) => void;
+  label: string;
+}
+
+function TimeSelector({ value, onChange, label }: TimeSelectorProps) {
+  const timeParts = value && value.includes(':') ? value.split(':') : ['', ''];
+  const hour = timeParts[0] || '';
+  const minute = timeParts[1] || '';
+  
+  const updateTime = (newHour?: string, newMinute?: string) => {
+    const h = newHour !== undefined ? newHour : (hour || '00');
+    const m = newMinute !== undefined ? newMinute : (minute || '00');
+    onChange(`${h}:${m}`);
+  };
+
+  return (
+    <div>
+      <Label className="text-xs text-slate-600">{label}</Label>
+      <div className="flex gap-1 mt-1">
+        <Select
+          value={hour || ''}
+          onValueChange={(val) => updateTime(val, minute)}
+        >
+          <SelectTrigger className="w-16">
+            <SelectValue placeholder="--" />
+          </SelectTrigger>
+          <SelectContent>
+            {HOUR_OPTIONS.map((h) => (
+              <SelectItem key={h} value={h}>{h}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="flex items-center text-slate-600">:</span>
+        <Select
+          value={minute || ''}
+          onValueChange={(val) => updateTime(hour, val)}
+        >
+          <SelectTrigger className="w-16">
+            <SelectValue placeholder="--" />
+          </SelectTrigger>
+          <SelectContent>
+            {MINUTE_OPTIONS.map((m) => (
+              <SelectItem key={m} value={m}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
 
 export function getDefaultMarketDaysSchedule(): MarketDaysSchedule {
   return {
@@ -162,30 +221,27 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
                 </Button>
               </div>
               
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {value[day].map((range, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Input
-                      type="time"
+                  <div key={index} className="flex items-end gap-3 border border-slate-200 rounded p-2 bg-white">
+                    <TimeSelector
                       value={range.start}
-                      onChange={(e) => handleTimeChange(day, index, 'start', e.target.value)}
-                      className="w-28"
+                      onChange={(val) => handleTimeChange(day, index, 'start', val)}
+                      label="Début"
                     />
-                    <span className="text-sm">-</span>
-                    <Input
-                      type="time"
+                    <TimeSelector
                       value={range.end}
-                      onChange={(e) => handleTimeChange(day, index, 'end', e.target.value)}
-                      className="w-28"
+                      onChange={(val) => handleTimeChange(day, index, 'end', val)}
+                      label="Fin"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       onClick={() => handleRemoveTimeRange(day, index)}
-                      className="h-8 w-8 p-0"
+                      className="h-8 w-8 p-0 mb-0.5 hover:bg-red-50"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-4 w-4 text-red-600" />
                     </Button>
                   </div>
                 ))}
