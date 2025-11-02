@@ -331,8 +331,6 @@ export function DepositSlipDialog({
         ]],
         body: tableData,
         theme: 'grid',
-        columnWidths: columnWidths,
-        tableWidth: tableWidth,
         margin: { left: marginLeft, right: marginRight },
         headStyles: {
           fillColor: [71, 85, 105],
@@ -350,11 +348,11 @@ export function DepositSlipDialog({
           overflow: 'linebreak'
         },
         columnStyles: {
-          0: { halign: 'left' },
-          1: { halign: 'left', fontSize: 7 },
-          2: { halign: 'center', fontSize: 7 }, // 10% - Prix de cession HT
-          3: { halign: 'center', fontSize: 7 }, // 10% - Prix de vente conseillé TTC
-          4: { halign: 'center', fontSize: 8 }  // 10% - Marchandise remise
+          0: { halign: 'left', cellWidth: columnWidths[0] },
+          1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
+          2: { halign: 'center', fontSize: 7, cellWidth: columnWidths[2] }, // 10% - Prix de cession HT
+          3: { halign: 'center', fontSize: 7, cellWidth: columnWidths[3] }, // 10% - Prix de vente conseillé TTC
+          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }  // 10% - Marchandise remise
         }
       });
 
