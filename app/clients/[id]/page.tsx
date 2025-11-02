@@ -1699,6 +1699,7 @@ export default function ClientDetailPage() {
             onOpenChange={setDepositSlipDialogOpen}
             client={client}
             clientCollections={clientCollections}
+            stockUpdates={stockUpdates}
           />
         )}
 
