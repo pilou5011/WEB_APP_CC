@@ -87,6 +87,7 @@ export type Collection = {
   id: string;
   name: string;
   price: number;
+  recommended_sale_price: number | null;
   barcode: string | null;
   created_at: string;
   updated_at: string;
@@ -99,6 +100,7 @@ export type ClientCollection = {
   initial_stock: number;
   current_stock: number;
   custom_price: number | null;
+  custom_recommended_sale_price: number | null;
   created_at: string;
   updated_at: string;
 };

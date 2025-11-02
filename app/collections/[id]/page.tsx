@@ -22,6 +22,7 @@ export default function CollectionDetailPage() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    recommended_sale_price: '',
     barcode: ''
   });
 
@@ -49,6 +50,7 @@ export default function CollectionDetailPage() {
       setFormData({
         name: collectionData.name,
         price: collectionData.price.toString(),
+        recommended_sale_price: collectionData.recommended_sale_price?.toString() || '',
         barcode: collectionData.barcode || ''
       });
     } catch (error) {
@@ -74,6 +76,13 @@ export default function CollectionDetailPage() {
         return;
       }
 
+      const recommendedSalePrice = formData.recommended_sale_price ? parseFloat(formData.recommended_sale_price) : null;
+      if (recommendedSalePrice !== null && (isNaN(recommendedSalePrice) || recommendedSalePrice < 0)) {
+        toast.error('Le prix de vente conseillé doit être un nombre positif');
+        setSubmitting(false);
+        return;
+      }
+
       // Validation du code barre s'il est renseigné
       if (formData.barcode && !/^\d{13}$/.test(formData.barcode)) {
         toast.error('Le code barre doit contenir exactement 13 chiffres');
@@ -86,6 +95,7 @@ export default function CollectionDetailPage() {
         .update({
           name: formData.name,
           price: price,
+          recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
           updated_at: new Date().toISOString()
         })
@@ -202,7 +212,7 @@ export default function CollectionDetailPage() {
                 <div className="bg-green-50 rounded-lg p-4 border border-green-100">
                   <div className="flex items-center gap-2 text-green-600 mb-2">
                     <Euro className="h-5 w-5" />
-                    <span className="text-sm font-medium">Prix de la collection</span>
+                    <span className="text-sm font-medium">Prix de cession (HT)</span>
                   </div>
                   <p className="text-3xl font-bold text-green-900">{collection.price.toFixed(2)} €</p>
                 </div>
@@ -247,7 +257,7 @@ export default function CollectionDetailPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="price">Prix de la collection (€)</Label>
+                    <Label htmlFor="price">Prix de cession (HT)</Label>
                     <Input
                       id="price"
                       type="number"
@@ -259,6 +269,21 @@ export default function CollectionDetailPage() {
                       placeholder="Ex: 2.50"
                       className="mt-1.5"
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
+                    <Input
+                      id="recommended_sale_price"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.recommended_sale_price}
+                      onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                      placeholder="Ex: 3.00"
+                      className="mt-1.5"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Optionnel</p>
                   </div>
 
                   <div>
