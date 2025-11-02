@@ -242,10 +242,15 @@ export function useStockUpdateDraft(clientId: string) {
       form => form.counted_stock !== '' || form.cards_added !== '' || form.collection_info !== ''
     );
 
+    // Check if any sub-product form has data
+    const hasSubProductData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
+      form => form.counted_stock !== '' || form.cards_added !== ''
+    ) : false;
+
     // Check if any adjustments exist
     const hasAdjustments = data.pendingAdjustments.length > 0;
 
-    return !hasCollectionData && !hasAdjustments;
+    return !hasCollectionData && !hasSubProductData && !hasAdjustments;
   }, []);
 
   // Check if draft has meaningful data that warrants showing recovery dialog
@@ -256,10 +261,15 @@ export function useStockUpdateDraft(clientId: string) {
       form => form.counted_stock !== '' || form.cards_added !== ''
     );
 
+    // Check if any sub-product form has stock data
+    const hasSubProductStockData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
+      form => form.counted_stock !== '' || form.cards_added !== ''
+    ) : false;
+
     // Adjustments also count as meaningful data
     const hasAdjustments = data.pendingAdjustments.length > 0;
 
-    return hasStockData || hasAdjustments;
+    return hasStockData || hasSubProductStockData || hasAdjustments;
   }, []);
 
   // Auto-save function (saves to local immediately, syncs to server periodically)
