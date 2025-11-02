@@ -131,11 +131,11 @@ export function validateMarketDaysSchedule(schedule: MarketDaysSchedule): { vali
 }
 
 export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
-  const [selectedDays, setSelectedDays] = useState<string[]>(
+  const [selectedDays, setSelectedDays] = useState<(keyof MarketDaysSchedule)[]>(
     DAYS.filter(day => value[day].length > 0)
   );
 
-  const handleDayToggle = (day: string) => {
+  const handleDayToggle = (day: keyof MarketDaysSchedule) => {
     if (selectedDays.includes(day)) {
       // Retirer le jour et ses horaires
       setSelectedDays(selectedDays.filter(d => d !== day));
@@ -153,14 +153,14 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
     }
   };
 
-  const handleAddTimeRange = (day: string) => {
+  const handleAddTimeRange = (day: keyof MarketDaysSchedule) => {
     onChange({
       ...value,
       [day]: [...value[day], { start: '', end: '' }]
     });
   };
 
-  const handleRemoveTimeRange = (day: string, index: number) => {
+  const handleRemoveTimeRange = (day: keyof MarketDaysSchedule, index: number) => {
     const newRanges = value[day].filter((_, i) => i !== index);
     onChange({
       ...value,
@@ -173,7 +173,7 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
     }
   };
 
-  const handleTimeChange = (day: string, index: number, field: 'start' | 'end', timeValue: string) => {
+  const handleTimeChange = (day: keyof MarketDaysSchedule, index: number, field: 'start' | 'end', timeValue: string) => {
     const newRanges = [...value[day]];
     newRanges[index] = { ...newRanges[index], [field]: timeValue };
     onChange({
