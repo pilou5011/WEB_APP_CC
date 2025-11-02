@@ -8,7 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Package, Euro, Edit } from 'lucide-react';
+import { Plus, Package, Euro, Edit, X } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
 export default function CollectionsPage() {
@@ -22,7 +24,10 @@ export default function CollectionsPage() {
     recommended_sale_price: '',
     barcode: ''
   });
+  const [hasSubProducts, setHasSubProducts] = useState(false);
+  const [subProducts, setSubProducts] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
 
   useEffect(() => {
     loadCollections();
@@ -85,10 +90,29 @@ export default function CollectionsPage() {
 
       if (error) throw error;
 
+      // Create sub-products if hasSubProducts is true
+      if (hasSubProducts && subProducts.length > 0) {
+        const validSubProducts = subProducts.filter(sp => sp.trim() !== '');
+        if (validSubProducts.length > 0) {
+          const subProductsToInsert = validSubProducts.map(name => ({
+            collection_id: data.id,
+            name: name.trim()
+          }));
+
+          const { error: subProductsError } = await supabase
+            .from('sub_products')
+            .insert(subProductsToInsert);
+
+          if (subProductsError) throw subProductsError;
+        }
+      }
+
       toast.success('Collection ajoutée avec succès');
       setCollections([data, ...collections]);
       setDialogOpen(false);
       setFormData({ name: '', price: '', recommended_sale_price: '', barcode: '' });
+      setHasSubProducts(false);
+      setSubProducts(['']);
     } catch (error) {
       console.error('Error creating collection:', error);
       toast.error('Erreur lors de la création de la collection');
@@ -191,6 +215,68 @@ export default function CollectionsPage() {
                       />
                       <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
                     </div>
+
+                    <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="has-sub-products"
+                          checked={hasSubProducts}
+                          onCheckedChange={(checked) => {
+                            setHasSubProducts(checked === true);
+                            if (checked === false) {
+                              setSubProducts(['']);
+                            }
+                          }}
+                        />
+                        <Label htmlFor="has-sub-products" className="font-normal cursor-pointer">
+                          Cette collection contient des sous-produits
+                        </Label>
+                      </div>
+
+                      {hasSubProducts && (
+                        <div className="space-y-2 pt-2">
+                          <Label className="text-sm">Sous-produits</Label>
+                          {subProducts.map((subProduct, index) => (
+                            <div key={index} className="flex gap-2">
+                              <Input
+                                type="text"
+                                value={subProduct}
+                                onChange={(e) => {
+                                  const newSubProducts = [...subProducts];
+                                  newSubProducts[index] = e.target.value;
+                                  setSubProducts(newSubProducts);
+                                }}
+                                placeholder={`Nom du sous-produit ${index + 1}`}
+                                className="flex-1"
+                              />
+                              {subProducts.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDeleteSubProductIndex(index);
+                                  }}
+                                  className="h-9 w-9 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSubProducts([...subProducts, ''])}
+                            className="w-full"
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Ajouter un sous-produit
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button type="submit" disabled={submitting}>
@@ -202,6 +288,32 @@ export default function CollectionsPage() {
             </Dialog>
           </div>
         </div>
+
+        {/* Delete Sub-Product Confirmation Dialog */}
+        <AlertDialog open={deleteSubProductIndex !== null} onOpenChange={(open) => !open && setDeleteSubProductIndex(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer le sous-produit ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer le sous-produit "{subProducts[deleteSubProductIndex || 0] || 'sans nom'}" ? Cette action ne peut pas être annulée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (deleteSubProductIndex !== null) {
+                    setSubProducts(subProducts.filter((_, i) => i !== deleteSubProductIndex));
+                    setDeleteSubProductIndex(null);
+                  }
+                }}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

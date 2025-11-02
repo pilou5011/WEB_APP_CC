@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +35,8 @@ export default function ClientDetailPage() {
   const [stockUpdates, setStockUpdates] = useState<StockUpdate[]>([]);
   const [allCollections, setAllCollections] = useState<Collection[]>([]);
   const [clientCollections, setClientCollections] = useState<(ClientCollection & { collection?: Collection })[]>([]);
+  const [subProducts, setSubProducts] = useState<Record<string, SubProduct[]>>({}); // collection_id -> SubProduct[]
+  const [clientSubProducts, setClientSubProducts] = useState<Record<string, ClientSubProduct>>({}); // sub_product_id -> ClientSubProduct
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<StockUpdate | null>(null);
@@ -69,8 +71,10 @@ export default function ClientDetailPage() {
   });
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
-  // Form per collection: { [clientCollectionId]: { counted_stock, cards_added } }
+  // Form per collection: { [clientCollectionId]: { counted_stock, cards_added, collection_info } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; collection_info: string }>>({});
+  // Form per sub-product: { [subProductId]: { counted_stock, cards_added } }
+  const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -93,6 +97,18 @@ export default function ClientDetailPage() {
     recommended_sale_price_type: 'default',
     custom_recommended_sale_price: ''
   });
+  
+  // Sub-products initial stocks dialog
+  const [subProductsInitialStocksDialogOpen, setSubProductsInitialStocksDialogOpen] = useState(false);
+  const [subProductsForAssociation, setSubProductsForAssociation] = useState<SubProduct[]>([]);
+  const [subProductsInitialStocks, setSubProductsInitialStocks] = useState<Record<string, string>>({});
+  const [pendingAssociationData, setPendingAssociationData] = useState<{
+    customPrice: number | null;
+    customRecommendedSalePrice: number | null;
+  } | null>(null);
+  
+  // Check if selected collection has sub-products
+  const [selectedCollectionHasSubProducts, setSelectedCollectionHasSubProducts] = useState(false);
   
   // Combobox state for collection selector
   const [collectionComboboxOpen, setCollectionComboboxOpen] = useState(false);
@@ -142,6 +158,9 @@ export default function ClientDetailPage() {
             setDraftRecoveryOpen(true);
             // Immediately restore draft data to prevent it from being overwritten
             setPerCollectionForm(draftData.perCollectionForm);
+            if (draftData.perSubProductForm) {
+              setPerSubProductForm(draftData.perSubProductForm);
+            }
             setPendingAdjustments(draftData.pendingAdjustments);
           }
         }
@@ -154,6 +173,50 @@ export default function ClientDetailPage() {
     initPage();
   }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+
+  // Initialize sub-product forms when subProducts data is loaded
+  useEffect(() => {
+    if (!loading && Object.keys(subProducts).length > 0) {
+      const initialSubProductForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      Object.values(subProducts).flat().forEach((sp) => {
+        initialSubProductForm[sp.id] = {
+          counted_stock: perSubProductForm[sp.id]?.counted_stock || '',
+          cards_added: perSubProductForm[sp.id]?.cards_added || ''
+        };
+      });
+      // Only update if there are new sub-products not yet in the form
+      const hasNewSubProducts = Object.keys(initialSubProductForm).some(id => !(id in perSubProductForm));
+      if (hasNewSubProducts) {
+        setPerSubProductForm(prev => ({ ...prev, ...initialSubProductForm }));
+      }
+    }
+  }, [subProducts, loading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check if selected collection has sub-products
+  useEffect(() => {
+    const checkSubProducts = async () => {
+      if (!associateForm.collection_id) {
+        setSelectedCollectionHasSubProducts(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('sub_products')
+          .select('id')
+          .eq('collection_id', associateForm.collection_id)
+          .limit(1);
+
+        if (error) throw error;
+        setSelectedCollectionHasSubProducts((data && data.length > 0) || false);
+      } catch (error) {
+        console.error('Error checking sub-products:', error);
+        setSelectedCollectionHasSubProducts(false);
+      }
+    };
+
+    checkSubProducts();
+  }, [associateForm.collection_id]);
 
   // Auto-save draft whenever form data changes (but not during submission or before draft check)
   useEffect(() => {
@@ -172,10 +235,11 @@ export default function ClientDetailPage() {
     if (!loading && client && clientCollections.length > 0 && !submitting) {
       draft.autoSave({
         perCollectionForm,
+        perSubProductForm,
         pendingAdjustments
       });
     }
-  }, [perCollectionForm, pendingAdjustments, loading, client, clientCollections.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [perCollectionForm, perSubProductForm, pendingAdjustments, loading, client, clientCollections.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -217,6 +281,46 @@ export default function ClientDetailPage() {
       const ccWithTyped = (ccData || []).map((row: any) => ({ ...row, collection: row.collection as Collection }));
       setClientCollections(ccWithTyped);
 
+      // Load sub-products for all collections
+      const collectionIds = ccWithTyped.map(cc => cc.collection_id);
+      if (collectionIds.length > 0) {
+        const { data: subProductsData, error: subProductsError } = await supabase
+          .from('sub_products')
+          .select('*')
+          .in('collection_id', collectionIds)
+          .order('created_at', { ascending: true });
+
+        if (subProductsError) throw subProductsError;
+
+        const subProductsByCollection: Record<string, SubProduct[]> = {};
+        (subProductsData || []).forEach((sp: SubProduct) => {
+          if (!subProductsByCollection[sp.collection_id]) {
+            subProductsByCollection[sp.collection_id] = [];
+          }
+          subProductsByCollection[sp.collection_id].push(sp);
+        });
+        setSubProducts(subProductsByCollection);
+
+        // Load client_sub_products
+        const subProductIds = (subProductsData || []).map(sp => sp.id);
+        if (subProductIds.length > 0) {
+          const { data: clientSubProductsData, error: clientSubProductsError } = await supabase
+            .from('client_sub_products')
+            .select('*')
+            .eq('client_id', clientId)
+            .in('sub_product_id', subProductIds);
+
+          if (clientSubProductsError) throw clientSubProductsError;
+
+          // Convert to Record<string, ClientSubProduct> for easier access (one per sub_product_id)
+          const clientSubProductsMap: Record<string, ClientSubProduct> = {};
+          (clientSubProductsData || []).forEach((csp: ClientSubProduct) => {
+            clientSubProductsMap[csp.sub_product_id] = csp;
+          });
+          setClientSubProducts(clientSubProductsMap as any); // Temporary cast
+        }
+      }
+
       // Load stock updates to get last collection_info for each collection
       const { data: updatesData, error: updatesError } = await supabase
         .from('stock_updates')
@@ -229,6 +333,8 @@ export default function ClientDetailPage() {
 
       // Initialize per-collection form defaults with last collection_info
       const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      const initialSubProductForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      
       ccWithTyped.forEach((cc) => {
         // Find the last stock update for this collection (most recent, regardless of collection_info)
         const lastUpdate = (updatesData || []).find(
@@ -242,7 +348,12 @@ export default function ClientDetailPage() {
           collection_info: lastUpdate?.collection_info || '' 
         };
       });
+
+      // Initialize sub-product forms - wait for subProducts state to be set, will be initialized on next render
+      // (subProducts state is set asynchronously, so we'll initialize the form in a useEffect)
+
       setPerCollectionForm(initialForm);
+      setPerSubProductForm(initialSubProductForm);
 
       // Load global invoices
       const { data: invoicesData, error: invoicesError } = await supabase
@@ -283,70 +394,150 @@ export default function ClientDetailPage() {
     }[] = [];
 
     for (const cc of clientCollections) {
-      const form = perCollectionForm[cc.id];
-      if (!form) continue;
-      
-      const hasCountedStock = form.counted_stock && form.counted_stock.trim() !== '';
-      const hasNewDeposit = form.cards_added && form.cards_added.trim() !== '';
-      
-      // Si aucun des deux champs n'est rempli, on passe cette collection
-      if (!hasCountedStock && !hasNewDeposit) continue;
+      const collectionSubProducts = subProducts[cc.collection_id] || [];
+      const hasSubProducts = collectionSubProducts.length > 0;
 
-      // Validation seulement si demandé (au moment de la soumission)
-      if (validate) {
-        // Vérifier que les deux champs sont remplis
-        if (hasCountedStock && !hasNewDeposit) {
-          toast.error(`Veuillez renseigner le "Nouveau dépôt" pour « ${cc.collection?.name || 'Collection'} »`);
-          return null;
+      if (hasSubProducts) {
+        // For collections with sub-products, validate and calculate from sub-products
+        let totalCountedStock = 0;
+        let totalCardsAdded = 0;
+        let totalPreviousStock = 0;
+        let hasAnySubProductData = false;
+
+        for (const sp of collectionSubProducts) {
+          const csp = clientSubProducts[sp.id];
+          if (!csp) continue;
+
+          const formData = perSubProductForm[sp.id];
+          const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
+          const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
+
+          if (!hasCountedStock && !hasNewDeposit) continue;
+          hasAnySubProductData = true;
+
+          if (validate) {
+            if (hasCountedStock && !hasNewDeposit) {
+              toast.error(`Veuillez renseigner le "Nouveau dépôt" pour le sous-produit « ${sp.name} » de « ${cc.collection?.name || 'Collection'} »`);
+              return null;
+            }
+            if (!hasCountedStock && hasNewDeposit) {
+              toast.error(`Veuillez renseigner le "Stock compté" pour le sous-produit « ${sp.name} » de « ${cc.collection?.name || 'Collection'} »`);
+              return null;
+            }
+
+            const countedStock = parseInt(formData.counted_stock);
+            const newDeposit = parseInt(formData.cards_added);
+
+            if (isNaN(countedStock) || countedStock < 0) {
+              toast.error(`Le stock compté doit être un nombre positif pour « ${sp.name} »`);
+              return null;
+            }
+            if (isNaN(newDeposit) || newDeposit < 0) {
+              toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${sp.name} »`);
+              return null;
+            }
+          }
+
+          if (!hasCountedStock || !hasNewDeposit) continue;
+
+          totalCountedStock += parseInt(formData.counted_stock) || 0;
+          totalCardsAdded += parseInt(formData.cards_added) || 0;
+          totalPreviousStock += csp.current_stock || 0;
         }
-        if (!hasCountedStock && hasNewDeposit) {
-          toast.error(`Veuillez renseigner le "Nouveau stock compté" pour « ${cc.collection?.name || 'Collection'} »`);
-          return null;
+
+        if (!hasAnySubProductData) continue;
+
+        if (validate && (totalCountedStock === 0 && totalCardsAdded === 0)) {
+          continue; // Skip if no data entered
         }
-      }
 
-      // Si on n'a pas les deux champs et qu'on ne valide pas, on passe
-      if (!hasCountedStock || !hasNewDeposit) continue;
+        const previousStock = totalPreviousStock;
+        const countedStock = totalCountedStock;
+        const newDeposit = totalCardsAdded;
+        const cardsSold = Math.max(0, previousStock - countedStock);
+        const newStock = newDeposit;
+        const cardsAdded = Math.max(0, newStock - countedStock);
+        const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
 
-      const countedStock = parseInt(form.counted_stock);
-      const newDeposit = parseInt(form.cards_added); // Nouveau dépôt = nouveau stock actuel
+        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+        const isCustomPrice = cc.custom_price !== null;
+        const amount = cardsSold * effectivePrice;
 
-      // Validation des valeurs numériques
-      if (validate) {
-        if (isNaN(countedStock) || countedStock < 0) {
-          toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-          return null;
+        if (cc.collection) {
+          updates.push({
+            collection: cc.collection,
+            previousStock,
+            countedStock,
+            cardsSold,
+            cardsAdded,
+            newStock,
+            amount,
+            effectivePrice,
+            isCustomPrice,
+            collectionInfo
+          });
         }
-        if (isNaN(newDeposit) || newDeposit < 0) {
-          toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
-          return null;
+      } else {
+        // Normal collection without sub-products
+        const form = perCollectionForm[cc.id];
+        if (!form) continue;
+        
+        const hasCountedStock = form.counted_stock && form.counted_stock.trim() !== '';
+        const hasNewDeposit = form.cards_added && form.cards_added.trim() !== '';
+        
+        if (!hasCountedStock && !hasNewDeposit) continue;
+
+        if (validate) {
+          if (hasCountedStock && !hasNewDeposit) {
+            toast.error(`Veuillez renseigner le "Nouveau dépôt" pour « ${cc.collection?.name || 'Collection'} »`);
+            return null;
+          }
+          if (!hasCountedStock && hasNewDeposit) {
+            toast.error(`Veuillez renseigner le "Nouveau stock compté" pour « ${cc.collection?.name || 'Collection'} »`);
+            return null;
+          }
         }
-      }
 
-      const previousStock = cc.current_stock;
-      const cardsSold = Math.max(0, previousStock - countedStock);
-      const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt
-      const cardsAdded = Math.max(0, newStock - countedStock); // Calculer les cartes ajoutées pour l'historique
-      const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
-      
-      // Use custom_price if set, otherwise use the default collection price
-      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-      const isCustomPrice = cc.custom_price !== null;
-      const amount = cardsSold * effectivePrice;
+        if (!hasCountedStock || !hasNewDeposit) continue;
 
-      if (cc.collection) {
-        updates.push({
-          collection: cc.collection,
-          previousStock,
-          countedStock,
-          cardsSold,
-          cardsAdded,
-          newStock,
-          amount,
-          effectivePrice,
-          isCustomPrice,
-          collectionInfo
-        });
+        const countedStock = parseInt(form.counted_stock);
+        const newDeposit = parseInt(form.cards_added);
+
+        if (validate) {
+          if (isNaN(countedStock) || countedStock < 0) {
+            toast.error(`Le stock compté doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+            return null;
+          }
+          if (isNaN(newDeposit) || newDeposit < 0) {
+            toast.error(`Le nouveau dépôt doit être un nombre positif pour « ${cc.collection?.name || 'Collection'} »`);
+            return null;
+          }
+        }
+
+        const previousStock = cc.current_stock;
+        const cardsSold = Math.max(0, previousStock - countedStock);
+        const newStock = newDeposit;
+        const cardsAdded = Math.max(0, newStock - countedStock);
+        const collectionInfo = form.collection_info || '';
+
+        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+        const isCustomPrice = cc.custom_price !== null;
+        const amount = cardsSold * effectivePrice;
+
+        if (cc.collection) {
+          updates.push({
+            collection: cc.collection,
+            previousStock,
+            countedStock,
+            cardsSold,
+            cardsAdded,
+            newStock,
+            amount,
+            effectivePrice,
+            isCustomPrice,
+            collectionInfo
+          });
+        }
       }
     }
 
@@ -417,6 +608,7 @@ export default function ClientDetailPage() {
       
       // Set form data - this will trigger auto-save, but we've disabled it temporarily
       setPerCollectionForm(initialForm);
+      setPerSubProductForm({});
       setPendingAdjustments([]);
       
       // CRITICAL: Re-enable draft check and auto-save AFTER a delay to ensure
@@ -484,34 +676,95 @@ export default function ClientDetailPage() {
       // Prepare stock updates with invoice_id
       const updatesToInsert: any[] = [];
       const ccUpdates: { id: string; new_stock: number }[] = [];
+      const cspUpdates: { id: string; new_stock: number }[] = []; // Sub-product updates
 
       if (hasStockUpdates) {
         for (const cc of clientCollections) {
-          const form = perCollectionForm[cc.id];
-          if (!form) continue;
-          const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
-          if (!hasAny) continue;
+          const collectionSubProducts = subProducts[cc.collection_id] || [];
+          const hasSubProducts = collectionSubProducts.length > 0;
 
-          const countedStock = parseInt(form.counted_stock);
-          const newDeposit = parseInt(form.cards_added); // Le champ "cards_added" contient le nouveau dépôt
-          const previousStock = cc.current_stock;
-          const cardsSold = Math.max(0, previousStock - countedStock);
-          const newStock = newDeposit; // Le nouveau stock est directement le nouveau dépôt saisi
-          const cardsAdded = Math.max(0, newStock - countedStock); // Cartes ajoutées pour l'historique
-          const collectionInfo = form.collection_info || ''; // Info optionnelle pour la facture
+          if (hasSubProducts) {
+            // Handle sub-products
+            let totalNewStock = 0;
+            let totalCountedStock = 0;
+            let totalPreviousStock = 0;
+            let totalCardsAdded = 0;
+            let totalCardsSold = 0;
 
-          updatesToInsert.push({
-            client_id: clientId,
-            collection_id: cc.collection_id,
-            invoice_id: invoiceData.id,
-            previous_stock: previousStock,
-            counted_stock: countedStock,
-            cards_sold: cardsSold,
-            cards_added: cardsAdded,
-            new_stock: newStock,
-            collection_info: collectionInfo
-          });
-          ccUpdates.push({ id: cc.id, new_stock: newStock });
+            for (const sp of collectionSubProducts) {
+              const csp = clientSubProducts[sp.id];
+              if (!csp) continue;
+
+              const formData = perSubProductForm[sp.id];
+              const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
+              const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
+
+              if (!hasCountedStock || !hasNewDeposit) continue;
+
+              const countedStock = parseInt(formData.counted_stock);
+              const newDeposit = parseInt(formData.cards_added);
+              const previousStock = csp.current_stock;
+              const cardsSold = Math.max(0, previousStock - countedStock);
+              const newStock = newDeposit;
+              const cardsAdded = Math.max(0, newStock - countedStock);
+
+              totalNewStock += newStock;
+              totalCountedStock += countedStock;
+              totalPreviousStock += previousStock;
+              totalCardsAdded += cardsAdded;
+              totalCardsSold += cardsSold;
+
+              // Update sub-product stock
+              cspUpdates.push({ id: csp.id, new_stock: newStock });
+            }
+
+            // Create stock update for the parent collection (for invoice)
+            if (totalCountedStock > 0 || totalNewStock > 0) {
+              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+              
+              updatesToInsert.push({
+                client_id: clientId,
+                collection_id: cc.collection_id, // Parent collection ID for invoice
+                invoice_id: invoiceData.id,
+                previous_stock: totalPreviousStock,
+                counted_stock: totalCountedStock,
+                cards_sold: totalCardsSold,
+                cards_added: totalCardsAdded,
+                new_stock: totalNewStock,
+                collection_info: collectionInfo
+              });
+
+              // Update parent collection stock (sum of sub-products)
+              ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
+            }
+          } else {
+            // Normal collection without sub-products
+            const form = perCollectionForm[cc.id];
+            if (!form) continue;
+            const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
+            if (!hasAny) continue;
+
+            const countedStock = parseInt(form.counted_stock);
+            const newDeposit = parseInt(form.cards_added);
+            const previousStock = cc.current_stock;
+            const cardsSold = Math.max(0, previousStock - countedStock);
+            const newStock = newDeposit;
+            const cardsAdded = Math.max(0, newStock - countedStock);
+            const collectionInfo = form.collection_info || '';
+
+            updatesToInsert.push({
+              client_id: clientId,
+              collection_id: cc.collection_id,
+              invoice_id: invoiceData.id,
+              previous_stock: previousStock,
+              counted_stock: countedStock,
+              cards_sold: cardsSold,
+              cards_added: cardsAdded,
+              new_stock: newStock,
+              collection_info: collectionInfo
+            });
+            ccUpdates.push({ id: cc.id, new_stock: newStock });
+          }
         }
       }
 
@@ -549,7 +802,16 @@ export default function ClientDetailPage() {
         }
       }
 
-      // Apply per-collection stock
+      // Apply per-sub-product stock updates first
+      for (const upd of cspUpdates) {
+        const { error: cspUpdateError } = await supabase
+          .from('client_sub_products')
+          .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
+          .eq('id', upd.id);
+        if (cspUpdateError) throw cspUpdateError;
+      }
+
+      // Apply per-collection stock (will be sum of sub-products for collections with sub-products)
       for (const upd of ccUpdates) {
         const { error: ccUpdateError } = await supabase
           .from('client_collections')
@@ -746,11 +1008,6 @@ export default function ClientDetailPage() {
       toast.error('Sélectionnez une collection');
       return;
     }
-    const initialStock = parseInt(associateForm.initial_stock || '0');
-    if (isNaN(initialStock) || initialStock < 0) {
-      toast.error('Le stock initial doit être un nombre positif');
-      return;
-    }
 
     // Validate custom price if selected
     let customPrice: number | null = null;
@@ -774,12 +1031,80 @@ export default function ClientDetailPage() {
       customRecommendedSalePrice = parsedRecommendedSalePrice;
     }
 
+    // Check if collection has sub-products
+    try {
+      const { data: collectionSubProducts, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('*')
+        .eq('collection_id', associateForm.collection_id);
+
+      if (subProductsError) throw subProductsError;
+
+      if (collectionSubProducts && collectionSubProducts.length > 0) {
+        // Collection has sub-products: open dialog to enter initial stocks
+        setSubProductsForAssociation(collectionSubProducts);
+        const initialStocks: Record<string, string> = {};
+        collectionSubProducts.forEach(sp => {
+          initialStocks[sp.id] = '';
+        });
+        setSubProductsInitialStocks(initialStocks);
+        setPendingAssociationData({ customPrice, customRecommendedSalePrice });
+        setSubProductsInitialStocksDialogOpen(true);
+        return;
+      }
+    } catch (err) {
+      console.error('Error checking sub-products:', err);
+      toast.error('Erreur lors de la vérification des sous-produits');
+      return;
+    }
+
+    // No sub-products: proceed with normal association
+    if (!selectedCollectionHasSubProducts) {
+      const initialStock = parseInt(associateForm.initial_stock || '0');
+      if (isNaN(initialStock) || initialStock < 0) {
+        toast.error('Le stock initial doit être un nombre positif');
+        return;
+      }
+      await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
+    }
+  };
+
+  const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate all stocks
+    const stocks: Record<string, number> = {};
+    for (const sp of subProductsForAssociation) {
+      const stockStr = subProductsInitialStocks[sp.id] || '0';
+      const stock = parseInt(stockStr);
+      if (isNaN(stock) || stock < 0) {
+        toast.error(`Le stock initial du sous-produit "${sp.name}" doit être un nombre positif`);
+        return;
+      }
+      stocks[sp.id] = stock;
+    }
+
+    if (!pendingAssociationData) return;
+
+    // Calculate total initial stock
+    const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
+
+    setSubProductsInitialStocksDialogOpen(false);
+    await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
+  };
+
+  const performAssociation = async (
+    initialStock: number,
+    customPrice: number | null,
+    customRecommendedSalePrice: number | null,
+    subProductsStocks: Record<string, number> | null
+  ) => {
     try {
       const insertData: any = {
         client_id: clientId,
-        collection_id: associateForm.collection_id,
-        initial_stock: initialStock,
-        current_stock: initialStock
+        collection_id: associateForm.collection_id!,
+        initial_stock: subProductsStocks ? 0 : initialStock,
+        current_stock: subProductsStocks ? 0 : initialStock
       };
 
       // Only set custom_price if it's a custom price
@@ -799,13 +1124,47 @@ export default function ClientDetailPage() {
         .single();
       if (error) throw error;
 
-      // Update client's total stock
-      const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + initialStock;
-      const { error: clientUpdateError } = await supabase
-        .from('clients')
-        .update({ current_stock: total, updated_at: new Date().toISOString() })
-        .eq('id', clientId);
-      if (clientUpdateError) throw clientUpdateError;
+      if (subProductsStocks) {
+        // Collection has sub-products: create client_sub_products with provided stocks
+        const clientSubProductsToInsert = subProductsForAssociation.map(sp => ({
+          client_id: clientId,
+          sub_product_id: sp.id,
+          initial_stock: subProductsStocks[sp.id] || 0,
+          current_stock: subProductsStocks[sp.id] || 0
+        }));
+
+        const { error: insertClientSubProductsError } = await supabase
+          .from('client_sub_products')
+          .insert(clientSubProductsToInsert);
+
+        if (insertClientSubProductsError) throw insertClientSubProductsError;
+
+        // Update the collection's stock to sum of sub-products
+        const totalStock = Object.values(subProductsStocks).reduce((sum, stock) => sum + stock, 0);
+        const { error: updateCollectionError } = await supabase
+          .from('client_collections')
+          .update({ initial_stock: totalStock, current_stock: totalStock })
+          .eq('id', data.id);
+
+        if (updateCollectionError) throw updateCollectionError;
+
+        // Update client's total stock
+        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + totalStock;
+        const { error: clientUpdateError } = await supabase
+          .from('clients')
+          .update({ current_stock: total, updated_at: new Date().toISOString() })
+          .eq('id', clientId);
+        if (clientUpdateError) throw clientUpdateError;
+      } else {
+        // No sub-products: use the normal stock
+        // Update client's total stock
+        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + initialStock;
+        const { error: clientUpdateError } = await supabase
+          .from('clients')
+          .update({ current_stock: total, updated_at: new Date().toISOString() })
+          .eq('id', clientId);
+        if (clientUpdateError) throw clientUpdateError;
+      }
 
       toast.success('Collection associée au client');
       setAssociateForm({ 
@@ -816,6 +1175,10 @@ export default function ClientDetailPage() {
         recommended_sale_price_type: 'default',
         custom_recommended_sale_price: ''
       });
+      setSubProductsInitialStocksDialogOpen(false);
+      setSubProductsForAssociation([]);
+      setSubProductsInitialStocks({});
+      setPendingAssociationData(null);
       await loadClientData();
     } catch (err) {
       console.error('Error associating collection:', err);
@@ -1062,8 +1425,9 @@ export default function ClientDetailPage() {
                       id="assoc-initial" 
                       type="text" 
                       inputMode="numeric"
-                      value={associateForm.initial_stock}
+                      value={selectedCollectionHasSubProducts ? 'Calculé depuis les sous-produits' : associateForm.initial_stock}
                       onChange={(e) => {
+                        if (selectedCollectionHasSubProducts) return;
                         const value = e.target.value;
                         // N'accepter que les nombres
                         if (value === '' || /^\d+$/.test(value)) {
@@ -1071,9 +1435,16 @@ export default function ClientDetailPage() {
                         }
                       }}
                       onWheel={(e) => e.currentTarget.blur()}
-                      placeholder="Ex: 100" 
-                      className="mt-1.5" 
+                      placeholder={selectedCollectionHasSubProducts ? "Calculé depuis les sous-produits" : "Ex: 100"} 
+                      className={cn("mt-1.5", selectedCollectionHasSubProducts && "bg-slate-100 cursor-not-allowed")}
+                      disabled={selectedCollectionHasSubProducts}
+                      readOnly={selectedCollectionHasSubProducts}
                     />
+                    {selectedCollectionHasSubProducts && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Le stock initial sera calculé automatiquement à partir des stocks des sous-produits
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -1209,108 +1580,222 @@ export default function ClientDetailPage() {
                         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
                         const isCustomRecommendedSalePrice = cc.custom_recommended_sale_price !== null;
                         
+                        const collectionSubProducts = subProducts[cc.collection_id] || [];
+                        const hasSubProducts = collectionSubProducts.length > 0;
+
+                        // Calculate parent collection stock from sub-products
+                        let parentCountedStock = 0;
+                        let parentCardsAdded = 0;
+                        let parentCurrentStock = 0;
+
+                        if (hasSubProducts) {
+                          collectionSubProducts.forEach(sp => {
+                            const csp = clientSubProducts[sp.id];
+                            if (csp) {
+                              parentCurrentStock += csp.current_stock || 0;
+                              const formData = perSubProductForm[sp.id];
+                              if (formData) {
+                                parentCountedStock += parseInt(formData.counted_stock) || 0;
+                                parentCardsAdded += parseInt(formData.cards_added) || 0;
+                              }
+                            }
+                          });
+                        }
+
                         return (
-                          <TableRow key={cc.id} className="hover:bg-slate-50/50">
-                            <TableCell className="align-middle py-3">
-                              <p className="font-medium text-slate-900">{cc.collection?.name || 'Collection'}</p>
-                            </TableCell>
-                            <TableCell className="align-middle py-3 text-center">
-                              <p className="text-sm font-medium text-slate-600">{cc.current_stock}</p>
-                            </TableCell>
-                            <TableCell className="align-top py-3">
-                              <Input
-                                type="text"
-                                inputMode="numeric"
-                                value={perCollectionForm[cc.id]?.counted_stock || ''}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  if (value === '' || /^\d+$/.test(value)) {
-                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
-                                  }
-                                }}
-                                onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="......"
-                                className="h-9 placeholder:text-slate-400"
-                              />
-                            </TableCell>
-                            <TableCell className="align-top py-3">
-                              <Input
-                                type="text"
-                                inputMode="numeric"
-                                value={perCollectionForm[cc.id]?.cards_added || ''}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  if (value === '' || /^\d+$/.test(value)) {
-                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
-                                  }
-                                }}
-                                onWheel={(e) => e.currentTarget.blur()}
-                                placeholder="......"
-                                className="h-9 placeholder:text-slate-400"
-                              />
-                            </TableCell>
-                            <TableCell className="align-top py-3">
-                              <Input
-                                type="text"
-                                value={perCollectionForm[cc.id]?.collection_info || ''}
-                                onChange={(e) => {
-                                  setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
-                                }}
-                                placeholder="......"
-                                className="h-9 placeholder:text-slate-400"
-                              />
-                            </TableCell>
-                            <TableCell className="align-top py-3 text-right">
-                              <div>
-                                <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
-                                {isCustomPrice && (
-                                  <p className="text-xs text-blue-600">Personnalisé</p>
-                                )}
-                                {!isCustomPrice && cc.collection?.price != null && (
-                                  <p className="text-xs text-slate-500">Par défaut</p>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="align-top py-3 text-right">
-                              <div>
-                                {effectiveRecommendedSalePrice !== null ? (
-                                  <>
-                                    <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
-                                    {isCustomRecommendedSalePrice && (
-                                      <p className="text-xs text-blue-600">Personnalisé</p>
-                                    )}
-                                    {!isCustomRecommendedSalePrice && (
-                                      <p className="text-xs text-slate-500">Par défaut</p>
-                                    )}
-                                  </>
+                          <React.Fragment key={cc.id}>
+                            {/* Collection parent row */}
+                            <TableRow className={cn("hover:bg-slate-50/50", hasSubProducts && "bg-slate-50")}>
+                              <TableCell className="align-middle py-3">
+                                <p className={cn("font-medium text-slate-900", hasSubProducts && "font-semibold")}>
+                                  {cc.collection?.name || 'Collection'}
+                                </p>
+                              </TableCell>
+                              <TableCell className="align-middle py-3 text-center">
+                                <p className="text-sm font-medium text-slate-600">
+                                  {hasSubProducts ? parentCurrentStock : cc.current_stock}
+                                </p>
+                              </TableCell>
+                              <TableCell className="align-top py-3">
+                                {hasSubProducts ? (
+                                  <Input
+                                    type="text"
+                                    value={parentCountedStock.toString()}
+                                    disabled
+                                    readOnly
+                                    className="h-9 bg-slate-100 cursor-not-allowed"
+                                  />
                                 ) : (
-                                  <p className="text-xs text-slate-400">Non défini</p>
+                                  <Input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={perCollectionForm[cc.id]?.counted_stock || ''}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '' || /^\d+$/.test(value)) {
+                                        setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
+                                      }
+                                    }}
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    placeholder="......"
+                                    className="h-9 placeholder:text-slate-400"
+                                  />
                                 )}
-                              </div>
-                            </TableCell>
-                            <TableCell className="align-top py-3 text-right">
-                              <div className="flex gap-1 justify-end">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEditPriceClick(cc)}
-                                  className="h-8 w-8 p-0 hover:bg-blue-50"
-                                  title="Modifier le prix"
-                                >
-                                  <Edit2 className="h-4 w-4 text-blue-600" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteCollectionClick(cc)}
-                                  className="h-8 w-8 p-0 hover:bg-red-50"
-                                  title="Supprimer la collection"
-                                >
-                                  <Trash2 className="h-4 w-4 text-red-600" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
+                              </TableCell>
+                              <TableCell className="align-top py-3">
+                                {hasSubProducts ? (
+                                  <Input
+                                    type="text"
+                                    value={parentCardsAdded.toString()}
+                                    disabled
+                                    readOnly
+                                    className="h-9 bg-slate-100 cursor-not-allowed"
+                                  />
+                                ) : (
+                                  <Input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={perCollectionForm[cc.id]?.cards_added || ''}
+                                    onChange={(e) => {
+                                      const value = e.target.value;
+                                      if (value === '' || /^\d+$/.test(value)) {
+                                        setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
+                                      }
+                                    }}
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    placeholder="......"
+                                    className="h-9 placeholder:text-slate-400"
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell className="align-top py-3">
+                                <Input
+                                  type="text"
+                                  value={perCollectionForm[cc.id]?.collection_info || ''}
+                                  onChange={(e) => {
+                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
+                                  }}
+                                  placeholder="......"
+                                  className="h-9 placeholder:text-slate-400"
+                                />
+                              </TableCell>
+                              <TableCell className="align-top py-3 text-right">
+                                <div>
+                                  <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+                                  {isCustomPrice && (
+                                    <p className="text-xs text-blue-600">Personnalisé</p>
+                                  )}
+                                  {!isCustomPrice && cc.collection?.price != null && (
+                                    <p className="text-xs text-slate-500">Par défaut</p>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="align-top py-3 text-right">
+                                <div>
+                                  {effectiveRecommendedSalePrice !== null ? (
+                                    <>
+                                      <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+                                      {isCustomRecommendedSalePrice && (
+                                        <p className="text-xs text-blue-600">Personnalisé</p>
+                                      )}
+                                      {!isCustomRecommendedSalePrice && (
+                                        <p className="text-xs text-slate-500">Par défaut</p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="text-xs text-slate-400">Non défini</p>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="align-top py-3 text-right">
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEditPriceClick(cc)}
+                                    className="h-8 w-8 p-0 hover:bg-blue-50"
+                                    title="Modifier le prix"
+                                  >
+                                    <Edit2 className="h-4 w-4 text-blue-600" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteCollectionClick(cc)}
+                                    className="h-8 w-8 p-0 hover:bg-red-50"
+                                    title="Supprimer la collection"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                            
+                            {/* Sub-products rows */}
+                            {hasSubProducts && collectionSubProducts.map((sp) => {
+                              const csp = clientSubProducts[sp.id];
+                              if (!csp) return null;
+                              
+                              return (
+                                <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
+                                  <TableCell className="align-middle py-2 pl-8">
+                                    <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center">
+                                    <p className="text-xs text-slate-500">{csp.current_stock || 0}</p>
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={perSubProductForm[sp.id]?.counted_stock || ''}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || /^\d+$/.test(value)) {
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), counted_stock: value } }));
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      placeholder="......"
+                                      className="h-8 text-sm placeholder:text-slate-400"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={perSubProductForm[sp.id]?.cards_added || ''}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || /^\d+$/.test(value)) {
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), cards_added: value } }));
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      placeholder="......"
+                                      className="h-8 text-sm placeholder:text-slate-400"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    {/* Empty - sub-products don't have collection_info */}
+                                  </TableCell>
+                                  <TableCell className="align-top py-2 text-right">
+                                    <p className="text-xs text-slate-500">{effectivePrice.toFixed(2)} €</p>
+                                  </TableCell>
+                                  <TableCell className="align-top py-2 text-right">
+                                    {effectiveRecommendedSalePrice !== null ? (
+                                      <p className="text-xs text-slate-500">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+                                    ) : (
+                                      <p className="text-xs text-slate-400">-</p>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    {/* Empty - no actions for sub-products */}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </React.Fragment>
                         );
                       })}
                     </TableBody>
@@ -1687,6 +2172,56 @@ export default function ClientDetailPage() {
                 <Button type="submit" disabled={updatingPrice}>
                   {updatingPrice ? 'Enregistrement...' : 'Enregistrer'}
                 </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Sub-Products Initial Stocks Dialog */}
+        <Dialog open={subProductsInitialStocksDialogOpen} onOpenChange={setSubProductsInitialStocksDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleSubProductsInitialStocksSubmit}>
+              <DialogHeader>
+                <DialogTitle>Stocks initiaux des sous-produits</DialogTitle>
+                <DialogDescription>
+                  Cette collection contient des sous-produits. Veuillez renseigner le stock initial pour chaque sous-produit.
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-4">
+                {subProductsForAssociation.map((sp) => (
+                  <div key={sp.id}>
+                    <Label htmlFor={`sub-product-stock-${sp.id}`}>{sp.name}</Label>
+                    <Input
+                      id={`sub-product-stock-${sp.id}`}
+                      type="text"
+                      inputMode="numeric"
+                      value={subProductsInitialStocks[sp.id] || ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '' || /^\d+$/.test(value)) {
+                          setSubProductsInitialStocks(prev => ({ ...prev, [sp.id]: value }));
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="Ex: 50"
+                      className="mt-1.5"
+                      required
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setSubProductsInitialStocksDialogOpen(false);
+                  setSubProductsForAssociation([]);
+                  setSubProductsInitialStocks({});
+                  setPendingAssociationData(null);
+                }}>
+                  Annuler
+                </Button>
+                <Button type="submit">Valider les stocks</Button>
               </DialogFooter>
             </form>
           </DialogContent>

@@ -93,6 +93,24 @@ export type Collection = {
   updated_at: string;
 };
 
+export type SubProduct = {
+  id: string;
+  collection_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientSubProduct = {
+  id: string;
+  client_id: string;
+  sub_product_id: string;
+  initial_stock: number;
+  current_stock: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ClientCollection = {
   id: string;
   client_id: string;
@@ -124,6 +142,7 @@ export type UserProfile = {
 
 export type DraftStockUpdateData = {
   perCollectionForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }>;
+  perSubProductForm?: Record<string, { counted_stock: string; cards_added: string }>;
   pendingAdjustments: { operation_name: string; unit_price: string; quantity: string }[];
 };
 
