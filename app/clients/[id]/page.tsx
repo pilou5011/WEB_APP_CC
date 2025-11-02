@@ -230,18 +230,16 @@ export default function ClientDetailPage() {
       // Initialize per-collection form defaults with last collection_info
       const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
       ccWithTyped.forEach((cc) => {
-        // Find the last stock update for this collection that has collection_info
-        const lastUpdateWithInfo = (updatesData || []).find(
+        // Find the last stock update for this collection (most recent, regardless of collection_info)
+        const lastUpdate = (updatesData || []).find(
           (update: StockUpdate) => 
-            update.collection_id === cc.collection_id && 
-            update.collection_info && 
-            update.collection_info.trim() !== ''
+            update.collection_id === cc.collection_id
         );
         
         initialForm[cc.id] = { 
           counted_stock: '', 
           cards_added: '', 
-          collection_info: lastUpdateWithInfo?.collection_info || '' 
+          collection_info: lastUpdate?.collection_info || '' 
         };
       });
       setPerCollectionForm(initialForm);
@@ -404,18 +402,16 @@ export default function ClientDetailPage() {
       // Reinitialize form with default values (from last invoice)
       const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
       clientCollections.forEach((cc) => {
-        // Find the last stock update for this collection that has collection_info
-        const lastUpdateWithInfo = stockUpdates.find(
+        // Find the last stock update for this collection (most recent, regardless of collection_info)
+        const lastUpdate = stockUpdates.find(
           (update: StockUpdate) => 
-            update.collection_id === cc.collection_id && 
-            update.collection_info && 
-            update.collection_info.trim() !== ''
+            update.collection_id === cc.collection_id
         );
         
         initialForm[cc.id] = { 
           counted_stock: '', 
           cards_added: '', 
-          collection_info: lastUpdateWithInfo?.collection_info || '' 
+          collection_info: lastUpdate?.collection_info || '' 
         };
       });
       
