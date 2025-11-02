@@ -132,7 +132,7 @@ export function validateMarketDaysSchedule(schedule: MarketDaysSchedule): { vali
 
 export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
   const [selectedDays, setSelectedDays] = useState<(keyof MarketDaysSchedule)[]>(
-    DAYS.filter(day => value[day].length > 0)
+    DAYS.filter(day => value[day].length > 0) as (keyof MarketDaysSchedule)[]
   );
 
   const handleDayToggle = (day: keyof MarketDaysSchedule) => {
