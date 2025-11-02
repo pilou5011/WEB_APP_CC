@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
+import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,13 +14,15 @@ interface DepositSlipDialogProps {
   onOpenChange: (open: boolean) => void;
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
+  stockUpdates?: StockUpdate[];
 }
 
 export function DepositSlipDialog({
   open,
   onOpenChange,
   client,
-  clientCollections
+  clientCollections,
+  stockUpdates = []
 }: DepositSlipDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -33,7 +35,7 @@ export function DepositSlipDialog({
       loadUserProfile();
       loadLastInvoiceInfos();
     }
-  }, [open]);
+  }, [open, stockUpdates, clientCollections]);
 
   const loadUserProfile = async () => {
     try {
@@ -58,7 +60,7 @@ export function DepositSlipDialog({
 
   const loadLastInvoiceInfos = async () => {
     try {
-      // Get last invoice for this client
+      // Check if there's at least one invoice for this client
       const { data: lastInvoice, error: invoiceError } = await supabase
         .from('invoices')
         .select('id')
@@ -69,25 +71,25 @@ export function DepositSlipDialog({
 
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
-      if (lastInvoice) {
-        // Get stock updates from last invoice with collection_info
-        const { data: updates, error: updatesError } = await supabase
-          .from('stock_updates')
-          .select('collection_id, collection_info')
-          .eq('invoice_id', lastInvoice.id);
-
-        if (updatesError) throw updatesError;
-
+      if (lastInvoice && stockUpdates.length > 0) {
+        // If invoice exists, get collection_info from last stock update for each collection
+        // (same logic as in the client page)
         const infos: Record<string, string> = {};
-        (updates || []).forEach(u => {
-          if (u.collection_id && u.collection_info) {
-            infos[u.collection_id] = u.collection_info;
+        clientCollections.forEach((cc) => {
+          // Find the last stock update for this collection (most recent, regardless of collection_info)
+          const lastUpdate = stockUpdates.find(
+            (update: StockUpdate) => 
+              update.collection_id === cc.collection_id
+          );
+          
+          if (cc.collection_id) {
+            infos[cc.collection_id] = lastUpdate?.collection_info || '';
           }
         });
         setCollectionInfos(infos);
         setNeedsInfoInput(false);
       } else {
-        // No invoice yet, user needs to input infos
+        // No invoice yet or no stock updates, user needs to input infos
         setNeedsInfoInput(true);
         const infos: Record<string, string> = {};
         clientCollections.forEach(cc => {
