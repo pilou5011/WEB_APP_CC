@@ -288,38 +288,73 @@ export function DepositSlipDialog({
       doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
-      // 3) Tableau des collections (seulement Collection, Infos, Marchandise remise)
+      // 3) Tableau des collections (Collection, Infos, Prix de cession (HT), Prix de vente conseillé (TTC), Marchandise remise)
       const tableData = clientCollections.map((cc) => {
         const collectionName = cc.collection?.name || 'Collection';
         const info = collectionInfos[cc.collection_id || ''] || '';
+        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+        const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
         const stock = cc.current_stock.toString();
         
         return [
           collectionName,
           info,
+          `${effectivePrice.toFixed(2)} €`,
+          effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
           stock
         ];
       });
 
+      // Calculer la largeur disponible pour le tableau (en tenant compte des marges)
+      const marginLeft = 15;
+      const marginRight = 15;
+      const tableWidth = pageWidth - marginLeft - marginRight;
+
+      // Définir les largeurs des colonnes : les 3 dernières colonnes doivent avoir exactement 10% chacune
+      // Collection: 35%, Infos: 35%, Prix cession HT: 10%, Prix vente conseillé TTC: 10%, Marchandise: 10%
+      const columnWidths = [
+        tableWidth * 0.35,  // Collection - 35%
+        tableWidth * 0.35,  // Infos - 35%
+        tableWidth * 0.10,  // Prix de cession (HT) - 10% (exact)
+        tableWidth * 0.10,  // Prix de vente conseillé (TTC) - 10% (exact, même taille que précédent)
+        tableWidth * 0.10   // Marchandise remise - 10% (exact, même taille que les deux précédentes)
+      ];
+
       autoTable(doc, {
         startY: yPosition,
-        head: [['Collection', 'Infos', 'Marchandise remise']],
+        head: [[
+          'Collection', 
+          'Infos', 
+          { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+          { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+          { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        ]],
         body: tableData,
         theme: 'grid',
+        columnWidths: columnWidths,
+        tableWidth: tableWidth,
+        margin: { left: marginLeft, right: marginRight },
         headStyles: {
           fillColor: [71, 85, 105],
           textColor: 255,
-          fontSize: 9,
+          fontSize: 7,
           fontStyle: 'bold',
-          halign: 'center'
+          halign: 'center',
+          valign: 'middle',
+          cellPadding: 2,
+          overflow: 'linebreak'
         },
         bodyStyles: {
-          fontSize: 9
+          fontSize: 8,
+          cellPadding: 2,
+          overflow: 'linebreak'
         },
         columnStyles: {
           0: { halign: 'left' },
-          1: { halign: 'left', fontSize: 8 },
-          2: { halign: 'center' }
+          1: { halign: 'left', fontSize: 7 },
+          2: { halign: 'center', fontSize: 7 }, // 10% - Prix de cession HT
+          3: { halign: 'center', fontSize: 7 }, // 10% - Prix de vente conseillé TTC
+          4: { halign: 'center', fontSize: 8 }  // 10% - Marchandise remise
         }
       });
 

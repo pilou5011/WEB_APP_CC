@@ -19,6 +19,7 @@ export default function CollectionsPage() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    recommended_sale_price: '',
     barcode: ''
   });
   const [submitting, setSubmitting] = useState(false);
@@ -64,11 +65,19 @@ export default function CollectionsPage() {
         return;
       }
 
+      const recommendedSalePrice = formData.recommended_sale_price ? parseFloat(formData.recommended_sale_price) : null;
+      if (recommendedSalePrice !== null && (isNaN(recommendedSalePrice) || recommendedSalePrice < 0)) {
+        toast.error('Le prix de vente conseillé doit être un nombre positif');
+        setSubmitting(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('collections')
         .insert([{
           name: formData.name,
           price: price,
+          recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null
         }])
         .select()
@@ -79,7 +88,7 @@ export default function CollectionsPage() {
       toast.success('Collection ajoutée avec succès');
       setCollections([data, ...collections]);
       setDialogOpen(false);
-      setFormData({ name: '', price: '', barcode: '' });
+      setFormData({ name: '', price: '', recommended_sale_price: '', barcode: '' });
     } catch (error) {
       console.error('Error creating collection:', error);
       toast.error('Erreur lors de la création de la collection');
@@ -135,7 +144,7 @@ export default function CollectionsPage() {
                       />
                     </div>
                     <div>
-                      <Label htmlFor="price">Prix de la collection (€)</Label>
+                      <Label htmlFor="price">Prix de cession (HT)</Label>
                       <Input
                         id="price"
                         type="number"
@@ -147,6 +156,20 @@ export default function CollectionsPage() {
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                       />
+                    </div>
+                    <div>
+                      <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
+                      <Input
+                        id="recommended_sale_price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.recommended_sale_price}
+                        onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                        placeholder="Ex: 3.00"
+                        className="mt-1.5"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">Optionnel</p>
                     </div>
                     <div>
                       <Label htmlFor="barcode">Code Barre Produit (optionnel)</Label>

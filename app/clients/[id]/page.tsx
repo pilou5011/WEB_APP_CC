@@ -83,11 +83,15 @@ export default function ClientDetailPage() {
     initial_stock: string;
     price_type: 'default' | 'custom';
     custom_price: string;
+    recommended_sale_price_type: 'default' | 'custom';
+    custom_recommended_sale_price: string;
   }>({
     collection_id: null,
     initial_stock: '',
     price_type: 'default',
-    custom_price: ''
+    custom_price: '',
+    recommended_sale_price_type: 'default',
+    custom_recommended_sale_price: ''
   });
   
   // Combobox state for collection selector
@@ -763,6 +767,17 @@ export default function ClientDetailPage() {
       customPrice = parsedPrice;
     }
 
+    // Validate custom recommended sale price if selected
+    let customRecommendedSalePrice: number | null = null;
+    if (associateForm.recommended_sale_price_type === 'custom') {
+      const parsedRecommendedSalePrice = parseFloat(associateForm.custom_recommended_sale_price);
+      if (isNaN(parsedRecommendedSalePrice) || parsedRecommendedSalePrice < 0) {
+        toast.error('Le prix de vente conseillé personnalisé doit être un nombre positif');
+        return;
+      }
+      customRecommendedSalePrice = parsedRecommendedSalePrice;
+    }
+
     try {
       const insertData: any = {
         client_id: clientId,
@@ -774,6 +789,11 @@ export default function ClientDetailPage() {
       // Only set custom_price if it's a custom price
       if (customPrice !== null) {
         insertData.custom_price = customPrice;
+      }
+
+      // Only set custom_recommended_sale_price if it's a custom price
+      if (customRecommendedSalePrice !== null) {
+        insertData.custom_recommended_sale_price = customRecommendedSalePrice;
       }
 
       const { data, error } = await supabase
@@ -792,7 +812,14 @@ export default function ClientDetailPage() {
       if (clientUpdateError) throw clientUpdateError;
 
       toast.success('Collection associée au client');
-      setAssociateForm({ collection_id: null, initial_stock: '', price_type: 'default', custom_price: '' });
+      setAssociateForm({ 
+        collection_id: null, 
+        initial_stock: '', 
+        price_type: 'default', 
+        custom_price: '',
+        recommended_sale_price_type: 'default',
+        custom_recommended_sale_price: ''
+      });
       await loadClientData();
     } catch (err) {
       console.error('Error associating collection:', err);
@@ -1055,7 +1082,7 @@ export default function ClientDetailPage() {
                 </div>
 
                 <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
-                  <Label>Prix de la collection</Label>
+                  <Label>Prix de cession (HT)</Label>
                   <RadioGroup
                     value={associateForm.price_type}
                     onValueChange={(val: 'default' | 'custom') => setAssociateForm(a => ({ ...a, price_type: val }))}
@@ -1102,6 +1129,59 @@ export default function ClientDetailPage() {
                   )}
                 </div>
 
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                  <Label>Prix de vente conseillé (TTC)</Label>
+                  <RadioGroup
+                    value={associateForm.recommended_sale_price_type}
+                    onValueChange={(val: 'default' | 'custom') => setAssociateForm(a => ({ ...a, recommended_sale_price_type: val }))}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="recommended-price-default" />
+                      <Label htmlFor="recommended-price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                        {associateForm.collection_id && allCollections.find(c => c.id === associateForm.collection_id) && (
+                          <span className="ml-2 text-sm text-slate-600">
+                            ({(() => {
+                              const collection = allCollections.find(c => c.id === associateForm.collection_id);
+                              return collection?.recommended_sale_price 
+                                ? `${collection.recommended_sale_price.toFixed(2)} €`
+                                : 'Non défini';
+                            })()})
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="recommended-price-custom" />
+                      <Label htmlFor="recommended-price-custom" className="font-normal cursor-pointer">
+                        Définir un prix spécifique pour ce client
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {associateForm.recommended_sale_price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="custom-recommended-price">Prix personnalisé (€)</Label>
+                      <Input
+                        id="custom-recommended-price"
+                        type="text"
+                        inputMode="decimal"
+                        value={associateForm.custom_recommended_sale_price}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setAssociateForm(a => ({ ...a, custom_recommended_sale_price: value }));
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="Ex: 3.00"
+                        className="mt-1.5"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <Button type="submit" className="w-full md:w-auto">Associer la collection</Button>
                 </div>
@@ -1116,19 +1196,22 @@ export default function ClientDetailPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-slate-50">
-                        <TableHead className="w-[18%] font-semibold">Collection</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Ancien dépôt</TableHead>
-                        <TableHead className="w-[14%] font-semibold">Stock compté</TableHead>
-                        <TableHead className="w-[14%] font-semibold">Nouveau dépôt</TableHead>
-                        <TableHead className="w-[24%] font-semibold">Info collection pour facture</TableHead>
-                        <TableHead className="w-[10%] text-right font-semibold">Prix</TableHead>
-                        <TableHead className="w-[8%] text-right font-semibold">Actions</TableHead>
+                        <TableHead className="w-[15%] font-semibold">Collection</TableHead>
+                        <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
+                        <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
+                        <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                        <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
+                        <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
+                        <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                        <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {clientCollections.map((cc) => {
                         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
                         const isCustomPrice = cc.custom_price !== null;
+                        const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+                        const isCustomRecommendedSalePrice = cc.custom_recommended_sale_price !== null;
                         
                         return (
                           <TableRow key={cc.id} className="hover:bg-slate-50/50">
@@ -1189,6 +1272,23 @@ export default function ClientDetailPage() {
                                 )}
                                 {!isCustomPrice && cc.collection?.price != null && (
                                   <p className="text-xs text-slate-500">Par défaut</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="align-top py-3 text-right">
+                              <div>
+                                {effectiveRecommendedSalePrice !== null ? (
+                                  <>
+                                    <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+                                    {isCustomRecommendedSalePrice && (
+                                      <p className="text-xs text-blue-600">Personnalisé</p>
+                                    )}
+                                    {!isCustomRecommendedSalePrice && (
+                                      <p className="text-xs text-slate-500">Par défaut</p>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="text-xs text-slate-400">Non défini</p>
                                 )}
                               </div>
                             </TableCell>
