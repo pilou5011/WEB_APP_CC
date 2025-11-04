@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
+import { AddressAutocomplete } from '@/components/address-autocomplete';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -24,6 +25,8 @@ export default function ProfilePage() {
     street_address: '',
     postal_code: '',
     city: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     siret: '',
     ape_code: '',
     tva_number: '',
@@ -56,6 +59,8 @@ export default function ProfilePage() {
           street_address: data.street_address || '',
           postal_code: data.postal_code || '',
           city: data.city || '',
+          latitude: data.latitude || null,
+          longitude: data.longitude || null,
           siret: data.siret || '',
           ape_code: data.ape_code || '',
           tva_number: data.tva_number || '',
@@ -349,6 +354,8 @@ export default function ProfilePage() {
                   street_address: profile.street_address || '',
                   postal_code: profile.postal_code || '',
                   city: profile.city || '',
+                  latitude: profile.latitude || null,
+                  longitude: profile.longitude || null,
                   siret: profile.siret || '',
                   ape_code: profile.ape_code || '',
                   tva_number: profile.tva_number || '',
@@ -473,41 +480,15 @@ export default function ProfilePage() {
                 </div>
                 <Separator />
                 
-                <div>
-                  <Label htmlFor="street_address">Adresse</Label>
-                  <Input
-                    id="street_address"
-                    value={formData.street_address}
-                    onChange={(e) => setFormData({ ...formData, street_address: e.target.value })}
-                    placeholder="Ex: 123 Rue de la République"
-                    className="mt-1.5"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <Label htmlFor="postal_code">Code postal</Label>
-                    <Input
-                      id="postal_code"
-                      value={formData.postal_code}
-                      onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
-                      placeholder="75001"
-                      maxLength={5}
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <Label htmlFor="city">Ville</Label>
-                    <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      placeholder="Ex: Paris"
-                      className="mt-1.5"
-                    />
-                  </div>
-                </div>
+                <AddressAutocomplete
+                  streetValue={formData.street_address}
+                  postalCodeValue={formData.postal_code}
+                  cityValue={formData.city}
+                  onStreetChange={(value) => setFormData(prev => ({ ...prev, street_address: value }))}
+                  onPostalCodeChange={(value) => setFormData(prev => ({ ...prev, postal_code: value }))}
+                  onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
+                  onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                />
               </div>
 
               {/* Coordonnées */}
@@ -562,6 +543,8 @@ export default function ProfilePage() {
                         street_address: profile.street_address || '',
                         postal_code: profile.postal_code || '',
                         city: profile.city || '',
+                        latitude: profile.latitude || null,
+                        longitude: profile.longitude || null,
                         siret: profile.siret || '',
                         ape_code: profile.ape_code || '',
                         tva_number: profile.tva_number || '',

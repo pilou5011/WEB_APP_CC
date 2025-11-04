@@ -18,6 +18,7 @@ import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, for
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 import { ClientCalendar } from '@/components/client-calendar';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
+import { AddressAutocomplete } from '@/components/address-autocomplete';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -43,6 +44,8 @@ export default function ClientInfoPage() {
     postal_code: '',
     city: '',
     department: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     phone: '',
     phone_1_info: '',
     phone_2: '',
@@ -176,6 +179,8 @@ export default function ClientInfoPage() {
         postal_code: data.postal_code || '',
         city: data.city || '',
         department: department || '',
+        latitude: data.latitude || null,
+        longitude: data.longitude || null,
         phone: data.phone || '',
         phone_1_info: data.phone_1_info || '',
         phone_2: data.phone_2 || '',
@@ -342,6 +347,8 @@ export default function ClientInfoPage() {
           postal_code: formData.postal_code,
           city: formData.city,
           department: formData.department || null,
+          latitude: formData.latitude,
+          longitude: formData.longitude,
           phone: formData.phone || null,
           phone_1_info: formData.phone_1_info || null,
           phone_2: formData.phone_2 || null,
@@ -793,6 +800,8 @@ export default function ClientInfoPage() {
                 postal_code: client.postal_code || '',
                 city: client.city || '',
                 department: department || '',
+                latitude: client.latitude || null,
+                longitude: client.longitude || null,
                 phone: client.phone || '',
                 phone_1_info: client.phone_1_info || '',
                 phone_2: client.phone_2 || '',
@@ -986,48 +995,21 @@ export default function ClientInfoPage() {
                 </div>
                 <Separator />
                 
-                <div>
-                  <Label htmlFor="street_address">Adresse *</Label>
-                  <Input
-                    id="street_address"
-                    value={formData.street_address}
-                    onChange={(e) => setFormData({ ...formData, street_address: e.target.value })}
-                    required
-                    placeholder="7 rue du cheval"
-                    className="mt-1.5"
-                  />
-                </div>
+                <AddressAutocomplete
+                  streetValue={formData.street_address}
+                  postalCodeValue={formData.postal_code}
+                  cityValue={formData.city}
+                  onStreetChange={(value) => setFormData(prev => ({ ...prev, street_address: value }))}
+                  onPostalCodeChange={(value) => {
+                    const department = getDepartmentFromPostalCode(value);
+                    setFormData(prev => ({ ...prev, postal_code: value, department: department || '' }));
+                  }}
+                  onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
+                  onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  required
+                />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="postal_code">Code postal *</Label>
-                    <Input
-                      id="postal_code"
-                      value={formData.postal_code}
-                      onChange={(e) => {
-                        const postalCode = e.target.value;
-                        const department = getDepartmentFromPostalCode(postalCode);
-                        setFormData({ ...formData, postal_code: postalCode, department: department || '' });
-                      }}
-                      required
-                      placeholder="92400"
-                      maxLength={5}
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="city">Ville *</Label>
-                    <Input
-                      id="city"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      required
-                      placeholder="Courbevoie"
-                      className="mt-1.5"
-                    />
-                  </div>
-
                   <div>
                     <Label htmlFor="department">Département</Label>
                     <Input
@@ -1306,6 +1288,8 @@ export default function ClientInfoPage() {
                       postal_code: client.postal_code || '',
                       city: client.city || '',
                       department: department || '',
+                      latitude: client.latitude || null,
+                      longitude: client.longitude || null,
                       phone: client.phone || '',
                       phone_1_info: client.phone_1_info || '',
                       phone_2: client.phone_2 || '',

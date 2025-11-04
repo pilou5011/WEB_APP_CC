@@ -14,6 +14,8 @@ export type Client = {
   postal_code: string | null;
   city: string | null;
   department: string | null;
+  latitude: number | null;
+  longitude: number | null;
   phone: string | null;
   phone_1_info: string | null;
   phone_2: string | null;
@@ -131,6 +133,8 @@ export type UserProfile = {
   street_address: string | null;
   postal_code: string | null;
   city: string | null;
+  latitude: number | null;
+  longitude: number | null;
   siret: string | null;
   ape_code: string | null;
   tva_number: string | null;

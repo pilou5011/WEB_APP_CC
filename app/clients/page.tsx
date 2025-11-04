@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
 import { cn } from '@/lib/utils';
 import { formatDepartment, getDepartmentFromPostalCode } from '@/lib/postal-code-utils';
+import { AddressAutocomplete } from '@/components/address-autocomplete';
 
 export default function ClientsPage() {
   const router = useRouter();
@@ -47,6 +48,8 @@ export default function ClientsPage() {
     street_address: '',
     postal_code: '',
     city: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     phone: '',
     rcs_number: '',
     naf_code: '',
@@ -59,6 +62,8 @@ export default function ClientsPage() {
     street_address: '',
     postal_code: '',
     city: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
     phone: '',
     rcs_number: '',
     naf_code: '',
@@ -341,7 +346,7 @@ export default function ClientsPage() {
       toast.success('Client ajouté avec succès');
       setClients([data, ...clients]);
       setDialogOpen(false);
-      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '' });
+      setFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', latitude: null, longitude: null, phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '' });
       setShowNewTypeInput(false);
       setNewTypeName('');
     } catch (error) {
@@ -360,6 +365,8 @@ export default function ClientsPage() {
       street_address: client.street_address || '',
       postal_code: client.postal_code || '',
       city: client.city || '',
+      latitude: client.latitude || null,
+      longitude: client.longitude || null,
       phone: client.phone || '',
       rcs_number: client.rcs_number || '',
       naf_code: client.naf_code || '',
@@ -442,7 +449,7 @@ export default function ClientsPage() {
       toast.success('Client modifié avec succès');
       setEditDialogOpen(false);
       setEditingClient(null);
-      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
+      setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', latitude: null, longitude: null, phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
     } catch (error) {
       console.error('Error updating client:', error);
       toast.error('Erreur lors de la modification du client');
@@ -502,6 +509,8 @@ export default function ClientsPage() {
       street_address: '', 
       postal_code: '', 
       city: '', 
+      latitude: null, 
+      longitude: null, 
       phone: '', 
       rcs_number: '', 
       naf_code: '', 
@@ -732,42 +741,16 @@ export default function ClientsPage() {
                     )}
                   </div>
                   
-                  <div>
-                    <Label htmlFor="street_address">Adresse *</Label>
-                    <Input
-                      id="street_address"
-                      value={formData.street_address}
-                      onChange={(e) => setFormData({ ...formData, street_address: e.target.value })}
-                      required
-                      placeholder="7 rue du cheval"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="postal_code">Code postal *</Label>
-                      <Input
-                        id="postal_code"
-                        value={formData.postal_code}
-                        onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
-                        required
-                        placeholder="92400"
-                        maxLength={5}
-                        className="mt-1.5"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="city">Ville *</Label>
-                      <Input
-                        id="city"
-                        value={formData.city}
-                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                        required
-                        placeholder="Courbevoie"
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </div>
+                  <AddressAutocomplete
+                    streetValue={formData.street_address}
+                    postalCodeValue={formData.postal_code}
+                    cityValue={formData.city}
+                    onStreetChange={(value) => setFormData(prev => ({ ...prev, street_address: value }))}
+                    onPostalCodeChange={(value) => setFormData(prev => ({ ...prev, postal_code: value }))}
+                    onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
+                    onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                    required
+                  />
                   <div>
                     <Label htmlFor="phone">Numéro de téléphone</Label>
                     <Input
@@ -1034,7 +1017,7 @@ export default function ClientsPage() {
             // ET qu'on ne va pas ouvrir l'AlertDialog
             if (!open && !clientToDelete && !deleting) {
               setEditingClient(null);
-              setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
+              setEditFormData({ name: '', address: '', street_address: '', postal_code: '', city: '', latitude: null, longitude: null, phone: '', rcs_number: '', naf_code: '', client_number: '', establishment_type_id: '', initial_stock: '' });
             }
           }}
         >
@@ -1091,42 +1074,16 @@ export default function ClientsPage() {
                   </Select>
                 </div>
                 
-                <div>
-                  <Label htmlFor="edit-street_address">Adresse *</Label>
-                  <Input
-                    id="edit-street_address"
-                    value={editFormData.street_address}
-                    onChange={(e) => setEditFormData({ ...editFormData, street_address: e.target.value })}
-                    required
-                    placeholder="7 rue du cheval"
-                    className="mt-1.5"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="edit-postal_code">Code postal *</Label>
-                    <Input
-                      id="edit-postal_code"
-                      value={editFormData.postal_code}
-                      onChange={(e) => setEditFormData({ ...editFormData, postal_code: e.target.value })}
-                      required
-                      placeholder="92400"
-                      maxLength={5}
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="edit-city">Ville *</Label>
-                    <Input
-                      id="edit-city"
-                      value={editFormData.city}
-                      onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
-                      required
-                      placeholder="Courbevoie"
-                      className="mt-1.5"
-                    />
-                  </div>
-                </div>
+                <AddressAutocomplete
+                  streetValue={editFormData.street_address}
+                  postalCodeValue={editFormData.postal_code}
+                  cityValue={editFormData.city}
+                  onStreetChange={(value) => setEditFormData(prev => ({ ...prev, street_address: value }))}
+                  onPostalCodeChange={(value) => setEditFormData(prev => ({ ...prev, postal_code: value }))}
+                  onCityChange={(value) => setEditFormData(prev => ({ ...prev, city: value }))}
+                  onCoordinatesChange={(lat, lon) => setEditFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  required
+                />
                 <div>
                   <Label htmlFor="edit-phone">Numéro de téléphone</Label>
                   <Input
