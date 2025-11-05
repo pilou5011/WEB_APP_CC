@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo } from 'react';
 import { Calendar } from '@/components/ui/calendar';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { ChevronLeft, ChevronRight, CalendarDays, Clock } from 'lucide-react';
@@ -282,32 +281,6 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
     setCurrentDate(new Date());
   };
 
-  // Calculer les statistiques du mois
-  const monthStats = useMemo(() => {
-    const year = currentDate.getFullYear();
-    const month = currentDate.getMonth();
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
-    
-    let openDays = 0;
-    let closedWeeklyDays = 0;
-    let closedVacationDays = 0;
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      const { status } = getDayStatus(date);
-      
-      if (status === 'open') {
-        openDays++;
-      } else if (status === 'closed_weekly') {
-        closedWeeklyDays++;
-      } else if (status === 'closed_vacation') {
-        closedVacationDays++;
-      }
-    }
-    
-    return { openDays, closedWeeklyDays, closedVacationDays };
-  }, [currentDate, openingHours, vacationPeriods]);
 
   // Customiser le rendu des jours du calendrier
   const modifiers = useMemo(() => ({
@@ -332,114 +305,59 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <CalendarDays className="h-5 w-5" />
-              Calendrier - {clientName}
-            </CardTitle>
-            <CardDescription>
-              Visualisez les jours ouverts et fermés du client
-            </CardDescription>
-          </div>
+    <div className="space-y-4">
+      {/* Contrôles de navigation */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToPreviousMonth}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToNextMonth}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={goToToday}
+          >
+            Aujourd'hui
+          </Button>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Contrôles de navigation */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToPreviousMonth}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToNextMonth}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToToday}
-            >
-              Aujourd'hui
-            </Button>
-          </div>
-        </div>
+      </div>
 
-        {/* Calendrier */}
-        <TooltipProvider>
-          <div className="flex justify-center">
-            <Calendar
-              mode="single"
-              selected={undefined}
-              onSelect={(date) => {
-                if (date) {
-                  handleDayClick(date);
-                  // Ne pas changer le mois au clic, seulement ouvrir le dialog
-                }
-              }}
-              month={currentDate}
-              onMonthChange={setCurrentDate}
-              modifiers={modifiers}
-              modifiersClassNames={modifiersClassNames}
-              weekStartsOn={1}
-              className="rounded-md border"
-              classNames={{
-                day_selected: 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
-                day_today: 'bg-accent text-accent-foreground'
-              }}
-            />
-          </div>
-        </TooltipProvider>
-
-        {/* Légende */}
-        <div className="flex flex-wrap items-center gap-4 pt-4 border-t">
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-green-100 border border-green-300"></div>
-            <Label className="text-sm">Jour ouvert</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-red-100 border border-red-300"></div>
-            <Label className="text-sm">Fermeture hebdomadaire</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-orange-100 border border-orange-300"></div>
-            <Label className="text-sm">Fermeture vacances</Label>
-          </div>
+      {/* Calendrier */}
+      <TooltipProvider>
+        <div className="flex justify-start">
+          <Calendar
+            mode="single"
+            selected={undefined}
+            onSelect={(date) => {
+              if (date) {
+                handleDayClick(date);
+                // Ne pas changer le mois au clic, seulement ouvrir le dialog
+              }
+            }}
+            month={currentDate}
+            onMonthChange={setCurrentDate}
+            modifiers={modifiers}
+            modifiersClassNames={modifiersClassNames}
+            weekStartsOn={1}
+            className="rounded-md border"
+            classNames={{
+              day_selected: 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
+              day_today: 'bg-accent text-accent-foreground'
+            }}
+          />
         </div>
-
-        {/* Statistiques du mois */}
-        <div className="pt-4 border-t">
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div>
-              <div className="text-2xl font-bold text-green-700">
-                {monthStats.openDays}
-              </div>
-              <div className="text-xs text-slate-500">Jours ouverts</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-red-700">
-                {monthStats.closedWeeklyDays}
-              </div>
-              <div className="text-xs text-slate-500">Fermetures hebdo</div>
-            </div>
-            <div>
-              <div className="text-2xl font-bold text-orange-700">
-                {monthStats.closedVacationDays}
-              </div>
-              <div className="text-xs text-slate-500">Fermetures vacances</div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
+      </TooltipProvider>
 
       {/* Dialog pour afficher les détails d'un jour */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -539,7 +457,7 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
           </div>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }
 

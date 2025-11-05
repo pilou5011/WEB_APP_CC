@@ -25,6 +25,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useStockUpdateDraft } from '@/hooks/use-stock-update-draft';
+import { ClientCalendar } from '@/components/client-calendar';
+import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours-editor';
+import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
+import { VacationPeriod } from '@/components/vacation-periods-editor';
 
 export default function ClientDetailPage() {
   const router = useRouter();
@@ -47,6 +51,11 @@ export default function ClientDetailPage() {
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
   const [depositSlipDialogOpen, setDepositSlipDialogOpen] = useState(false);
   const [lastVisitDate, setLastVisitDate] = useState<string | null>(null);
+  
+  // Calendar data
+  const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
+  const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
+  const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   
   // Draft recovery
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
@@ -260,6 +269,66 @@ export default function ClientDetailPage() {
       }
 
       setClient(clientData);
+
+      // Load calendar data
+      const defaultSchedule = getDefaultWeekSchedule();
+      if (clientData.opening_hours) {
+        const loadedSchedule = clientData.opening_hours as any;
+        const mergedSchedule = { ...defaultSchedule };
+        
+        Object.keys(defaultSchedule).forEach((day) => {
+          if (loadedSchedule[day]) {
+            mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
+          }
+        });
+        
+        setOpeningHours(mergedSchedule);
+      } else {
+        setOpeningHours(defaultSchedule);
+      }
+
+      const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+      if (clientData.market_days_schedule) {
+        const loadedMarketSchedule = clientData.market_days_schedule as any;
+        const mergedMarketSchedule = { ...defaultMarketSchedule };
+        
+        Object.keys(defaultMarketSchedule).forEach((day) => {
+          if (loadedMarketSchedule[day]) {
+            mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+          }
+        });
+        
+        setMarketDaysSchedule(mergedMarketSchedule);
+      } else {
+        setMarketDaysSchedule(defaultMarketSchedule);
+      }
+
+      if (clientData.vacation_periods && Array.isArray(clientData.vacation_periods) && clientData.vacation_periods.length > 0) {
+        const migratedPeriods = clientData.vacation_periods.map((period: any) => {
+          if (!period.inputType) {
+            let year: number | undefined = undefined;
+            
+            if (!period.isRecurring && period.startDate) {
+              const dateYear = new Date(period.startDate).getFullYear();
+              if (dateYear !== 2000) {
+                year = dateYear;
+              } else if (period.year) {
+                year = period.year;
+              }
+            }
+            
+            return {
+              ...period,
+              inputType: 'dates' as const,
+              year
+            };
+          }
+          return period;
+        });
+        setVacationPeriods(migratedPeriods as VacationPeriod[]);
+      } else {
+        setVacationPeriods([]);
+      }
 
       // Load all collections (for association selector)
       const { data: collectionsData, error: collectionsError } = await supabase
@@ -1332,6 +1401,18 @@ export default function ClientDetailPage() {
                       </div>
                     </div>
                   )}
+                  
+                  {/* Calendrier */}
+                  {client && (
+                    <div className="mt-4">
+                      <ClientCalendar
+                        openingHours={openingHours}
+                        vacationPeriods={vacationPeriods}
+                        marketDaysSchedule={marketDaysSchedule}
+                        clientName={client.name}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -1361,6 +1442,7 @@ export default function ClientDetailPage() {
                </div>}  */}
             </CardContent>
                     </Card>
+          
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Collections liées</CardTitle>
