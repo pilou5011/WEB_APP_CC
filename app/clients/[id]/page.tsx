@@ -451,18 +451,22 @@ export default function ClientDetailPage() {
             // Immediately restore draft data to prevent it from being overwritten
             // Add reassort field to existing draft data if missing
             const draftFormWithReassort: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }> = {};
-            Object.keys(draftData.perCollectionForm).forEach(key => {
-              const oldData = draftData.perCollectionForm[key] as any;
-              draftFormWithReassort[key] = {
-                ...oldData,
-                reassort: oldData.reassort || ''
-              };
-            });
+            if (draftData.perCollectionForm) {
+              Object.keys(draftData.perCollectionForm).forEach(key => {
+                const oldData = draftData.perCollectionForm![key] as any;
+                draftFormWithReassort[key] = {
+                  ...oldData,
+                  reassort: oldData.reassort || ''
+                };
+              });
+            }
             setPerCollectionForm(draftFormWithReassort);
             if (draftData.perSubProductForm) {
               setPerSubProductForm(draftData.perSubProductForm);
             }
-            setPendingAdjustments(draftData.pendingAdjustments);
+            if (draftData.pendingAdjustments) {
+              setPendingAdjustments(draftData.pendingAdjustments);
+            }
           }
         }
       }
