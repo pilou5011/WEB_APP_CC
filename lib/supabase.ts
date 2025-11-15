@@ -91,8 +91,23 @@ export type Collection = {
   price: number;
   recommended_sale_price: number | null;
   barcode: string | null;
+  category_id: string | null;
+  subcategory_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type CollectionCategory = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type CollectionSubcategory = {
+  id: string;
+  category_id: string;
+  name: string;
+  created_at: string;
 };
 
 export type SubProduct = {
