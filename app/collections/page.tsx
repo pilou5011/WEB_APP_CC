@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Package, Euro, Edit, X } from 'lucide-react';
+import { Plus, Package, Euro, Edit, X, Search } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
@@ -16,6 +16,8 @@ import { toast } from 'sonner';
 export default function CollectionsPage() {
   const router = useRouter();
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,7 +40,7 @@ export default function CollectionsPage() {
       const { data, error } = await supabase
         .from('collections')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true });
 
       if (error) throw error;
       setCollections(data || []);
@@ -49,6 +51,30 @@ export default function CollectionsPage() {
       setLoading(false);
     }
   };
+
+  // Filtrer et trier les collections
+  useEffect(() => {
+    let filtered: Collection[] = [...collections];
+
+    // Filtrage par recherche textuelle
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(collection => {
+        return (
+          collection.name.toLowerCase().includes(searchLower) ||
+          collection.barcode?.toLowerCase().includes(searchLower) ||
+          collection.price.toString().includes(searchLower) ||
+          collection.recommended_sale_price?.toString().includes(searchLower)
+        );
+      });
+    }
+
+    // Trier par ordre alphabétique (déjà trié depuis la base, mais on s'assure)
+    const sorted = [...filtered];
+    sorted.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    setFilteredCollections(sorted);
+  }, [collections, searchTerm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,7 +134,7 @@ export default function CollectionsPage() {
       }
 
       toast.success('Collection ajoutée avec succès');
-      setCollections([data, ...collections]);
+      await loadCollections();
       setDialogOpen(false);
       setFormData({ name: '', price: '', recommended_sale_price: '', barcode: '' });
       setHasSubProducts(false);
@@ -289,6 +315,28 @@ export default function CollectionsPage() {
           </div>
         </div>
 
+        {/* Barre de recherche */}
+        <div className="mb-6 space-y-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
+            <Input
+              type="text"
+              placeholder="Rechercher par nom, code barre, prix..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 bg-white shadow-sm border-slate-200 focus:border-blue-500 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Compteur de résultats */}
+          {searchTerm && (
+            <p className="text-sm text-slate-600">
+              {filteredCollections.length} collection{filteredCollections.length !== 1 ? 's' : ''} trouvée{filteredCollections.length !== 1 ? 's' : ''}
+              {searchTerm && ` pour "${searchTerm}"`}
+            </p>
+          )}
+        </div>
+
         {/* Delete Sub-Product Confirmation Dialog */}
         <AlertDialog open={deleteSubProductIndex !== null} onOpenChange={(open) => !open && setDeleteSubProductIndex(null)}>
           <AlertDialogContent>
@@ -330,56 +378,47 @@ export default function CollectionsPage() {
               </Card>
             ))}
           </div>
-        ) : collections.length === 0 ? (
+        ) : filteredCollections.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
               <Package className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-              <p className="text-slate-600 text-lg mb-2">Aucune collection</p>
+              <p className="text-slate-600 text-lg mb-2">
+                {searchTerm ? 'Aucune collection trouvée' : 'Aucune collection'}
+              </p>
               <p className="text-slate-500 text-sm">
-                Commencez par ajouter votre première collection
+                {searchTerm 
+                  ? `Aucun résultat pour "${searchTerm}". Essayez un autre terme de recherche.`
+                  : 'Commencez par ajouter votre première collection'
+                }
               </p>
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {collections.map((collection) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {filteredCollections.map((collection) => (
               <Card
                 key={collection.id}
-                className="cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-[1.02] border-slate-200 relative group"
+                className="hover:shadow-md transition-all duration-200 border-slate-200 cursor-pointer"
                 onClick={() => router.push(`/collections/${collection.id}`)}
               >
-                <CardHeader>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <CardTitle className="text-xl">{collection.name}</CardTitle>
-                      <CardDescription className="flex items-center gap-1.5 mt-2">
-                        <Euro className="h-4 w-4" />
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base font-semibold leading-tight mb-1.5">
+                        {collection.name}
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-600 mt-1.5 flex items-center gap-1">
+                        <Euro className="h-3 w-3" />
                         <span>{collection.price.toFixed(2)} €</span>
+                        {collection.recommended_sale_price && (
+                          <span className="text-slate-400">
+                            • Conseillé: {collection.recommended_sale_price.toFixed(2)} €
+                          </span>
+                        )}
                       </CardDescription>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/collections/${collection.id}`);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
                   </div>
                 </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center text-sm text-slate-500">
-                    <span>
-                      Créée le {new Date(collection.created_at).toLocaleDateString('fr-FR')}
-                    </span>
-                    <span>
-                      Modifiée le {new Date(collection.updated_at).toLocaleDateString('fr-FR')}
-                    </span>
-                  </div>
-                </CardContent>
               </Card>
             ))}
           </div>
