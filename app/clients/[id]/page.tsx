@@ -2261,18 +2261,18 @@ export default function ClientDetailPage() {
 
         {/* Sub-Products Initial Stocks Dialog */}
         <Dialog open={subProductsInitialStocksDialogOpen} onOpenChange={setSubProductsInitialStocksDialogOpen}>
-          <DialogContent>
-            <form onSubmit={handleSubProductsInitialStocksSubmit}>
-              <DialogHeader>
+          <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
+            <form onSubmit={handleSubProductsInitialStocksSubmit} className="flex flex-col flex-1 min-h-0">
+              <DialogHeader className="flex-shrink-0">
                 <DialogTitle>Stocks initiaux des sous-produits</DialogTitle>
                 <DialogDescription>
                   Cette collection contient des sous-produits. Veuillez renseigner le stock initial pour chaque sous-produit.
                 </DialogDescription>
               </DialogHeader>
               
-              <div className="space-y-4 py-4">
+              <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2 -mr-2">
                 {subProductsForAssociation.map((sp) => (
-                  <div key={sp.id}>
+                  <div key={sp.id} className="flex-shrink-0">
                     <Label htmlFor={`sub-product-stock-${sp.id}`}>{sp.name}</Label>
                     <Input
                       id={`sub-product-stock-${sp.id}`}
@@ -2294,7 +2294,7 @@ export default function ClientDetailPage() {
                 ))}
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="flex-shrink-0 border-t pt-4 mt-4">
                 <Button type="button" variant="outline" onClick={() => {
                   setSubProductsInitialStocksDialogOpen(false);
                   setSubProductsForAssociation([]);

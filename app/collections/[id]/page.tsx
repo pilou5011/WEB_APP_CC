@@ -2,12 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Collection } from '@/lib/supabase';
+import { supabase, Collection, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Euro, Package, Edit, Trash2, Plus, X } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, Euro, Package, Edit, Trash2, Plus, X, Pencil, Check, ChevronsUpDown } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SubProduct } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -26,15 +30,254 @@ export default function CollectionDetailPage() {
     name: '',
     price: '',
     recommended_sale_price: '',
-    barcode: ''
+    barcode: '',
+    category_id: '',
+    subcategory_id: ''
   });
   const [hasSubProducts, setHasSubProducts] = useState(false);
   const [subProducts, setSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
+  const [categories, setCategories] = useState<CollectionCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newSubcategoryName, setNewSubcategoryName] = useState('');
+  const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
+  const [showNewSubcategoryInput, setShowNewSubcategoryInput] = useState(false);
+  const [addingNewCategory, setAddingNewCategory] = useState(false);
+  const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editSubcategoryName, setEditSubcategoryName] = useState('');
+  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
+  const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
   useEffect(() => {
     loadCollectionData();
+    loadCategories();
+    loadSubcategories();
   }, [collectionId]);
+
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('collection_categories')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setCategories(data || []);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  const loadSubcategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('collection_subcategories')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setSubcategories(data || []);
+    } catch (error) {
+      console.error('Error loading subcategories:', error);
+    }
+  };
+
+  const getSubcategoriesForCategory = (categoryId: string) => {
+    return subcategories.filter(sub => sub.category_id === categoryId);
+  };
+
+  const handleAddNewCategory = async () => {
+    if (!newCategoryName.trim()) {
+      toast.error('Veuillez saisir un nom de catégorie');
+      return;
+    }
+
+    setAddingNewCategory(true);
+    try {
+      const { data, error } = await supabase
+        .from('collection_categories')
+        .insert([{ name: newCategoryName.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette catégorie existe déjà');
+        } else {
+          throw error;
+        }
+        setAddingNewCategory(false);
+        return;
+      }
+
+      await loadCategories();
+      setFormData({ ...formData, category_id: data.id, subcategory_id: '' });
+      setNewCategoryName('');
+      setShowNewCategoryInput(false);
+      toast.success('Catégorie ajoutée');
+    } catch (error) {
+      console.error('Error adding category:', error);
+      toast.error('Erreur lors de l\'ajout de la catégorie');
+    } finally {
+      setAddingNewCategory(false);
+    }
+  };
+
+  const handleAddNewSubcategory = async () => {
+    if (!newSubcategoryName.trim() || !formData.category_id) {
+      toast.error('Veuillez sélectionner une catégorie et saisir un nom de sous-catégorie');
+      return;
+    }
+
+    setAddingNewSubcategory(true);
+    try {
+      const { data, error } = await supabase
+        .from('collection_subcategories')
+        .insert([{ 
+          category_id: formData.category_id,
+          name: newSubcategoryName.trim() 
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        } else {
+          throw error;
+        }
+        setAddingNewSubcategory(false);
+        return;
+      }
+
+      await loadSubcategories();
+      setFormData({ ...formData, subcategory_id: data.id });
+      setNewSubcategoryName('');
+      setShowNewSubcategoryInput(false);
+      toast.success('Sous-catégorie ajoutée');
+    } catch (error) {
+      console.error('Error adding subcategory:', error);
+      toast.error('Erreur lors de l\'ajout de la sous-catégorie');
+    } finally {
+      setAddingNewSubcategory(false);
+    }
+  };
+
+  const handleEditCategory = async () => {
+    if (!editingCategory || !editCategoryName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('collection_categories')
+        .update({ name: editCategoryName.trim() })
+        .eq('id', editingCategory.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      toast.success('Catégorie modifiée avec succès');
+      await loadCategories();
+      setEditingCategory(null);
+      setEditCategoryName('');
+    } catch (error) {
+      console.error('Error updating category:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!deletingCategory) return;
+
+    try {
+      const { error } = await supabase
+        .from('collection_categories')
+        .delete()
+        .eq('id', deletingCategory.id);
+
+      if (error) throw error;
+
+      toast.success('Catégorie supprimée avec succès');
+      await loadCategories();
+      if (formData.category_id === deletingCategory.id) {
+        setFormData({ ...formData, category_id: '', subcategory_id: '' });
+      }
+      setDeleteCategoryDialogOpen(false);
+      setDeletingCategory(null);
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
+  const handleEditSubcategory = async () => {
+    if (!editingSubcategory || !editSubcategoryName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('collection_subcategories')
+        .update({ name: editSubcategoryName.trim() })
+        .eq('id', editingSubcategory.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      toast.success('Sous-catégorie modifiée avec succès');
+      await loadSubcategories();
+      setEditingSubcategory(null);
+      setEditSubcategoryName('');
+    } catch (error) {
+      console.error('Error updating subcategory:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteSubcategory = async () => {
+    if (!deletingSubcategory) return;
+
+    try {
+      const { error } = await supabase
+        .from('collection_subcategories')
+        .delete()
+        .eq('id', deletingSubcategory.id);
+
+      if (error) throw error;
+
+      toast.success('Sous-catégorie supprimée avec succès');
+      await loadSubcategories();
+      if (formData.subcategory_id === deletingSubcategory.id) {
+        setFormData({ ...formData, subcategory_id: '' });
+      }
+      setDeleteSubcategoryDialogOpen(false);
+      setDeletingSubcategory(null);
+    } catch (error) {
+      console.error('Error deleting subcategory:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
 
   const loadCollectionData = async () => {
     try {
@@ -57,7 +300,9 @@ export default function CollectionDetailPage() {
         name: collectionData.name,
         price: collectionData.price.toString(),
         recommended_sale_price: collectionData.recommended_sale_price?.toString() || '',
-        barcode: collectionData.barcode || ''
+        barcode: collectionData.barcode || '',
+        category_id: collectionData.category_id || '',
+        subcategory_id: collectionData.subcategory_id || ''
       });
 
       // Load sub-products
@@ -121,6 +366,8 @@ export default function CollectionDetailPage() {
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
+          category_id: formData.category_id || null,
+          subcategory_id: formData.subcategory_id || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', collectionId);
@@ -382,6 +629,333 @@ export default function CollectionDetailPage() {
                     />
                     <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
                   </div>
+
+                  {/* Catégorie */}
+                  <div>
+                    <Label htmlFor="category">Catégorie (optionnel)</Label>
+                    {!showNewCategoryInput && !editingCategory ? (
+                      <div className="flex gap-2 mt-1.5">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              role="combobox"
+                              className="flex-1 justify-between"
+                            >
+                              {formData.category_id
+                                ? categories.find(c => c.id === formData.category_id)?.name
+                                : 'Sélectionner une catégorie...'}
+                              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[300px] p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="Rechercher une catégorie..." />
+                              <CommandList>
+                                {categories.length === 0 ? (
+                                  <CommandEmpty>
+                                    <div className="py-6 text-center text-sm text-slate-400">
+                                      Liste vide, veuillez ajouter un élément
+                                    </div>
+                                  </CommandEmpty>
+                                ) : (
+                                  <CommandGroup>
+                                    {categories.map((category) => (
+                                      <div key={category.id} className="flex items-center group">
+                                        <CommandItem
+                                          value={category.id}
+                                          onSelect={() => {
+                                            setFormData({ ...formData, category_id: category.id, subcategory_id: '' });
+                                            setShowNewSubcategoryInput(false);
+                                          }}
+                                          className="flex-1"
+                                        >
+                                          <Check
+                                            className={cn(
+                                              'mr-2 h-4 w-4',
+                                              formData.category_id === category.id ? 'opacity-100' : 'opacity-0'
+                                            )}
+                                          />
+                                          {category.name}
+                                        </CommandItem>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditingCategory(category);
+                                            setEditCategoryName(category.name);
+                                          }}
+                                        >
+                                          <Pencil className="h-3 w-3" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setDeletingCategory(category);
+                                            setDeleteCategoryDialogOpen(true);
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </CommandGroup>
+                                )}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowNewCategoryInput(true)}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : editingCategory ? (
+                      <div className="flex gap-2 mt-1.5">
+                        <Input
+                          value={editCategoryName}
+                          onChange={(e) => setEditCategoryName(e.target.value)}
+                          className="flex-1"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleEditCategory();
+                            } else if (e.key === 'Escape') {
+                              setEditingCategory(null);
+                              setEditCategoryName('');
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleEditCategory}
+                        >
+                          Enregistrer
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingCategory(null);
+                            setEditCategoryName('');
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-1.5">
+                        <Input
+                          placeholder="Nouvelle catégorie..."
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddNewCategory();
+                            } else if (e.key === 'Escape') {
+                              setShowNewCategoryInput(false);
+                              setNewCategoryName('');
+                            }
+                          }}
+                          className="flex-1"
+                          autoFocus
+                        />
+                        <Button
+                          type="button"
+                          onClick={handleAddNewCategory}
+                          disabled={addingNewCategory}
+                        >
+                          {addingNewCategory ? '...' : 'Ajouter'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setShowNewCategoryInput(false);
+                            setNewCategoryName('');
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sous-catégorie */}
+                  {formData.category_id && (
+                    <div>
+                      <Label htmlFor="subcategory">Sous-catégorie (optionnel)</Label>
+                      {!showNewSubcategoryInput && !editingSubcategory ? (
+                        <div className="flex gap-2 mt-1.5">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className="flex-1 justify-between"
+                              >
+                                {formData.subcategory_id
+                                  ? getSubcategoriesForCategory(formData.category_id).find(s => s.id === formData.subcategory_id)?.name
+                                  : 'Sélectionner une sous-catégorie...'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Rechercher une sous-catégorie..." />
+                                <CommandList>
+                                  {getSubcategoriesForCategory(formData.category_id).length === 0 ? (
+                                    <CommandEmpty>
+                                      <div className="py-6 text-center text-sm text-slate-400">
+                                        Liste vide, veuillez ajouter un élément
+                                      </div>
+                                    </CommandEmpty>
+                                  ) : (
+                                    <CommandGroup>
+                                      {getSubcategoriesForCategory(formData.category_id).map((subcategory) => (
+                                        <div key={subcategory.id} className="flex items-center group">
+                                          <CommandItem
+                                            value={subcategory.id}
+                                            onSelect={() => {
+                                              setFormData({ ...formData, subcategory_id: subcategory.id });
+                                            }}
+                                            className="flex-1"
+                                          >
+                                            <Check
+                                              className={cn(
+                                                'mr-2 h-4 w-4',
+                                                formData.subcategory_id === subcategory.id ? 'opacity-100' : 'opacity-0'
+                                              )}
+                                            />
+                                            {subcategory.name}
+                                          </CommandItem>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingSubcategory(subcategory);
+                                              setEditSubcategoryName(subcategory.name);
+                                            }}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setDeletingSubcategory(subcategory);
+                                              setDeleteSubcategoryDialogOpen(true);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowNewSubcategoryInput(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : editingSubcategory ? (
+                        <div className="flex gap-2 mt-1.5">
+                          <Input
+                            value={editSubcategoryName}
+                            onChange={(e) => setEditSubcategoryName(e.target.value)}
+                            className="flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleEditSubcategory();
+                              } else if (e.key === 'Escape') {
+                                setEditingSubcategory(null);
+                                setEditSubcategoryName('');
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleEditSubcategory}
+                          >
+                            Enregistrer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingSubcategory(null);
+                              setEditSubcategoryName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 mt-1.5">
+                          <Input
+                            placeholder="Nouvelle sous-catégorie..."
+                            value={newSubcategoryName}
+                            onChange={(e) => setNewSubcategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewSubcategory();
+                              } else if (e.key === 'Escape') {
+                                setShowNewSubcategoryInput(false);
+                                setNewSubcategoryName('');
+                              }
+                            }}
+                            className="flex-1"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddNewSubcategory}
+                            disabled={addingNewSubcategory}
+                          >
+                            {addingNewSubcategory ? '...' : 'Ajouter'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewSubcategoryInput(false);
+                              setNewSubcategoryName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
@@ -455,6 +1029,51 @@ export default function CollectionDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Delete Category Confirmation Dialog */}
+        <AlertDialog open={deleteCategoryDialogOpen} onOpenChange={setDeleteCategoryDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette catégorie ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
+                Toutes les sous-catégories associées seront également supprimées.
+                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteCategory}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Subcategory Confirmation Dialog */}
+        <AlertDialog open={deleteSubcategoryDialogOpen} onOpenChange={setDeleteSubcategoryDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
+                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteSubcategory}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete Sub-Product Confirmation Dialog */}
         <AlertDialog open={deleteSubProductIndex !== null} onOpenChange={(open) => !open && setDeleteSubProductIndex(null)}>
