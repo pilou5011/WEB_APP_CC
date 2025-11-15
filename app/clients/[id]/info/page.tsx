@@ -8,15 +8,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Calendar, Mail, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, formatWeekScheduleData, validateWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, formatMarketDaysScheduleData, validateMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
-import { ClientCalendar } from '@/components/client-calendar';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 
@@ -29,6 +29,8 @@ export default function ClientInfoPage() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [establishmentTypes, setEstablishmentTypes] = useState<EstablishmentType[]>([]);
   const [establishmentTypeName, setEstablishmentTypeName] = useState<string>('');
   const [newTypeName, setNewTypeName] = useState('');
@@ -454,6 +456,39 @@ export default function ClientInfoPage() {
     }
   };
 
+  const handleDeleteConfirm = async () => {
+    if (!client) return;
+
+    setDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('clients')
+        .delete()
+        .eq('id', clientId);
+
+      if (error) {
+        let errorMessage = 'Erreur lors de la suppression du client';
+        
+        if (error.code === '23503') {
+          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements (collections, factures, etc.)';
+        } else if (error.message) {
+          errorMessage = `Erreur : ${error.message}`;
+        }
+        
+        toast.error(errorMessage);
+        setDeleting(false);
+        return;
+      }
+
+      toast.success(`Client "${client.name}" supprimé avec succès`);
+      router.push('/clients');
+    } catch (error: any) {
+      console.error('Error deleting client:', error);
+      toast.error(error?.message || 'Erreur inattendue lors de la suppression du client');
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -492,10 +527,10 @@ export default function ClientInfoPage() {
                 <div>
                   <CardTitle className="text-3xl flex items-center gap-2">
                     <Building2 className="h-8 w-8" />
-                    Informations du client
+                    {client.name}
                   </CardTitle>
                   <CardDescription>
-                    Détails complets de {client.name}
+                    Détails complets du client
                   </CardDescription>
                 </div>
                 <Button onClick={() => setIsEditing(true)}>
@@ -760,21 +795,6 @@ export default function ClientInfoPage() {
                   </div>
                 </div>
 
-                {/* Calendrier des ouvertures/fermetures */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-slate-700 font-semibold">
-                    <Calendar className="h-5 w-5" />
-                    <h3>Calendrier des ouvertures</h3>
-                  </div>
-                  <Separator />
-                  
-                  <ClientCalendar
-                    openingHours={openingHours}
-                    vacationPeriods={vacationPeriods}
-                    marketDaysSchedule={marketDaysSchedule}
-                    clientName={client.name}
-                  />
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -871,10 +891,10 @@ export default function ClientInfoPage() {
           <CardHeader>
             <CardTitle className="text-3xl flex items-center gap-2">
               <Building2 className="h-8 w-8" />
-              Modifier les informations
+              {client.name}
             </CardTitle>
             <CardDescription>
-              Modifiez les informations de {client.name}
+              Modifiez les informations du client
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1274,11 +1294,21 @@ export default function ClientInfoPage() {
 
               <Separator />
 
-              <div className="flex justify-end gap-3">
+              <div className="flex justify-between items-center gap-3">
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() => {
+                  variant="destructive"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  disabled={submitting || deleting}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Supprimer ce client
+                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
                     setIsEditing(false);
                     // Restaurer les données du client si on annule l'édition
                     const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
@@ -1352,10 +1382,11 @@ export default function ClientInfoPage() {
                   disabled={submitting}
                 >
                   Annuler
-                </Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Enregistrement...' : 'Enregistrer'}
-                </Button>
+                    </Button>
+                    <Button type="submit" disabled={submitting}>
+                      {submitting ? 'Enregistrement...' : 'Enregistrer'}
+                    </Button>
+                  </div>
               </div>
             </form>
           </CardContent>
@@ -1371,6 +1402,48 @@ export default function ClientInfoPage() {
             loadClient();
           }}
         />
+
+        {/* Dialog de confirmation de suppression */}
+        <AlertDialog 
+          open={deleteDialogOpen} 
+          onOpenChange={(open) => {
+            if (!deleting) {
+              setDeleteDialogOpen(open);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Êtes-vous sûr de vouloir supprimer ce client ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Cette action est irréversible. Le client "{client?.name}" et toutes ses données associées seront définitivement supprimés :
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>Toutes les collections associées à ce client</li>
+                  <li>Tous les historiques de stock</li>
+                  <li>Toutes les factures et ajustements</li>
+                  <li>Toutes les informations personnalisées (horaires, jours de marché, etc.)</li>
+                </ul>
+                <p className="mt-3 font-semibold text-red-600">
+                  Cette action ne peut pas être annulée.
+                </p>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDeleteConfirm();
+                }}
+                disabled={deleting}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? 'Suppression en cours...' : 'Supprimer définitivement'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
