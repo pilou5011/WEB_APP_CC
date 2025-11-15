@@ -9,7 +9,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { InvoiceDialog } from '@/components/invoice-dialog';
@@ -29,6 +46,226 @@ import { ClientCalendar } from '@/components/client-calendar';
 import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriod } from '@/components/vacation-periods-editor';
+
+// Component for sortable collection row
+function SortableCollectionRow({
+  cc,
+  effectivePrice,
+  isCustomPrice,
+  effectiveRecommendedSalePrice,
+  isCustomRecommendedSalePrice,
+  collectionSubProducts,
+  hasSubProducts,
+  parentCountedStock,
+  parentCardsAdded,
+  parentCurrentStock,
+  perCollectionForm,
+  setPerCollectionForm,
+  clientSubProducts,
+  perSubProductForm,
+  setPerSubProductForm,
+  onEditPrice,
+  onDelete,
+  subProducts
+}: {
+  cc: ClientCollection & { collection?: Collection };
+  effectivePrice: number;
+  isCustomPrice: boolean;
+  effectiveRecommendedSalePrice: number | null;
+  isCustomRecommendedSalePrice: boolean;
+  collectionSubProducts: SubProduct[];
+  hasSubProducts: boolean;
+  parentCountedStock: number;
+  parentCardsAdded: number;
+  parentCurrentStock: number;
+  perCollectionForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>;
+  setPerCollectionForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>>>;
+  clientSubProducts: Record<string, ClientSubProduct>;
+  perSubProductForm: Record<string, { counted_stock: string; cards_added: string }>;
+  setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; cards_added: string }>>>;
+  onEditPrice: () => void;
+  onDelete: () => void;
+  subProducts: Record<string, SubProduct[]>;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: cc.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={cn("hover:bg-slate-50/50", hasSubProducts && "bg-slate-50")}
+    >
+      <TableCell className="align-middle py-3">
+        <div className="flex items-center gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600"
+          >
+            <GripVertical className="h-5 w-5" />
+          </button>
+          <p className={cn("font-medium text-slate-900", hasSubProducts && "font-semibold")}>
+            {cc.collection?.name || 'Collection'}
+          </p>
+        </div>
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center">
+        <p className="text-sm font-medium text-slate-600">
+          {hasSubProducts ? parentCurrentStock : cc.current_stock}
+        </p>
+      </TableCell>
+      <TableCell className="align-top py-3">
+        {hasSubProducts ? (
+          <Input
+            type="text"
+            value={parentCountedStock.toString()}
+            disabled
+            readOnly
+            className="h-9 bg-slate-100 cursor-not-allowed"
+          />
+        ) : (
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={perCollectionForm[cc.id]?.counted_stock || ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '' || /^\d+$/.test(value)) {
+                const current = perCollectionForm[cc.id] || { counted_stock: '', cards_added: '', reassort: '', collection_info: '' };
+                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...current, counted_stock: value } }));
+              }
+            }}
+            onWheel={(e) => e.currentTarget.blur()}
+            placeholder="......"
+            className="h-9 placeholder:text-slate-400"
+          />
+        )}
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center">
+        {hasSubProducts ? (
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded - parentCountedStock}
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-slate-600">
+            {(() => {
+              const current = perCollectionForm[cc.id] || { counted_stock: '', cards_added: '', reassort: '', collection_info: '' };
+              const counted = parseInt(current.counted_stock) || 0;
+              const added = parseInt(current.cards_added) || 0;
+              // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
+              return added - counted;
+            })()}
+          </p>
+        )}
+      </TableCell>
+      <TableCell className="align-top py-3">
+        {hasSubProducts ? (
+          <Input
+            type="text"
+            value={parentCardsAdded.toString()}
+            disabled
+            readOnly
+            className="h-9 bg-slate-100 cursor-not-allowed"
+          />
+        ) : (
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={perCollectionForm[cc.id]?.cards_added || ''}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '' || /^\d+$/.test(value)) {
+                const current = perCollectionForm[cc.id] || { counted_stock: '', cards_added: '', reassort: '', collection_info: '' };
+                // Just update cards_added, reassort will be calculated automatically in the display
+                setPerCollectionForm(p => ({ ...p, [cc.id]: { ...current, cards_added: value } }));
+              }
+            }}
+            onWheel={(e) => e.currentTarget.blur()}
+            placeholder="......"
+            className={cn(
+              "h-9 placeholder:text-slate-400",
+              (!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === '') && "bg-slate-100 cursor-not-allowed"
+            )}
+            disabled={!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === ''}
+          />
+        )}
+      </TableCell>
+      <TableCell className="align-top py-3">
+        <Input
+          type="text"
+          value={perCollectionForm[cc.id]?.collection_info || ''}
+          onChange={(e) => {
+            const current = perCollectionForm[cc.id] || { counted_stock: '', cards_added: '', reassort: '', collection_info: '' };
+            setPerCollectionForm(p => ({ ...p, [cc.id]: { ...current, collection_info: e.target.value } }));
+          }}
+          placeholder="......"
+          className="h-9 placeholder:text-slate-400"
+        />
+      </TableCell>
+      <TableCell className="align-top py-3 text-right">
+        <div>
+          <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+          {isCustomPrice && (
+            <p className="text-xs text-blue-600">Personnalisé</p>
+          )}
+          {!isCustomPrice && cc.collection?.price != null && (
+            <p className="text-xs text-slate-500">Par défaut</p>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="align-top py-3 text-right">
+        <div>
+          {effectiveRecommendedSalePrice !== null ? (
+            <>
+              <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+              {isCustomRecommendedSalePrice && (
+                <p className="text-xs text-blue-600">Personnalisé</p>
+              )}
+              {!isCustomRecommendedSalePrice && cc.collection?.recommended_sale_price != null && (
+                <p className="text-xs text-slate-500">Par défaut</p>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">-</p>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="align-top py-3">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onEditPrice}
+            className="h-8"
+          >
+            <Edit2 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDelete}
+            className="h-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function ClientDetailPage() {
   const router = useRouter();
@@ -81,7 +318,7 @@ export default function ClientDetailPage() {
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added, collection_info } }
-  const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; collection_info: string }>>({});
+  const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>>({});
   // Form per sub-product: { [subProductId]: { counted_stock, cards_added } }
   const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
 
@@ -125,6 +362,52 @@ export default function ClientDetailPage() {
   // Initialize draft management hook
   const draft = useStockUpdateDraft(clientId);
 
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = clientCollections.findIndex(cc => cc.id === active.id);
+      const newIndex = clientCollections.findIndex(cc => cc.id === over.id);
+
+      const reorderedCollections = arrayMove(clientCollections, oldIndex, newIndex);
+      setClientCollections(reorderedCollections);
+
+      // Update display_order in database
+      try {
+        const updates = reorderedCollections.map((cc, index) => ({
+          id: cc.id,
+          display_order: index + 1
+        }));
+
+        // Update all collections in a transaction-like manner
+        for (const update of updates) {
+          const { error } = await supabase
+            .from('client_collections')
+            .update({ display_order: update.display_order })
+            .eq('id', update.id);
+
+          if (error) throw error;
+        }
+
+        toast.success('Ordre des collections mis à jour');
+      } catch (error) {
+        console.error('Error updating collection order:', error);
+        toast.error('Erreur lors de la mise à jour de l\'ordre');
+        // Reload to revert changes
+        await loadClientData();
+      }
+    }
+  };
+
   useEffect(() => {
     // Reset draft check flag when clientId changes (navigating to different client)
     draftCheckDoneRef.current = false;
@@ -166,7 +449,16 @@ export default function ClientDetailPage() {
             setHasDraft(true);
             setDraftRecoveryOpen(true);
             // Immediately restore draft data to prevent it from being overwritten
-            setPerCollectionForm(draftData.perCollectionForm);
+            // Add reassort field to existing draft data if missing
+            const draftFormWithReassort: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }> = {};
+            Object.keys(draftData.perCollectionForm).forEach(key => {
+              const oldData = draftData.perCollectionForm[key] as any;
+              draftFormWithReassort[key] = {
+                ...oldData,
+                reassort: oldData.reassort || ''
+              };
+            });
+            setPerCollectionForm(draftFormWithReassort);
             if (draftData.perSubProductForm) {
               setPerSubProductForm(draftData.perSubProductForm);
             }
@@ -344,7 +636,7 @@ export default function ClientDetailPage() {
         .from('client_collections')
         .select('*, collection:collections(*)')
         .eq('client_id', clientId)
-        .order('created_at', { ascending: false });
+        .order('display_order', { ascending: true });
 
       if (ccError) throw ccError;
       const ccWithTyped = (ccData || []).map((row: any) => ({ ...row, collection: row.collection as Collection }));
@@ -401,7 +693,7 @@ export default function ClientDetailPage() {
       setStockUpdates(updatesData || []);
 
       // Initialize per-collection form defaults with last collection_info
-      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }> = {};
       const initialSubProductForm: Record<string, { counted_stock: string; cards_added: string }> = {};
       
       ccWithTyped.forEach((cc) => {
@@ -414,6 +706,7 @@ export default function ClientDetailPage() {
         initialForm[cc.id] = { 
           counted_stock: '', 
           cards_added: '', 
+          reassort: '',
           collection_info: lastUpdate?.collection_info || '' 
         };
       });
@@ -660,7 +953,7 @@ export default function ClientDetailPage() {
       console.log('[Draft] Draft deleted successfully, reinitializing form');
       
       // Reinitialize form with default values (from last invoice)
-      const initialForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }> = {};
       clientCollections.forEach((cc) => {
         // Find the last stock update for this collection (most recent, regardless of collection_info)
         const lastUpdate = stockUpdates.find(
@@ -671,6 +964,7 @@ export default function ClientDetailPage() {
         initialForm[cc.id] = { 
           counted_stock: '', 
           cards_added: '', 
+          reassort: '',
           collection_info: lastUpdate?.collection_info || '' 
         };
       });
@@ -1129,9 +1423,14 @@ export default function ClientDetailPage() {
 
     // No sub-products: proceed with normal association
     if (!selectedCollectionHasSubProducts) {
-      const initialStock = parseInt(associateForm.initial_stock || '0');
+      // Stock initial is required (can be 0)
+      if (!associateForm.initial_stock || associateForm.initial_stock.trim() === '') {
+        toast.error('Le stock initial est obligatoire');
+        return;
+      }
+      const initialStock = parseInt(associateForm.initial_stock);
       if (isNaN(initialStock) || initialStock < 0) {
-        toast.error('Le stock initial doit être un nombre positif');
+        toast.error('Le stock initial doit être un nombre positif ou zéro');
         return;
       }
       await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
@@ -1169,11 +1468,18 @@ export default function ClientDetailPage() {
     subProductsStocks: Record<string, number> | null
   ) => {
     try {
+      // Calculate display_order: max + 1 to add at the bottom
+      const maxOrder = clientCollections.length > 0 
+        ? Math.max(...clientCollections.map(cc => cc.display_order || 0))
+        : 0;
+      const newDisplayOrder = maxOrder + 1;
+
       const insertData: any = {
         client_id: clientId,
         collection_id: associateForm.collection_id!,
         initial_stock: subProductsStocks ? 0 : initialStock,
-        current_stock: subProductsStocks ? 0 : initialStock
+        current_stock: subProductsStocks ? 0 : initialStock,
+        display_order: newDisplayOrder
       };
 
       // Only set custom_price if it's a custom price
@@ -1502,7 +1808,7 @@ export default function ClientDetailPage() {
                     </Popover>
                   </div>
                   <div>
-                    <Label htmlFor="assoc-initial">Stock initial</Label>
+                    <Label htmlFor="assoc-initial">Stock initial *</Label>
                     <Input 
                       id="assoc-initial" 
                       type="text" 
@@ -1517,14 +1823,19 @@ export default function ClientDetailPage() {
                         }
                       }}
                       onWheel={(e) => e.currentTarget.blur()}
-                      placeholder={selectedCollectionHasSubProducts ? "Calculé depuis les sous-produits" : "Ex: 100"} 
+                      placeholder={selectedCollectionHasSubProducts ? "Calculé depuis les sous-produits" : "Ex: 100 (0 si vide)"} 
                       className={cn("mt-1.5", selectedCollectionHasSubProducts && "bg-slate-100 cursor-not-allowed")}
                       disabled={selectedCollectionHasSubProducts}
                       readOnly={selectedCollectionHasSubProducts}
+                      required={!selectedCollectionHasSubProducts}
                     />
-                    {selectedCollectionHasSubProducts && (
+                    {selectedCollectionHasSubProducts ? (
                       <p className="text-xs text-slate-500 mt-1">
                         Le stock initial sera calculé automatiquement à partir des stocks des sous-produits
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Obligatoire (peut être 0)
                       </p>
                     )}
                   </div>
@@ -1641,13 +1952,14 @@ export default function ClientDetailPage() {
               {clientCollections.length === 0 ? (
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
-                <div className="border border-slate-200 rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
+                <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
+                  <Table noWrapper>
+                    <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                       <TableRow className="bg-slate-50">
                         <TableHead className="w-[15%] font-semibold">Collection</TableHead>
                         <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
                         <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
+                        <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
                         <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
                         <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
                         <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
@@ -1655,8 +1967,17 @@ export default function ClientDetailPage() {
                         <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
-                      {clientCollections.map((cc) => {
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={clientCollections.map(cc => cc.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <TableBody>
+                          {clientCollections.map((cc) => {
                         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
                         const isCustomPrice = cc.custom_price !== null;
                         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
@@ -1686,133 +2007,26 @@ export default function ClientDetailPage() {
 
                         return (
                           <React.Fragment key={cc.id}>
-                            {/* Collection parent row */}
-                            <TableRow className={cn("hover:bg-slate-50/50", hasSubProducts && "bg-slate-50")}>
-                              <TableCell className="align-middle py-3">
-                                <p className={cn("font-medium text-slate-900", hasSubProducts && "font-semibold")}>
-                                  {cc.collection?.name || 'Collection'}
-                                </p>
-                              </TableCell>
-                              <TableCell className="align-middle py-3 text-center">
-                                <p className="text-sm font-medium text-slate-600">
-                                  {hasSubProducts ? parentCurrentStock : cc.current_stock}
-                                </p>
-                              </TableCell>
-                              <TableCell className="align-top py-3">
-                                {hasSubProducts ? (
-                                  <Input
-                                    type="text"
-                                    value={parentCountedStock.toString()}
-                                    disabled
-                                    readOnly
-                                    className="h-9 bg-slate-100 cursor-not-allowed"
-                                  />
-                                ) : (
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={perCollectionForm[cc.id]?.counted_stock || ''}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      if (value === '' || /^\d+$/.test(value)) {
-                                        setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), counted_stock: value } }));
-                                      }
-                                    }}
-                                    onWheel={(e) => e.currentTarget.blur()}
-                                    placeholder="......"
-                                    className="h-9 placeholder:text-slate-400"
-                                  />
-                                )}
-                              </TableCell>
-                              <TableCell className="align-top py-3">
-                                {hasSubProducts ? (
-                                  <Input
-                                    type="text"
-                                    value={parentCardsAdded.toString()}
-                                    disabled
-                                    readOnly
-                                    className="h-9 bg-slate-100 cursor-not-allowed"
-                                  />
-                                ) : (
-                                  <Input
-                                    type="text"
-                                    inputMode="numeric"
-                                    value={perCollectionForm[cc.id]?.cards_added || ''}
-                                    onChange={(e) => {
-                                      const value = e.target.value;
-                                      if (value === '' || /^\d+$/.test(value)) {
-                                        setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), cards_added: value } }));
-                                      }
-                                    }}
-                                    onWheel={(e) => e.currentTarget.blur()}
-                                    placeholder="......"
-                                    className="h-9 placeholder:text-slate-400"
-                                  />
-                                )}
-                              </TableCell>
-                              <TableCell className="align-top py-3">
-                                <Input
-                                  type="text"
-                                  value={perCollectionForm[cc.id]?.collection_info || ''}
-                                  onChange={(e) => {
-                                    setPerCollectionForm(p => ({ ...p, [cc.id]: { ...(p[cc.id] || { counted_stock: '', cards_added: '', collection_info: '' }), collection_info: e.target.value } }));
-                                  }}
-                                  placeholder="......"
-                                  className="h-9 placeholder:text-slate-400"
-                                />
-                              </TableCell>
-                              <TableCell className="align-top py-3 text-right">
-                                <div>
-                                  <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
-                                  {isCustomPrice && (
-                                    <p className="text-xs text-blue-600">Personnalisé</p>
-                                  )}
-                                  {!isCustomPrice && cc.collection?.price != null && (
-                                    <p className="text-xs text-slate-500">Par défaut</p>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="align-top py-3 text-right">
-                                <div>
-                                  {effectiveRecommendedSalePrice !== null ? (
-                                    <>
-                                      <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
-                                      {isCustomRecommendedSalePrice && (
-                                        <p className="text-xs text-blue-600">Personnalisé</p>
-                                      )}
-                                      {!isCustomRecommendedSalePrice && (
-                                        <p className="text-xs text-slate-500">Par défaut</p>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <p className="text-xs text-slate-400">Non défini</p>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="align-top py-3 text-right">
-                                <div className="flex gap-1 justify-end">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleEditPriceClick(cc)}
-                                    className="h-8 w-8 p-0 hover:bg-blue-50"
-                                    title="Modifier le prix"
-                                  >
-                                    <Edit2 className="h-4 w-4 text-blue-600" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDeleteCollectionClick(cc)}
-                                    className="h-8 w-8 p-0 hover:bg-red-50"
-                                    title="Supprimer la collection"
-                                  >
-                                    <Trash2 className="h-4 w-4 text-red-600" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            
+                            <SortableCollectionRow
+                              cc={cc}
+                              effectivePrice={effectivePrice}
+                              isCustomPrice={isCustomPrice}
+                              effectiveRecommendedSalePrice={effectiveRecommendedSalePrice}
+                              isCustomRecommendedSalePrice={isCustomRecommendedSalePrice}
+                              collectionSubProducts={collectionSubProducts}
+                              hasSubProducts={hasSubProducts}
+                              parentCountedStock={parentCountedStock}
+                              parentCardsAdded={parentCardsAdded}
+                              parentCurrentStock={parentCurrentStock}
+                              perCollectionForm={perCollectionForm}
+                              setPerCollectionForm={setPerCollectionForm}
+                              clientSubProducts={clientSubProducts}
+                              perSubProductForm={perSubProductForm}
+                              setPerSubProductForm={setPerSubProductForm}
+                              onEditPrice={() => handleEditPriceClick(cc)}
+                              onDelete={() => handleDeleteCollectionClick(cc)}
+                              subProducts={subProducts}
+                            />
                             {/* Sub-products rows */}
                             {hasSubProducts && collectionSubProducts.map((sp) => {
                               const csp = clientSubProducts[sp.id];
@@ -1841,6 +2055,17 @@ export default function ClientDetailPage() {
                                       placeholder="......"
                                       className="h-8 text-sm placeholder:text-slate-400"
                                     />
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center">
+                                    <p className="text-xs font-medium text-slate-600">
+                                      {(() => {
+                                        const formData = perSubProductForm[sp.id] || { counted_stock: '', cards_added: '' };
+                                        const counted = parseInt(formData.counted_stock) || 0;
+                                        const added = parseInt(formData.cards_added) || 0;
+                                        // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
+                                        return added - counted;
+                                      })()}
+                                    </p>
                                   </TableCell>
                                   <TableCell className="align-top py-2">
                                     <Input
@@ -1880,7 +2105,9 @@ export default function ClientDetailPage() {
                           </React.Fragment>
                         );
                       })}
-                    </TableBody>
+                        </TableBody>
+                      </SortableContext>
+                    </DndContext>
                   </Table>
                 </div>
               )}
