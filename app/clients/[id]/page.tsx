@@ -452,8 +452,9 @@ export default function ClientDetailPage() {
             // Add reassort field to existing draft data if missing
             const draftFormWithReassort: Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }> = {};
             if (draftData.perCollectionForm) {
-              Object.keys(draftData.perCollectionForm).forEach(key => {
-                const oldData = draftData.perCollectionForm![key] as any;
+              const perCollectionForm = draftData.perCollectionForm;
+              Object.keys(perCollectionForm).forEach(key => {
+                const oldData = perCollectionForm[key] as any;
                 draftFormWithReassort[key] = {
                   ...oldData,
                   reassort: oldData.reassort || ''
