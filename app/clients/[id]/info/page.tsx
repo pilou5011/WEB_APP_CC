@@ -2,23 +2,27 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, EstablishmentType } from '@/lib/supabase';
+import { supabase, Client, EstablishmentType, PaymentMethod } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2 } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2, Check, ChevronsUpDown, Pencil } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
+import { PaymentMethodsManager } from '@/components/payment-methods-manager';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, formatWeekSchedule, formatWeekScheduleData, validateWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, formatMarketDaysScheduleData, validateMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
+import { cn } from '@/lib/utils';
 
 export default function ClientInfoPage() {
   const router = useRouter();
@@ -37,6 +41,20 @@ export default function ClientInfoPage() {
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
+  const [editingEstablishmentType, setEditingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [editEstablishmentTypeName, setEditEstablishmentTypeName] = useState('');
+  const [deletingEstablishmentType, setDeletingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [deleteEstablishmentTypeDialogOpen, setDeleteEstablishmentTypeDialogOpen] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [paymentMethodName, setPaymentMethodName] = useState<string>('');
+  const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
+  const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
+  const [addingNewPaymentMethod, setAddingNewPaymentMethod] = useState(false);
+  const [managePaymentMethodsDialogOpen, setManagePaymentMethodsDialogOpen] = useState(false);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [editPaymentMethodName, setEditPaymentMethodName] = useState('');
+  const [deletingPaymentMethod, setDeletingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [deletePaymentMethodDialogOpen, setDeletePaymentMethodDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
@@ -65,7 +83,7 @@ export default function ClientInfoPage() {
     vacation_start_date: '',
     vacation_end_date: '',
     closing_day: '',
-    payment_method: '',
+    payment_method_id: '',
     email: '',
     comment: ''
   });
@@ -73,6 +91,7 @@ export default function ClientInfoPage() {
   useEffect(() => {
     loadClient();
     loadEstablishmentTypes();
+    loadPaymentMethods();
   }, [clientId]);
 
   const loadClient = async () => {
@@ -104,6 +123,23 @@ export default function ClientInfoPage() {
         if (typeData) {
           setEstablishmentTypeName(typeData.name);
         }
+      } else {
+        setEstablishmentTypeName('');
+      }
+
+      // Charger le nom de la méthode de paiement si présente
+      if (data.payment_method_id) {
+        const { data: methodData } = await supabase
+          .from('payment_methods')
+          .select('name')
+          .eq('id', data.payment_method_id)
+          .single();
+        
+        if (methodData) {
+          setPaymentMethodName(methodData.name);
+        }
+      } else {
+        setPaymentMethodName('');
       }
 
       // Charger les horaires d'ouverture et fusionner avec le schedule par défaut
@@ -200,7 +236,7 @@ export default function ClientInfoPage() {
         vacation_start_date: data.vacation_start_date || '',
         vacation_end_date: data.vacation_end_date || '',
         closing_day: data.closing_day || '',
-        payment_method: data.payment_method || '',
+        payment_method_id: data.payment_method_id || '',
         email: data.email || '',
         comment: data.comment || ''
       });
@@ -223,6 +259,57 @@ export default function ClientInfoPage() {
       setEstablishmentTypes(data || []);
     } catch (error) {
       console.error('Error loading establishment types:', error);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setPaymentMethods(data || []);
+    } catch (error) {
+      console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const handleAddNewPaymentMethod = async () => {
+    if (!newPaymentMethodName.trim()) {
+      toast.error('Veuillez saisir un nom de méthode de paiement');
+      return;
+    }
+
+    setAddingNewPaymentMethod(true);
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .insert([{ name: newPaymentMethodName.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette méthode de paiement existe déjà');
+        } else {
+          throw error;
+        }
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
+      setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setFormData({ ...formData, payment_method_id: data.id });
+      setNewPaymentMethodName('');
+      setShowNewPaymentMethodInput(false);
+      toast.success('Méthode de paiement ajoutée');
+    } catch (error) {
+      console.error('Error adding payment method:', error);
+      toast.error('Erreur lors de l\'ajout de la méthode');
+    } finally {
+      setAddingNewPaymentMethod(false);
     }
   };
 
@@ -250,7 +337,7 @@ export default function ClientInfoPage() {
         return;
       }
 
-      setEstablishmentTypes([...establishmentTypes, data].sort((a, b) => a.name.localeCompare(b.name)));
+      await loadEstablishmentTypes();
       setFormData({ ...formData, establishment_type_id: data.id });
       setNewTypeName('');
       setShowNewTypeInput(false);
@@ -260,6 +347,126 @@ export default function ClientInfoPage() {
       toast.error('Erreur lors de l\'ajout du type');
     } finally {
       setAddingNewType(false);
+    }
+  };
+
+  const handleEditEstablishmentType = async () => {
+    if (!editingEstablishmentType || !editEstablishmentTypeName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .update({ name: editEstablishmentTypeName.trim() })
+        .eq('id', editingEstablishmentType.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadEstablishmentTypes();
+      setEditingEstablishmentType(null);
+      setEditEstablishmentTypeName('');
+      toast.success('Type modifié avec succès');
+    } catch (error) {
+      console.error('Error updating establishment type:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteEstablishmentTypeClick = (type: EstablishmentType) => {
+    setDeletingEstablishmentType(type);
+    setDeleteEstablishmentTypeDialogOpen(true);
+  };
+
+  const handleDeleteEstablishmentType = async () => {
+    if (!deletingEstablishmentType) return;
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .delete()
+        .eq('id', deletingEstablishmentType.id);
+
+      if (error) throw error;
+
+      await loadEstablishmentTypes();
+      if (formData.establishment_type_id === deletingEstablishmentType.id) {
+        setFormData({ ...formData, establishment_type_id: '' });
+      }
+      setDeleteEstablishmentTypeDialogOpen(false);
+      setDeletingEstablishmentType(null);
+      toast.success('Type supprimé avec succès');
+    } catch (error) {
+      console.error('Error deleting establishment type:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
+  const handleEditPaymentMethod = async () => {
+    if (!editingPaymentMethod || !editPaymentMethodName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .update({ name: editPaymentMethodName.trim() })
+        .eq('id', editingPaymentMethod.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadPaymentMethods();
+      setEditingPaymentMethod(null);
+      setEditPaymentMethodName('');
+      toast.success('Méthode de paiement modifiée avec succès');
+    } catch (error) {
+      console.error('Error updating payment method:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeletePaymentMethodClick = (method: PaymentMethod) => {
+    setDeletingPaymentMethod(method);
+    setDeletePaymentMethodDialogOpen(true);
+  };
+
+  const handleDeletePaymentMethod = async () => {
+    if (!deletingPaymentMethod) return;
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', deletingPaymentMethod.id);
+
+      if (error) throw error;
+
+      await loadPaymentMethods();
+      if (formData.payment_method_id === deletingPaymentMethod.id) {
+        setFormData({ ...formData, payment_method_id: '' });
+      }
+      setDeletePaymentMethodDialogOpen(false);
+      setDeletingPaymentMethod(null);
+      toast.success('Méthode de paiement supprimée avec succès');
+    } catch (error) {
+      console.error('Error deleting payment method:', error);
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -368,7 +575,7 @@ export default function ClientInfoPage() {
           average_time_minutes: averageTimeMinutes,
           market_days_schedule: marketDaysSchedule,
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
-          payment_method: formData.payment_method || null,
+          payment_method_id: formData.payment_method_id || null,
           email: formData.email || null,
           comment: formData.comment || null,
           updated_at: new Date().toISOString()
@@ -403,6 +610,21 @@ export default function ClientInfoPage() {
         }
       } else {
         setEstablishmentTypeName('');
+      }
+
+      // Recharger le nom de la méthode de paiement
+      if (data.payment_method_id) {
+        const { data: methodData } = await supabase
+          .from('payment_methods')
+          .select('name')
+          .eq('id', data.payment_method_id)
+          .single();
+        
+        if (methodData) {
+          setPaymentMethodName(methodData.name);
+        }
+      } else {
+        setPaymentMethodName('');
       }
 
       // Mettre à jour les horaires d'ouverture affichés
@@ -782,7 +1004,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Règlement</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.payment_method || <span className="text-slate-400">Non renseigné</span>}
+                        {paymentMethodName || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -839,7 +1061,7 @@ export default function ClientInfoPage() {
                 vacation_start_date: client.vacation_start_date || '',
                 vacation_end_date: client.vacation_end_date || '',
                 closing_day: client.closing_day || '',
-                payment_method: client.payment_method || '',
+                payment_method_id: client.payment_method_id || '',
                 email: client.email || '',
                 comment: client.comment || ''
               });
@@ -921,42 +1143,124 @@ export default function ClientInfoPage() {
 
                 {/* Type d'établissement */}
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <Label htmlFor="establishment_type">Type d'établissement</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setManageTypesDialogOpen(true)}
-                      className="h-7 text-xs"
-                    >
-                      <Settings className="h-3 w-3 mr-1" />
-                      Gérer les types
-                    </Button>
-                  </div>
-                  {!showNewTypeInput ? (
-                    <div className="flex gap-2">
-                      <Select
-                        value={formData.establishment_type_id}
-                        onValueChange={(value) => setFormData({ ...formData, establishment_type_id: value })}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Sélectionner un type..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {establishmentTypes.map((type) => (
-                            <SelectItem key={type.id} value={type.id}>
-                              {type.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <Label htmlFor="establishment_type">Type d'établissement (optionnel)</Label>
+                  {!showNewTypeInput && !editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="flex-1 justify-between"
+                          >
+                            {formData.establishment_type_id
+                              ? establishmentTypes.find(t => t.id === formData.establishment_type_id)?.name
+                              : 'Sélectionner un type...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Rechercher un type..." />
+                            <CommandList>
+                              {establishmentTypes.length === 0 ? (
+                                <CommandEmpty>
+                                  <div className="py-6 text-center text-sm text-slate-400">
+                                    Liste vide, veuillez ajouter un élément
+                                  </div>
+                                </CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {establishmentTypes.map((type) => (
+                                    <div key={type.id} className="flex items-center group">
+                                      <CommandItem
+                                        value={type.id}
+                                        onSelect={() => {
+                                          setFormData({ ...formData, establishment_type_id: type.id });
+                                        }}
+                                        className="flex-1"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            formData.establishment_type_id === type.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {type.name}
+                                      </CommandItem>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingEstablishmentType(type);
+                                          setEditEstablishmentTypeName(type.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteEstablishmentTypeClick(type);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setShowNewTypeInput(true)}
                       >
                         <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={editEstablishmentTypeName}
+                        onChange={(e) => setEditEstablishmentTypeName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditEstablishmentType();
+                          } else if (e.key === 'Escape') {
+                            setEditingEstablishmentType(null);
+                            setEditEstablishmentTypeName('');
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleEditEstablishmentType}
+                      >
+                        Enregistrer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingEstablishmentType(null);
+                          setEditEstablishmentTypeName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
@@ -969,8 +1273,13 @@ export default function ClientInfoPage() {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             handleAddNewType();
+                          } else if (e.key === 'Escape') {
+                            setShowNewTypeInput(false);
+                            setNewTypeName('');
                           }
                         }}
+                        className="flex-1"
+                        autoFocus
                       />
                       <Button
                         type="button"
@@ -1267,15 +1576,163 @@ export default function ClientInfoPage() {
                     <Separator />
 
                     <div>
-                      <Label htmlFor="payment_method">Règlement</Label>
-                      <p className="text-xs text-slate-500 mt-1">Ex: Virement, Chèque, Espèces, Carte bancaire...</p>
-                      <Input
-                        id="payment_method"
-                        value={formData.payment_method}
-                        onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                        placeholder="Ex: Virement"
-                        className="mt-1.5"
-                      />
+                      <Label htmlFor="payment_method_id">Règlement (optionnel)</Label>
+                      {!showNewPaymentMethodInput && !editingPaymentMethod ? (
+                        <div className="flex gap-2 mt-1.5">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className="flex-1 justify-between"
+                              >
+                                {formData.payment_method_id
+                                  ? paymentMethods.find(m => m.id === formData.payment_method_id)?.name
+                                  : 'Sélectionner une méthode...'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Rechercher une méthode..." />
+                                <CommandList>
+                                  {paymentMethods.length === 0 ? (
+                                    <CommandEmpty>
+                                      <div className="py-6 text-center text-sm text-slate-400">
+                                        Liste vide, veuillez ajouter un élément
+                                      </div>
+                                    </CommandEmpty>
+                                  ) : (
+                                    <CommandGroup>
+                                      {paymentMethods.map((method) => (
+                                        <div key={method.id} className="flex items-center group">
+                                          <CommandItem
+                                            value={method.id}
+                                            onSelect={() => {
+                                              setFormData({ ...formData, payment_method_id: method.id });
+                                            }}
+                                            className="flex-1"
+                                          >
+                                            <Check
+                                              className={cn(
+                                                'mr-2 h-4 w-4',
+                                                formData.payment_method_id === method.id ? 'opacity-100' : 'opacity-0'
+                                              )}
+                                            />
+                                            {method.name}
+                                          </CommandItem>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingPaymentMethod(method);
+                                              setEditPaymentMethodName(method.name);
+                                            }}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeletePaymentMethodClick(method);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowNewPaymentMethodInput(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : editingPaymentMethod ? (
+                        <div className="flex gap-2 mt-1.5">
+                          <Input
+                            value={editPaymentMethodName}
+                            onChange={(e) => setEditPaymentMethodName(e.target.value)}
+                            className="flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleEditPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setEditingPaymentMethod(null);
+                                setEditPaymentMethodName('');
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleEditPaymentMethod}
+                          >
+                            Enregistrer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingPaymentMethod(null);
+                              setEditPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 mt-1.5">
+                          <Input
+                            placeholder="Nouvelle méthode..."
+                            value={newPaymentMethodName}
+                            onChange={(e) => setNewPaymentMethodName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setShowNewPaymentMethodInput(false);
+                                setNewPaymentMethodName('');
+                              }
+                            }}
+                            className="flex-1"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddNewPaymentMethod}
+                            disabled={addingNewPaymentMethod}
+                          >
+                            {addingNewPaymentMethod ? '...' : 'Ajouter'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewPaymentMethodInput(false);
+                              setNewPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -1337,7 +1794,7 @@ export default function ClientInfoPage() {
                       vacation_start_date: client.vacation_start_date || '',
                       vacation_end_date: client.vacation_end_date || '',
                       closing_day: client.closing_day || '',
-                      payment_method: client.payment_method || '',
+                      payment_method_id: client.payment_method_id || '',
                       email: client.email || '',
                       comment: client.comment || ''
                     });
@@ -1402,6 +1859,60 @@ export default function ClientInfoPage() {
             loadClient();
           }}
         />
+
+        <PaymentMethodsManager
+          open={managePaymentMethodsDialogOpen}
+          onOpenChange={setManagePaymentMethodsDialogOpen}
+          methods={paymentMethods}
+          onMethodsUpdated={() => {
+            loadPaymentMethods();
+            loadClient();
+          }}
+        />
+
+        {/* Dialog de confirmation de suppression - Type d'établissement */}
+        <AlertDialog open={deleteEstablishmentTypeDialogOpen} onOpenChange={setDeleteEstablishmentTypeDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer ce type d'établissement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer le type "{deletingEstablishmentType?.name}" ?
+                Les clients utilisant ce type ne seront pas supprimés, mais leur type sera réinitialisé.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteEstablishmentType}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Dialog de confirmation de suppression - Méthode de paiement */}
+        <AlertDialog open={deletePaymentMethodDialogOpen} onOpenChange={setDeletePaymentMethodDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette méthode de paiement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la méthode "{deletingPaymentMethod?.name}" ?
+                Les clients utilisant cette méthode ne seront pas supprimés, mais leur méthode de paiement sera réinitialisée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeletePaymentMethod}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Dialog de confirmation de suppression */}
         <AlertDialog 

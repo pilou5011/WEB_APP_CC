@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Package, ShoppingCart, UserCircle } from 'lucide-react';
+import { Users, Package, UserCircle } from 'lucide-react';
 
 export default function Home() {
   const router = useRouter();
@@ -26,9 +26,6 @@ export default function Home() {
           <h1 className="text-5xl font-bold text-slate-900 mb-4">
             Gestion Dépôts-Ventes
           </h1>
-          <p className="text-xl text-slate-600 mb-2">
-            Cartes de vœux
-          </p>
           <p className="text-slate-500">
             Gérez vos clients et collections facilement
           </p>
@@ -94,16 +91,6 @@ export default function Home() {
           </Card>
         </div>
 
-        <div className="text-center mt-12">
-          <Card className="inline-block bg-slate-50 border-slate-200">
-            <CardContent className="p-6">
-              <ShoppingCart className="h-8 w-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-sm text-slate-600">
-                Application de gestion complète pour vos dépôts-ventes
-              </p>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );

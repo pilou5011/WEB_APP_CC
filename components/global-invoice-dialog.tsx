@@ -274,8 +274,8 @@ export function GlobalInvoiceDialog({
         clientYPosition += 5;
       }
       
-      // Générer un numéro de facture basé sur la date et l'ID
-      const invoiceNumber = `F${new Date(invoice.created_at).getFullYear()}${(new Date(invoice.created_at).getMonth() + 1).toString().padStart(2, '0')}${new Date(invoice.created_at).getDate().toString().padStart(2, '0')}-${invoice.id.substring(0, 8).toUpperCase()}`;
+      // Utiliser le numéro de facture stocké dans la base de données
+      const invoiceNumber = invoice.invoice_number || 'N/A';
       doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
       
@@ -349,7 +349,8 @@ export function GlobalInvoiceDialog({
           halign: 'center'
         },
         bodyStyles: {
-          fontSize: 9
+          fontSize: 9,
+          textColor: [0, 0, 0] // Noir pour toutes les valeurs du tableau
         },
         columnStyles: {
           0: { halign: 'left' },
@@ -389,7 +390,8 @@ export function GlobalInvoiceDialog({
         theme: 'plain',
         bodyStyles: {
           fontSize: 10,
-          fontStyle: 'bold'
+          fontStyle: 'bold',
+          textColor: [0, 0, 0] // Noir pour toutes les valeurs du tableau récapitulatif
         },
         columnStyles: {
           0: { halign: 'left' },

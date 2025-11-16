@@ -4,31 +4,27 @@ import { useState, useEffect } from 'react';
 import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface DepositSlipDialogProps {
+interface StockReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
-  stockUpdates?: StockUpdate[];
+  stockUpdates: StockUpdate[];
 }
 
-export function DepositSlipDialog({
+export function StockReportDialog({
   open,
   onOpenChange,
   client,
   clientCollections,
-  stockUpdates = []
-}: DepositSlipDialogProps) {
+  stockUpdates
+}: StockReportDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [collectionInfos, setCollectionInfos] = useState<Record<string, string>>({});
-  const [needsInfoInput, setNeedsInfoInput] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
@@ -40,9 +36,8 @@ export function DepositSlipDialog({
       setPdfBlob(null);
       setLoadingProfile(true);
       loadUserProfile();
-      loadLastInvoiceInfos();
     }
-  }, [open, stockUpdates, clientCollections]);
+  }, [open]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -55,11 +50,11 @@ export function DepositSlipDialog({
 
   // Generate PDF preview when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated && !needsInfoInput) {
+    if (open && !loadingProfile && !pdfGenerated) {
       setPdfGenerated(true);
       generatePDFPreview();
     }
-  }, [open, loadingProfile, pdfGenerated, needsInfoInput]);
+  }, [open, loadingProfile, pdfGenerated]);
 
   const loadUserProfile = async () => {
     try {
@@ -79,53 +74,6 @@ export function DepositSlipDialog({
       toast.error('Erreur lors du chargement du profil');
     } finally {
       setLoadingProfile(false);
-    }
-  };
-
-  const loadLastInvoiceInfos = async () => {
-    try {
-      // Check if there's at least one invoice for this client
-      const { data: lastInvoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('client_id', client.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
-
-      if (lastInvoice && stockUpdates.length > 0) {
-        // If invoice exists, get collection_info from last stock update for each collection
-        // (same logic as in the client page)
-        const infos: Record<string, string> = {};
-        clientCollections.forEach((cc) => {
-          // Find the last stock update for this collection (most recent, regardless of collection_info)
-          const lastUpdate = stockUpdates.find(
-            (update: StockUpdate) => 
-              update.collection_id === cc.collection_id
-          );
-          
-          if (cc.collection_id) {
-            infos[cc.collection_id] = lastUpdate?.collection_info || '';
-          }
-        });
-        setCollectionInfos(infos);
-        setNeedsInfoInput(false);
-      } else {
-        // No invoice yet or no stock updates, user needs to input infos
-        setNeedsInfoInput(true);
-        const infos: Record<string, string> = {};
-        clientCollections.forEach(cc => {
-          if (cc.collection_id) {
-            infos[cc.collection_id] = '';
-          }
-        });
-        setCollectionInfos(infos);
-      }
-    } catch (error) {
-      console.error('Error loading last invoice infos:', error);
-      setNeedsInfoInput(true);
     }
   };
 
@@ -183,7 +131,7 @@ export function DepositSlipDialog({
           yPosition += 4;
         }
         
-        // A1 - Espacement entre nom/prénom et adresse
+        // Espacement entre nom/prénom et adresse
         yPosition += 2;
         
         if (userProfile.street_address) {
@@ -199,7 +147,7 @@ export function DepositSlipDialog({
           yPosition += 4;
         }
         
-        // A2 - Espacement entre email et SIRET
+        // Espacement entre email et SIRET
         if (userProfile.email && userProfile.siret) {
           yPosition += 2;
         }
@@ -282,14 +230,13 @@ export function DepositSlipDialog({
       }
       if (client.naf_code) {
         doc.text(`NAF: ${client.naf_code}`, rightBoxX + 2, clientYPosition);
-        clientYPosition += 3; // Même espacement que N° Facture
+        clientYPosition += 3;
       }
       
       const rightBoxHeight = clientYPosition - rightBoxY + 1;
       doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
       // Encart numéro de client (en dessous du DÉTAILLANT)
-      // B3 - Abaisser l'encart pour qu'il ne soit pas caché
       clientYPosition += 6;
       const infoBoxY = clientYPosition;
       doc.setFont('helvetica', 'bold');
@@ -313,56 +260,73 @@ export function DepositSlipDialog({
       doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
       yPosition += 10;
 
-      // Titre "Bon de dépôt"
+      // Titre "Relevé de stock"
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(14);
-      doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
+      doc.text('Relevé de stock', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
-      // 3) Tableau des collections (Collection, Infos, Prix de cession (HT), Prix de vente conseillé (TTC), Marchandise remise)
+      // 3) Tableau des collections avec les colonnes supplémentaires
       // Sort by display_order
       const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
-      // Create a map of stock updates by collection_id for quick lookup
+      // Créer un map pour trouver rapidement les stock updates par collection_id
       const stockUpdatesMap = new Map<string, StockUpdate>();
-      stockUpdates.forEach((update) => {
+      stockUpdates.forEach(update => {
         if (update.collection_id) {
           stockUpdatesMap.set(update.collection_id, update);
         }
       });
-      
+
       const tableData = sortedCollections.map((cc) => {
         const collectionName = cc.collection?.name || 'Collection';
-        const info = collectionInfos[cc.collection_id || ''] || '';
+        const info = ''; // Pas d'info pour le relevé de stock
         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+        const stock = cc.current_stock.toString();
         
-        // Use new_stock from stock update if available (for historical deposit slips), otherwise use current_stock
+        // Récupérer les données du stock update pour cette collection
         const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
-        const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
+        const previousStock = stockUpdate?.previous_stock ?? cc.current_stock;
+        const countedStock = stockUpdate?.counted_stock ?? 0;
+        const newDeposit = stockUpdate?.new_stock ?? cc.current_stock; // Nouveau dépôt
+        // Réassort = Nouveau dépôt - Stock compté
+        const reassort = stockUpdate ? (newDeposit - countedStock) : 0;
         
         return [
           collectionName,
           info,
           `${effectivePrice.toFixed(2)} €`,
           effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-          stock
+          previousStock.toString(), // Ancien dépôt
+          countedStock.toString(), // Stock compté
+          reassort.toString(), // Réassort = Nouveau dépôt - Stock compté
+          newDeposit.toString() // Nouveau dépôt
         ];
       });
 
-      // Calculer la largeur disponible pour le tableau (en tenant compte des marges)
-      const marginLeft = 15;
-      const marginRight = 15;
+      // Calculer la largeur disponible pour le tableau
+      // Aligner la bordure droite du tableau avec la bordure droite de l'encart DÉTAILLANT
+      const marginLeft = leftBoxX; // 15 - aligné avec l'encart DISTRIBUTEUR
+      const rightBoxRightEdge = rightBoxX + rightBoxWidth; // Bordure droite de l'encart DÉTAILLANT
+      const marginRight = pageWidth - rightBoxRightEdge; // Marge droite pour aligner avec l'encart DÉTAILLANT
       const tableWidth = pageWidth - marginLeft - marginRight;
 
-      // Définir les largeurs des colonnes : les 3 dernières colonnes doivent avoir exactement 10% chacune
-      // Collection: 35%, Infos: 30% (réduit), Prix cession HT: 10%, Prix vente conseillé TTC: 10%, Marchandise: 15% (élargi)
+      // Définir les largeurs des colonnes : 8 colonnes au total
+      // On calcule d'abord les largeurs fixes pour les colonnes de données (hors Collection)
+      const fixedColumnsWidth = tableWidth * (0.15 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08); // Infos + 6 colonnes de 8%
+      // La colonne Collection prend tout l'espace restant pour que le total soit exactement tableWidth
+      const collectionColumnWidth = tableWidth - fixedColumnsWidth;
+      
       const columnWidths = [
-        tableWidth * 0.35,  // Collection - 35%
-        tableWidth * 0.30,  // Infos - 30% (réduit de 35% à 30%)
-        tableWidth * 0.10,  // Prix de cession (HT) - 10% (exact)
-        tableWidth * 0.10,  // Prix de vente conseillé (TTC) - 10% (exact, même taille que précédent)
-        tableWidth * 0.15   // Marchandise remise - 15% (élargi de 10% à 15%)
+        collectionColumnWidth,  // Collection - largeur ajustée pour aligner avec l'encart DÉTAILLANT
+        tableWidth * 0.15,      // Infos - 15%
+        tableWidth * 0.08,       // Prix de cession (HT) - 8%
+        tableWidth * 0.08,       // Prix de vente conseillé (TTC) - 8%
+        tableWidth * 0.08,       // Ancien dépôt - 8%
+        tableWidth * 0.08,       // Stock compté - 8%
+        tableWidth * 0.08,       // Réassort - 8%
+        tableWidth * 0.08         // Nouveau dépôt - 8%
       ];
 
       autoTable(doc, {
@@ -371,8 +335,11 @@ export function DepositSlipDialog({
           'Collection', 
           'Infos', 
           { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-          { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-          { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+          { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Ancien\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Stock\ncompté', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Réassort', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Nouveau\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
         ]],
         body: tableData,
         theme: 'grid',
@@ -391,33 +358,22 @@ export function DepositSlipDialog({
           fontSize: 8,
           cellPadding: 2,
           overflow: 'linebreak',
-          textColor: [0, 0, 0] // Noir pour toutes les valeurs du tableau
+          textColor: [0, 0, 0]
         },
         columnStyles: {
-          0: { halign: 'left', cellWidth: columnWidths[0] },
-          1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-          2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // 10% - Prix de cession HT (police augmentée)
-          3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // 10% - Prix de vente conseillé TTC (police augmentée)
-          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }  // 10% - Marchandise remise
+          0: { cellWidth: columnWidths[0], halign: 'left' },
+          1: { cellWidth: columnWidths[1], halign: 'left' },
+          2: { cellWidth: columnWidths[2], halign: 'center' },
+          3: { cellWidth: columnWidths[3], halign: 'center' },
+          4: { cellWidth: columnWidths[4], halign: 'center' },
+          5: { cellWidth: columnWidths[5], halign: 'center' },
+          6: { cellWidth: columnWidths[6], halign: 'center' },
+          7: { cellWidth: columnWidths[7], halign: 'center' }
+        },
+        styles: {
+          lineColor: [0, 0, 0],
+          lineWidth: 0.1
         }
-      });
-
-      // Conditions de Dépôt-Vente en bas de page
-      const footerY = pageHeight - 20;
-      
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
-      doc.setTextColor(0, 0, 0);
-      
-      const conditionsText = [
-        "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-        "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-        "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-        "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-      ];
-      
-      conditionsText.forEach((line, index) => {
-        doc.text(line, 15, footerY + (index * 3.5));
       });
 
       // Generate PDF blob for preview
@@ -436,13 +392,13 @@ export function DepositSlipDialog({
 
   const handleDownloadPDF = () => {
     if (pdfBlob) {
-      const fileName = `bon_depot_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      const fileName = `Releve_stock_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(pdfBlob);
       link.download = fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      toast.success('Bon de dépôt téléchargé');
+      toast.success('Relevé de stock téléchargé');
     } else {
       toast.error('Veuillez patienter, le PDF est en cours de génération');
     }
@@ -452,64 +408,27 @@ export function DepositSlipDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-3 border-b flex-shrink-0">
-          <DialogTitle>Prévisualisation du bon de dépôt</DialogTitle>
+          <DialogTitle>Prévisualisation du relevé de stock</DialogTitle>
         </DialogHeader>
 
-        {needsInfoInput ? (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">
-                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque collection :
-              </p>
-              {clientCollections.map((cc) => (
-                <div key={cc.id}>
-                  <Label htmlFor={`info-${cc.id}`}>
-                    Infos pour {cc.collection?.name || 'Collection'}
-                  </Label>
-                  <Input
-                    id={`info-${cc.id}`}
-                    type="text"
-                    value={collectionInfos[cc.collection_id || ''] || ''}
-                    onChange={(e) => setCollectionInfos(prev => ({
-                      ...prev,
-                      [cc.collection_id || '']: e.target.value
-                    }))}
-                    placeholder="Ex: Livraison partielle, Retour prévu..."
-                    className="mt-1.5"
-                  />
-                </div>
-              ))}
-              <Button
-                onClick={() => {
-                  setNeedsInfoInput(false);
-                  setPdfGenerated(false);
-                }}
-                className="w-full"
-              >
-                Générer le bon de dépôt
-              </Button>
+        <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
+          {generating || loadingProfile ? (
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
+              <p className="text-slate-600">Génération du PDF en cours...</p>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-            {generating || loadingProfile ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
-                <p className="text-slate-600">Génération du PDF en cours...</p>
-              </div>
-            ) : pdfUrl ? (
-              <iframe
-                src={pdfUrl}
-                className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-                title="Prévisualisation du bon de dépôt"
-              />
-            ) : (
-              <div className="text-center text-slate-600">
-                <p>Erreur lors de la génération du PDF</p>
-              </div>
-            )}
-          </div>
-        )}
+          ) : pdfUrl ? (
+            <iframe
+              src={pdfUrl}
+              className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
+              title="Prévisualisation du relevé de stock"
+            />
+          ) : (
+            <div className="text-center text-slate-600">
+              <p>Erreur lors de la génération du PDF</p>
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
           <div className="flex gap-2">
@@ -520,7 +439,7 @@ export function DepositSlipDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Fermer
             </Button>
-            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating || needsInfoInput}>
+            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating}>
               <Download className="mr-2 h-4 w-4" />
               Télécharger
             </Button>
