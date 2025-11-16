@@ -291,7 +291,9 @@ export function DepositSlipDialog({
       yPosition += 10;
 
       // 3) Tableau des collections (Collection, Infos, Prix de cession (HT), Prix de vente conseillé (TTC), Marchandise remise)
-      const tableData = clientCollections.map((cc) => {
+      // Sort by display_order
+      const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      const tableData = sortedCollections.map((cc) => {
         const collectionName = cc.collection?.name || 'Collection';
         const info = collectionInfos[cc.collection_id || ''] || '';
         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;

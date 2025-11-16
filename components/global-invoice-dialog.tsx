@@ -290,7 +290,15 @@ export function GlobalInvoiceDialog({
       yPosition += 10;
 
       // 3) Tableau des collections
-      const stockRows = stockUpdates.map((update) => {
+      // Sort stock updates by collection display_order
+      const sortedStockUpdates = [...stockUpdates].sort((a, b) => {
+        const aCC = clientCollections.find(cc => cc.collection_id === a.collection_id);
+        const bCC = clientCollections.find(cc => cc.collection_id === b.collection_id);
+        const aOrder = aCC?.display_order || 0;
+        const bOrder = bCC?.display_order || 0;
+        return aOrder - bOrder;
+      });
+      const stockRows = sortedStockUpdates.map((update) => {
         const collection = collections.find(c => c.id === update.collection_id);
         const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
         const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;

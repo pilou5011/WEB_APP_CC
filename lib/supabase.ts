@@ -136,6 +136,7 @@ export type ClientCollection = {
   current_stock: number;
   custom_price: number | null;
   custom_recommended_sale_price: number | null;
+  display_order: number;
   created_at: string;
   updated_at: string;
 };
