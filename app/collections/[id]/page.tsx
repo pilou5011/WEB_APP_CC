@@ -26,6 +26,17 @@ export default function CollectionDetailPage() {
   const [existingSubProducts, setExistingSubProducts] = useState<SubProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalFormData, setOriginalFormData] = useState({
+    name: '',
+    price: '',
+    recommended_sale_price: '',
+    barcode: '',
+    category_id: '',
+    subcategory_id: ''
+  });
+  const [originalHasSubProducts, setOriginalHasSubProducts] = useState(false);
+  const [originalSubProducts, setOriginalSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     price: '',
@@ -296,14 +307,16 @@ export default function CollectionDetailPage() {
       }
 
       setCollection(collectionData);
-      setFormData({
+      const initialFormData = {
         name: collectionData.name,
         price: collectionData.price.toString(),
         recommended_sale_price: collectionData.recommended_sale_price?.toString() || '',
         barcode: collectionData.barcode || '',
         category_id: collectionData.category_id || '',
         subcategory_id: collectionData.subcategory_id || ''
-      });
+      };
+      setFormData(initialFormData);
+      setOriginalFormData(initialFormData);
 
       // Load sub-products
       const { data: subProductsData, error: subProductsError } = await supabase
@@ -316,11 +329,16 @@ export default function CollectionDetailPage() {
       
       if (subProductsData && subProductsData.length > 0) {
         setExistingSubProducts(subProductsData);
+        const subProductsList = subProductsData.map(sp => ({ id: sp.id, name: sp.name }));
         setHasSubProducts(true);
-        setSubProducts(subProductsData.map(sp => ({ id: sp.id, name: sp.name })));
+        setOriginalHasSubProducts(true);
+        setSubProducts(subProductsList);
+        setOriginalSubProducts(subProductsList);
       } else {
         setHasSubProducts(false);
+        setOriginalHasSubProducts(false);
         setSubProducts([{ id: null, name: '' }]);
+        setOriginalSubProducts([{ id: null, name: '' }]);
       }
     } catch (error) {
       console.error('Error loading collection data:', error);
@@ -428,12 +446,24 @@ export default function CollectionDetailPage() {
 
       toast.success('Collection modifiée avec succès');
       await loadCollectionData();
+      setIsEditing(false);
     } catch (error) {
       console.error('Error updating collection:', error);
       toast.error('Erreur lors de la modification de la collection');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancel = () => {
+    setFormData(originalFormData);
+    setHasSubProducts(originalHasSubProducts);
+    setSubProducts([...originalSubProducts]);
+    setIsEditing(false);
+  };
+
+  const handleEdit = () => {
+    setIsEditing(true);
   };
 
   const handleDelete = async () => {
@@ -501,33 +531,16 @@ export default function CollectionDetailPage() {
                     <span>{collection.price.toFixed(2)} €</span>
                   </CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Supprimer
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Cette action ne peut pas être annulée. Cela supprimera définitivement la collection "{collection.name}".
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Annuler</AlertDialogCancel>
-                        <AlertDialogAction
-                          onClick={handleDelete}
-                          className="bg-red-600 hover:bg-red-700"
-                        >
-                          Supprimer
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </div>
+                {!isEditing && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleEdit}
+                  >
+                    <Edit className="mr-2 h-4 w-4" />
+                    Modifier la collection
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -559,9 +572,9 @@ export default function CollectionDetailPage() {
 
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle>Modifier la collection</CardTitle>
+              <CardTitle>Informations de la collection</CardTitle>
               <CardDescription>
-                Modifiez les informations de la collection
+                {isEditing ? 'Modifiez les informations de la collection' : 'Détails de la collection'}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -569,71 +582,101 @@ export default function CollectionDetailPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="name">Nom de la collection</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      required
-                      placeholder="Ex: Collection Hiver 2024"
-                      className="mt-1.5"
-                    />
+                    {isEditing ? (
+                      <Input
+                        id="name"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        required
+                        placeholder="Ex: Collection Hiver 2024"
+                        className="mt-1.5"
+                      />
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.name}</p>
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="price">Prix de cession (HT)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                      required
-                      placeholder="Ex: 2.50"
-                      className="mt-1.5"
-                    />
+                    {isEditing ? (
+                      <Input
+                        id="price"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        required
+                        placeholder="Ex: 2.50"
+                        className="mt-1.5"
+                      />
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.price} €</p>
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
-                    <Input
-                      id="recommended_sale_price"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.recommended_sale_price}
-                      onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
-                      placeholder="Ex: 3.00"
-                      className="mt-1.5"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                    {isEditing ? (
+                      <>
+                        <Input
+                          id="recommended_sale_price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.recommended_sale_price}
+                          onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                          placeholder="Ex: 3.00"
+                          className="mt-1.5"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                      </>
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                        {formData.recommended_sale_price ? `${formData.recommended_sale_price} €` : 'Non renseigné'}
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <Label htmlFor="barcode">Code Barre Produit (optionnel)</Label>
-                    <Input
-                      id="barcode"
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={13}
-                      value={formData.barcode}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        // N'accepter que les chiffres
-                        if (value === '' || /^\d+$/.test(value)) {
-                          setFormData({ ...formData, barcode: value });
-                        }
-                      }}
-                      placeholder="13 chiffres (Ex: 3254560001234)"
-                      className="mt-1.5"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
+                    {isEditing ? (
+                      <>
+                        <Input
+                          id="barcode"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={13}
+                          value={formData.barcode}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // N'accepter que les chiffres
+                            if (value === '' || /^\d+$/.test(value)) {
+                              setFormData({ ...formData, barcode: value });
+                            }
+                          }}
+                          placeholder="13 chiffres (Ex: 3254560001234)"
+                          className="mt-1.5"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
+                      </>
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                        {formData.barcode || 'Non renseigné'}
+                      </p>
+                    )}
                   </div>
 
                   {/* Catégorie */}
                   <div>
                     <Label htmlFor="category">Catégorie (optionnel)</Label>
-                    {!showNewCategoryInput && !editingCategory ? (
+                    {!isEditing ? (
+                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                        {formData.category_id
+                          ? categories.find(c => c.id === formData.category_id)?.name || 'Non renseigné'
+                          : 'Non renseigné'}
+                      </p>
+                    ) : !showNewCategoryInput && !editingCategory ? (
                       <div className="flex gap-2 mt-1.5">
                         <Popover>
                           <PopoverTrigger asChild>
@@ -797,7 +840,13 @@ export default function CollectionDetailPage() {
                   {formData.category_id && (
                     <div>
                       <Label htmlFor="subcategory">Sous-catégorie (optionnel)</Label>
-                      {!showNewSubcategoryInput && !editingSubcategory ? (
+                      {!isEditing ? (
+                        <p className="mt-1.5 text-sm font-medium text-slate-900">
+                          {formData.subcategory_id
+                            ? getSubcategoriesForCategory(formData.category_id).find(s => s.id === formData.subcategory_id)?.name || 'Non renseigné'
+                            : 'Non renseigné'}
+                        </p>
+                      ) : !showNewSubcategoryInput && !editingSubcategory ? (
                         <div className="flex gap-2 mt-1.5">
                           <Popover>
                             <PopoverTrigger asChild>
@@ -960,21 +1009,29 @@ export default function CollectionDetailPage() {
 
                 <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
                   <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="has-sub-products-edit"
-                      checked={hasSubProducts}
-                      onCheckedChange={(checked) => {
-                        setHasSubProducts(checked === true);
-                        if (checked === false) {
-                          setSubProducts([{ id: null, name: '' }]);
-                        } else if (subProducts.length === 0 || (subProducts.length === 1 && subProducts[0].name === '')) {
-                          setSubProducts([{ id: null, name: '' }]);
-                        }
-                      }}
-                    />
-                    <Label htmlFor="has-sub-products-edit" className="font-normal cursor-pointer">
-                      Cette collection contient des sous-produits
-                    </Label>
+                    {isEditing ? (
+                      <>
+                        <Checkbox
+                          id="has-sub-products-edit"
+                          checked={hasSubProducts}
+                          onCheckedChange={(checked) => {
+                            setHasSubProducts(checked === true);
+                            if (checked === false) {
+                              setSubProducts([{ id: null, name: '' }]);
+                            } else if (subProducts.length === 0 || (subProducts.length === 1 && subProducts[0].name === '')) {
+                              setSubProducts([{ id: null, name: '' }]);
+                            }
+                          }}
+                        />
+                        <Label htmlFor="has-sub-products-edit" className="font-normal cursor-pointer">
+                          Cette collection contient des sous-produits
+                        </Label>
+                      </>
+                    ) : (
+                      <Label className="font-normal">
+                        Cette collection {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
+                      </Label>
+                    )}
                   </div>
 
                   {hasSubProducts && (
@@ -982,49 +1039,99 @@ export default function CollectionDetailPage() {
                       <Label className="text-sm">Sous-produits</Label>
                       {subProducts.map((subProduct, index) => (
                         <div key={index} className="flex gap-2">
-                          <Input
-                            type="text"
-                            value={subProduct.name}
-                            onChange={(e) => {
-                              const newSubProducts = [...subProducts];
-                              newSubProducts[index] = { ...newSubProducts[index], name: e.target.value };
-                              setSubProducts(newSubProducts);
-                            }}
-                            placeholder={`Nom du sous-produit ${index + 1}`}
-                            className="flex-1"
-                          />
-                          {subProducts.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setDeleteSubProductIndex(index);
-                              }}
-                              className="h-9 w-9 p-0"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
+                          {isEditing ? (
+                            <>
+                              <Input
+                                type="text"
+                                value={subProduct.name}
+                                onChange={(e) => {
+                                  const newSubProducts = [...subProducts];
+                                  newSubProducts[index] = { ...newSubProducts[index], name: e.target.value };
+                                  setSubProducts(newSubProducts);
+                                }}
+                                placeholder={`Nom du sous-produit ${index + 1}`}
+                                className="flex-1"
+                              />
+                              {subProducts.length > 1 && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setDeleteSubProductIndex(index);
+                                  }}
+                                  className="h-9 w-9 p-0"
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm font-medium text-slate-900">{subProduct.name}</p>
                           )}
                         </div>
                       ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSubProducts([...subProducts, { id: null, name: '' }])}
-                        className="w-full"
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Ajouter un sous-produit
-                      </Button>
+                      {isEditing && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSubProducts([...subProducts, { id: null, name: '' }])}
+                          className="w-full"
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Ajouter un sous-produit
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
 
-                <Button type="submit" disabled={submitting} className="w-full md:w-auto">
-                  {submitting ? 'Modification en cours...' : 'Modifier la collection'}
-                </Button>
+                {isEditing && (
+                  <div className="flex justify-between items-center pt-4 border-t">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Supprimer collection
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Cette action ne peut pas être annulée. Cela supprimera définitivement la collection "{collection.name}".
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Annuler</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleDelete}
+                            className="bg-red-600 hover:bg-red-700"
+                          >
+                            Supprimer
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <div className="flex gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleCancel}
+                        disabled={submitting}
+                      >
+                        Annuler
+                      </Button>
+                      <Button type="submit" disabled={submitting}>
+                        {submitting ? 'Enregistrement...' : 'Enregistrer'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </form>
             </CardContent>
           </Card>

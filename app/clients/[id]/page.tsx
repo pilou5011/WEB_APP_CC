@@ -127,15 +127,11 @@ function SortableCollectionRow({
           {hasSubProducts ? parentCurrentStock : cc.current_stock}
         </p>
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <Input
-            type="text"
-            value={parentCountedStock.toString()}
-            disabled
-            readOnly
-            className="h-9 bg-slate-100 cursor-not-allowed"
-          />
+          <p className="text-sm font-medium text-slate-600">
+            {parentCountedStock}
+          </p>
         ) : (
           <Input
             type="text"
@@ -171,15 +167,11 @@ function SortableCollectionRow({
           </p>
         )}
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <Input
-            type="text"
-            value={parentCardsAdded.toString()}
-            disabled
-            readOnly
-            className="h-9 bg-slate-100 cursor-not-allowed"
-          />
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded}
+          </p>
         ) : (
           <Input
             type="text"
