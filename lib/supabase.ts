@@ -37,7 +37,8 @@ export type Client = {
   market_days_schedule: any | null;  // Structure: {"Lundi": [{"start": "08:00", "end": "12:00"}], ...}
   vacation_periods: any | null;      // Structure: [{"id": "period-123", "startDate": "2024-07-01", "endDate": "2024-07-31", "isRecurring": true}]
   closing_day: string | null;
-  payment_method: string | null;
+  payment_method: string | null; // Ancien champ, conservé pour compatibilité
+  payment_method_id: string | null;
   email: string | null;
   comment: string | null;
   initial_stock: number;
@@ -47,6 +48,12 @@ export type Client = {
 };
 
 export type EstablishmentType = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type PaymentMethod = {
   id: string;
   name: string;
   created_at: string;
@@ -82,6 +89,7 @@ export type Invoice = {
   client_id: string;
   total_cards_sold: number;
   total_amount: number;
+  invoice_number: string | null;
   created_at: string;
 };
 

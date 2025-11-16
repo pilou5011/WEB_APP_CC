@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { ChevronLeft, ChevronRight, CalendarDays, Clock } from 'lucide-react';
+import { CalendarDays, Clock } from 'lucide-react';
 import { WeekSchedule } from '@/components/opening-hours-editor';
 import { VacationPeriod } from '@/components/vacation-periods-editor';
 import { MarketDaysSchedule } from '@/components/market-days-editor';
@@ -268,20 +268,6 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
     }
   };
 
-  // Navigation entre les mois
-  const goToPreviousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  };
-
-  const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  };
-
-  const goToToday = () => {
-    setCurrentDate(new Date());
-  };
-
-
   // Customiser le rendu des jours du calendrier
   const modifiers = useMemo(() => ({
     open: (date: Date) => {
@@ -306,33 +292,6 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
 
   return (
     <div className="space-y-4">
-      {/* Contrôles de navigation */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToPreviousMonth}
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToNextMonth}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={goToToday}
-          >
-            Aujourd'hui
-          </Button>
-        </div>
-      </div>
-
       {/* Calendrier */}
       <TooltipProvider>
         <div className="flex justify-start">

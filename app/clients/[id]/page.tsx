@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -33,6 +33,7 @@ import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
+import { StockReportDialog } from '@/components/stock-report-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
 import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -279,6 +280,9 @@ export default function ClientDetailPage() {
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
   const [depositSlipDialogOpen, setDepositSlipDialogOpen] = useState(false);
+  const [stockReportDialogOpen, setStockReportDialogOpen] = useState(false);
+  const [selectedInvoiceForStockReport, setSelectedInvoiceForStockReport] = useState<Invoice | null>(null);
+  const [selectedInvoiceForDepositSlip, setSelectedInvoiceForDepositSlip] = useState<Invoice | null>(null);
   const [lastVisitDate, setLastVisitDate] = useState<string | null>(null);
   
   // Calendar data
@@ -1940,7 +1944,7 @@ export default function ClientDetailPage() {
                 </div>
 
                 <div>
-                  <Button type="submit" className="w-full md:w-auto">Associer la collection</Button>
+                  <Button type="submit" className="w-full md:w-auto">Ajouter la collection</Button>
                 </div>
               </form>
 
@@ -2272,9 +2276,9 @@ export default function ClientDetailPage() {
           {globalInvoices.length > 0 && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
-                <CardTitle>Historique des factures</CardTitle>
+                <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length} facture{globalInvoices.length > 1 ? 's' : ''} enregistrée{globalInvoices.length > 1 ? 's' : ''}
+                  {globalInvoices.length} document{globalInvoices.length > 1 ? 's' : ''} enregistré{globalInvoices.length > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -2301,33 +2305,46 @@ export default function ClientDetailPage() {
                               {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
                             </p>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedGlobalInvoice(invoice);
-                              setGlobalInvoiceDialogOpen(true);
-                            }}
-                          >
-                            <FileText className="mr-2 h-4 w-4" />
-                            Voir facture
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedGlobalInvoice(invoice);
+                                setGlobalInvoiceDialogOpen(true);
+                              }}
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              Facture
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedInvoiceForStockReport(invoice);
+                                setStockReportDialogOpen(true);
+                              }}
+                            >
+                              <ClipboardList className="mr-2 h-4 w-4" />
+                              Relevé de stock
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedInvoiceForDepositSlip(invoice);
+                                setDepositSlipDialogOpen(true);
+                              }}
+                            >
+                              <ClipboardList className="mr-2 h-4 w-4" />
+                              Bon de dépôt
+                            </Button>
+                          </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="bg-orange-50 rounded-lg p-3 border border-orange-100">
-                            <div className="flex items-center gap-2 text-orange-600 mb-1">
-                              <TrendingDown className="h-4 w-4" />
-                              <span className="text-xs font-medium">Total cartes vendues</span>
-                            </div>
-                            <p className="text-2xl font-bold text-orange-900">{invoice.total_cards_sold}</p>
-                          </div>
-                          <div className="bg-green-50 rounded-lg p-3 border border-green-100">
-                            <div className="flex items-center gap-2 text-green-600 mb-1">
-                              <Euro className="h-4 w-4" />
-                              <span className="text-xs font-medium">Montant total</span>
-                            </div>
-                            <p className="text-2xl font-bold text-green-900">{invoice.total_amount.toFixed(2)} €</p>
-                          </div>
+                        <div className="flex items-center gap-4 text-sm text-slate-600">
+                          <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
+                          <span>•</span>
+                          <span>{invoice.total_amount.toFixed(2)} €</span>
                         </div>
                       </div>
                     );
@@ -2534,13 +2551,23 @@ export default function ClientDetailPage() {
         </Dialog>
 
         {/* Deposit Slip Dialog */}
-        {client && (
+        {client && selectedInvoiceForDepositSlip && (
           <DepositSlipDialog
             open={depositSlipDialogOpen}
             onOpenChange={setDepositSlipDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={stockUpdates}
+            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)}
+          />
+        )}
+
+        {client && selectedInvoiceForStockReport && (
+          <StockReportDialog
+            open={stockReportDialogOpen}
+            onOpenChange={setStockReportDialogOpen}
+            client={client}
+            clientCollections={clientCollections}
+            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)}
           />
         )}
 
