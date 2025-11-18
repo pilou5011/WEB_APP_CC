@@ -679,6 +679,34 @@ export default function ClientDetailPage() {
           (clientSubProductsData || []).forEach((csp: ClientSubProduct) => {
             clientSubProductsMap[csp.sub_product_id] = csp;
           });
+
+          // Créer automatiquement les client_sub_products manquants pour tous les sous-produits
+          const missingSubProducts: any[] = [];
+          (subProductsData || []).forEach((sp: SubProduct) => {
+            if (!clientSubProductsMap[sp.id]) {
+              missingSubProducts.push({
+                client_id: clientId,
+                sub_product_id: sp.id,
+                initial_stock: 0,
+                current_stock: 0
+              });
+            }
+          });
+
+          if (missingSubProducts.length > 0) {
+            const { data: createdSubProducts, error: createError } = await supabase
+              .from('client_sub_products')
+              .insert(missingSubProducts)
+              .select('*');
+
+            if (createError) throw createError;
+
+            // Ajouter les nouveaux client_sub_products au map
+            (createdSubProducts || []).forEach((csp: ClientSubProduct) => {
+              clientSubProductsMap[csp.sub_product_id] = csp;
+            });
+          }
+
           setClientSubProducts(clientSubProductsMap as any); // Temporary cast
         }
       }
@@ -1049,6 +1077,7 @@ export default function ClientDetailPage() {
 
           if (hasSubProducts) {
             // Handle sub-products
+            // IMPORTANT: Traiter TOUS les sous-produits de la collection
             let totalNewStock = 0;
             let totalCountedStock = 0;
             let totalPreviousStock = 0;
@@ -1056,7 +1085,35 @@ export default function ClientDetailPage() {
             let totalCardsSold = 0;
 
             for (const sp of collectionSubProducts) {
-              const csp = clientSubProducts[sp.id];
+              let csp = clientSubProducts[sp.id];
+              
+              // Si le client_sub_product n'existe pas, le créer avec stock 0
+              if (!csp) {
+                try {
+                  const { data: newCsp, error: createError } = await supabase
+                    .from('client_sub_products')
+                    .insert({
+                      client_id: clientId,
+                      sub_product_id: sp.id,
+                      initial_stock: 0,
+                      current_stock: 0
+                    })
+                    .select('*')
+                    .single();
+                  
+                  if (createError) throw createError;
+                  if (newCsp) {
+                    csp = newCsp as ClientSubProduct;
+                    // Mettre à jour le state pour éviter de recréer
+                    setClientSubProducts(prev => ({ ...prev, [sp.id]: csp! }));
+                  }
+                } catch (err) {
+                  console.error('Error creating missing client_sub_product:', err);
+                  // Continuer avec le prochain sous-produit
+                  continue;
+                }
+              }
+
               if (!csp) continue;
 
               const formData = perSubProductForm[sp.id];
@@ -1077,6 +1134,18 @@ export default function ClientDetailPage() {
               totalPreviousStock += previousStock;
               totalCardsAdded += cardsAdded;
               totalCardsSold += cardsSold;
+
+              // Create stock update for sub-product (for stock report)
+              updatesToInsert.push({
+                client_id: clientId,
+                sub_product_id: sp.id,
+                invoice_id: invoiceData.id,
+                previous_stock: previousStock,
+                counted_stock: countedStock,
+                cards_sold: cardsSold,
+                cards_added: cardsAdded,
+                new_stock: newStock
+              });
 
               // Update sub-product stock
               cspUpdates.push({ id: csp.id, new_stock: newStock });
@@ -1243,6 +1312,27 @@ export default function ClientDetailPage() {
     
     setDeletingCollection(true);
     try {
+      // Récupérer les IDs des sous-produits de la collection
+      const { data: collectionSubProducts, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('id')
+        .eq('collection_id', collectionToDelete.collection_id);
+
+      if (subProductsError) throw subProductsError;
+
+      // Supprimer tous les client_sub_products associés aux sous-produits de cette collection
+      if (collectionSubProducts && collectionSubProducts.length > 0) {
+        const subProductIds = collectionSubProducts.map(sp => sp.id);
+        const { error: deleteSubProductsError } = await supabase
+          .from('client_sub_products')
+          .delete()
+          .eq('client_id', clientId)
+          .in('sub_product_id', subProductIds);
+
+        if (deleteSubProductsError) throw deleteSubProductsError;
+      }
+
+      // Supprimer la collection du client
       const { error } = await supabase
         .from('client_collections')
         .delete()
@@ -1406,8 +1496,10 @@ export default function ClientDetailPage() {
 
       if (collectionSubProducts && collectionSubProducts.length > 0) {
         // Collection has sub-products: open dialog to enter initial stocks
+        // IMPORTANT: Utiliser TOUS les sous-produits de la collection
         setSubProductsForAssociation(collectionSubProducts);
         const initialStocks: Record<string, string> = {};
+        // Initialiser tous les sous-produits avec une chaîne vide (sera validé comme 0 si non rempli)
         collectionSubProducts.forEach(sp => {
           initialStocks[sp.id] = '';
         });
@@ -1441,25 +1533,40 @@ export default function ClientDetailPage() {
   const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate all stocks
-    const stocks: Record<string, number> = {};
-    for (const sp of subProductsForAssociation) {
-      const stockStr = subProductsInitialStocks[sp.id] || '0';
-      const stock = parseInt(stockStr);
-      if (isNaN(stock) || stock < 0) {
-        toast.error(`Le stock initial du sous-produit "${sp.name}" doit être un nombre positif`);
-        return;
+    // Récupérer TOUS les sous-produits de la collection (au cas où certains auraient été ajoutés entre-temps)
+    try {
+      const { data: allSubProducts, error: fetchError } = await supabase
+        .from('sub_products')
+        .select('*')
+        .eq('collection_id', associateForm.collection_id!);
+
+      if (fetchError) throw fetchError;
+
+      // Validate all stocks - inclure TOUS les sous-produits
+      const stocks: Record<string, number> = {};
+      for (const sp of (allSubProducts || [])) {
+        // Si le sous-produit était dans le formulaire, utiliser la valeur saisie
+        // Sinon, utiliser 0 par défaut
+        const stockStr = subProductsInitialStocks[sp.id] || '0';
+        const stock = parseInt(stockStr);
+        if (isNaN(stock) || stock < 0) {
+          toast.error(`Le stock initial du sous-produit "${sp.name}" doit être un nombre positif`);
+          return;
+        }
+        stocks[sp.id] = stock;
       }
-      stocks[sp.id] = stock;
+
+      if (!pendingAssociationData) return;
+
+      // Calculate total initial stock
+      const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
+
+      setSubProductsInitialStocksDialogOpen(false);
+      await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
+    } catch (err) {
+      console.error('Error fetching all sub-products:', err);
+      toast.error('Erreur lors de la récupération des sous-produits');
     }
-
-    if (!pendingAssociationData) return;
-
-    // Calculate total initial stock
-    const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
-
-    setSubProductsInitialStocksDialogOpen(false);
-    await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
   };
 
   const performAssociation = async (
@@ -1502,10 +1609,20 @@ export default function ClientDetailPage() {
 
       if (subProductsStocks) {
         // Collection has sub-products: create client_sub_products with provided stocks
-        const clientSubProductsToInsert = subProductsForAssociation.map(sp => ({
+        // IMPORTANT: Ajouter TOUS les sous-produits de la collection, même ceux qui n'ont pas été saisis
+        // Récupérer tous les sous-produits de la collection
+        const { data: allSubProducts, error: fetchSubProductsError } = await supabase
+          .from('sub_products')
+          .select('*')
+          .eq('collection_id', associateForm.collection_id!);
+
+        if (fetchSubProductsError) throw fetchSubProductsError;
+
+        // Créer les client_sub_products pour TOUS les sous-produits
+        const clientSubProductsToInsert = (allSubProducts || []).map(sp => ({
           client_id: clientId,
           sub_product_id: sp.id,
-          initial_stock: subProductsStocks[sp.id] || 0,
+          initial_stock: subProductsStocks[sp.id] || 0, // Utiliser le stock saisi ou 0 par défaut
           current_stock: subProductsStocks[sp.id] || 0
         }));
 
@@ -1995,13 +2112,13 @@ export default function ClientDetailPage() {
                         if (hasSubProducts) {
                           collectionSubProducts.forEach(sp => {
                             const csp = clientSubProducts[sp.id];
-                            if (csp) {
-                              parentCurrentStock += csp.current_stock || 0;
-                              const formData = perSubProductForm[sp.id];
-                              if (formData) {
-                                parentCountedStock += parseInt(formData.counted_stock) || 0;
-                                parentCardsAdded += parseInt(formData.cards_added) || 0;
-                              }
+                            // Inclure tous les sous-produits, même ceux sans client_sub_product (stock = 0)
+                            const subProductStock = csp ? (csp.current_stock || 0) : 0;
+                            parentCurrentStock += subProductStock;
+                            const formData = perSubProductForm[sp.id];
+                            if (formData) {
+                              parentCountedStock += parseInt(formData.counted_stock) || 0;
+                              parentCardsAdded += parseInt(formData.cards_added) || 0;
                             }
                           });
                         }
@@ -2031,7 +2148,9 @@ export default function ClientDetailPage() {
                             {/* Sub-products rows */}
                             {hasSubProducts && collectionSubProducts.map((sp) => {
                               const csp = clientSubProducts[sp.id];
-                              if (!csp) return null;
+                              // Afficher tous les sous-produits, même s'ils n'ont pas encore de client_sub_product
+                              // (ils seront créés automatiquement lors du chargement)
+                              const currentStock = csp ? (csp.current_stock || 0) : 0;
                               
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
@@ -2039,7 +2158,7 @@ export default function ClientDetailPage() {
                                     <p className="text-sm text-slate-600">└ {sp.name}</p>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center">
-                                    <p className="text-xs text-slate-500">{csp.current_stock || 0}</p>
+                                    <p className="text-xs text-slate-500">{currentStock}</p>
                                   </TableCell>
                                   <TableCell className="align-top py-2">
                                     <Input
@@ -2568,6 +2687,7 @@ export default function ClientDetailPage() {
             client={client}
             clientCollections={clientCollections}
             stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)}
+            invoice={selectedInvoiceForStockReport}
           />
         )}
 

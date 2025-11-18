@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
+import { Client, Collection, ClientCollection, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2 } from 'lucide-react';
@@ -13,6 +13,7 @@ interface StockReportDialogProps {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates: StockUpdate[];
+  invoice: Invoice | null;
 }
 
 export function StockReportDialog({
@@ -20,7 +21,8 @@ export function StockReportDialog({
   onOpenChange,
   client,
   clientCollections,
-  stockUpdates
+  stockUpdates,
+  invoice
 }: StockReportDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -28,6 +30,11 @@ export function StockReportDialog({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [subProducts, setSubProducts] = useState<SubProduct[]>([]);
+  const [clientSubProducts, setClientSubProducts] = useState<ClientSubProduct[]>([]);
+  const [loadingSubProducts, setLoadingSubProducts] = useState(true);
+  const [previousInvoiceDate, setPreviousInvoiceDate] = useState<string | null>(null);
+  const [loadingPreviousInvoice, setLoadingPreviousInvoice] = useState(true);
 
   useEffect(() => {
     if (open) {
@@ -35,9 +42,13 @@ export function StockReportDialog({
       setPdfUrl(null);
       setPdfBlob(null);
       setLoadingProfile(true);
+      setLoadingSubProducts(true);
+      setLoadingPreviousInvoice(true);
       loadUserProfile();
+      loadSubProducts();
+      loadPreviousInvoiceDate();
     }
-  }, [open]);
+  }, [open, invoice]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -50,11 +61,11 @@ export function StockReportDialog({
 
   // Generate PDF preview when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated) {
+    if (open && !loadingProfile && !loadingSubProducts && !loadingPreviousInvoice && !pdfGenerated) {
       setPdfGenerated(true);
       generatePDFPreview();
     }
-  }, [open, loadingProfile, pdfGenerated]);
+  }, [open, loadingProfile, loadingSubProducts, loadingPreviousInvoice, pdfGenerated]);
 
   const loadUserProfile = async () => {
     try {
@@ -74,6 +85,64 @@ export function StockReportDialog({
       toast.error('Erreur lors du chargement du profil');
     } finally {
       setLoadingProfile(false);
+    }
+  };
+
+  const loadSubProducts = async () => {
+    try {
+      // Load all sub-products
+      const { data: subProductsData, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('*');
+
+      if (subProductsError) throw subProductsError;
+
+      // Load client sub-products
+      const { data: clientSubProductsData, error: clientSubProductsError } = await supabase
+        .from('client_sub_products')
+        .select('*')
+        .eq('client_id', client.id);
+
+      if (clientSubProductsError) throw clientSubProductsError;
+
+      setSubProducts(subProductsData || []);
+      setClientSubProducts(clientSubProductsData || []);
+    } catch (error) {
+      console.error('Error loading sub-products:', error);
+      toast.error('Erreur lors du chargement des sous-produits');
+    } finally {
+      setLoadingSubProducts(false);
+    }
+  };
+
+  const loadPreviousInvoiceDate = async () => {
+    try {
+      if (!invoice) {
+        setPreviousInvoiceDate(null);
+        setLoadingPreviousInvoice(false);
+        return;
+      }
+
+      // Récupérer la date de la facture précédente la plus récente avant celle-ci
+      const { data: previousInvoice, error } = await supabase
+        .from('invoices')
+        .select('created_at')
+        .eq('client_id', client.id)
+        .lt('created_at', invoice.created_at)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setPreviousInvoiceDate(previousInvoice?.created_at || null);
+    } catch (error) {
+      console.error('Error loading previous invoice date:', error);
+      toast.error('Erreur lors du chargement de la date du dépôt précédent');
+    } finally {
+      setLoadingPreviousInvoice(false);
     }
   };
 
@@ -254,10 +323,22 @@ export function StockReportDialog({
       // Position après les encarts
       yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-      // Date
+      // Dates : Dépôt précédent et Date de facture
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
+      
+      // Dépôt précédent
+      const previousDepositText = previousInvoiceDate 
+        ? `Dépôt précédent : ${new Date(previousInvoiceDate).toLocaleDateString('fr-FR')}`
+        : 'Dépôt précédent : -';
+      doc.text(previousDepositText, 15, yPosition);
+      yPosition += 5;
+      
+      // Date de facture
+      const invoiceDateText = invoice
+        ? `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`
+        : `Date de facture : ${new Date().toLocaleDateString('fr-FR')}`;
+      doc.text(invoiceDateText, 15, yPosition);
       yPosition += 10;
 
       // Titre "Relevé de stock"
@@ -270,30 +351,51 @@ export function StockReportDialog({
       // Sort by display_order
       const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
-      // Créer un map pour trouver rapidement les stock updates par collection_id
-      const stockUpdatesMap = new Map<string, StockUpdate>();
+      // Créer des maps pour trouver rapidement les données
+      const stockUpdatesByCollectionId = new Map<string, StockUpdate>();
+      const stockUpdatesBySubProductId = new Map<string, StockUpdate>();
       stockUpdates.forEach(update => {
         if (update.collection_id) {
-          stockUpdatesMap.set(update.collection_id, update);
+          stockUpdatesByCollectionId.set(update.collection_id, update);
+        }
+        if (update.sub_product_id) {
+          stockUpdatesBySubProductId.set(update.sub_product_id, update);
         }
       });
 
-      const tableData = sortedCollections.map((cc) => {
+      // Créer un map des sous-produits par collection
+      const subProductsByCollectionId = new Map<string, SubProduct[]>();
+      subProducts.forEach(sp => {
+        if (!subProductsByCollectionId.has(sp.collection_id)) {
+          subProductsByCollectionId.set(sp.collection_id, []);
+        }
+        subProductsByCollectionId.get(sp.collection_id)!.push(sp);
+      });
+
+      // Créer un map des client_sub_products par sub_product_id
+      const clientSubProductsMap = new Map<string, ClientSubProduct>();
+      clientSubProducts.forEach(csp => {
+        clientSubProductsMap.set(csp.sub_product_id, csp);
+      });
+
+      const tableData: any[] = [];
+      
+      sortedCollections.forEach((cc) => {
         const collectionName = cc.collection?.name || 'Collection';
         const info = ''; // Pas d'info pour le relevé de stock
         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
-        const stock = cc.current_stock.toString();
         
         // Récupérer les données du stock update pour cette collection
-        const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
+        const stockUpdate = stockUpdatesByCollectionId.get(cc.collection_id || '');
         const previousStock = stockUpdate?.previous_stock ?? cc.current_stock;
         const countedStock = stockUpdate?.counted_stock ?? 0;
         const newDeposit = stockUpdate?.new_stock ?? cc.current_stock; // Nouveau dépôt
         // Réassort = Nouveau dépôt - Stock compté
         const reassort = stockUpdate ? (newDeposit - countedStock) : 0;
         
-        return [
+        // Ajouter la ligne de la collection
+        tableData.push([
           collectionName,
           info,
           `${effectivePrice.toFixed(2)} €`,
@@ -302,7 +404,40 @@ export function StockReportDialog({
           countedStock.toString(), // Stock compté
           reassort.toString(), // Réassort = Nouveau dépôt - Stock compté
           newDeposit.toString() // Nouveau dépôt
-        ];
+        ]);
+
+        // Ajouter les sous-produits de cette collection s'ils existent et ont des stock_updates
+        const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
+        if (collectionSubProducts.length > 0) {
+          collectionSubProducts.forEach(sp => {
+            const csp = clientSubProductsMap.get(sp.id);
+            if (!csp) return;
+
+            const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
+            // Ne montrer que les sous-produits qui ont un stock_update pour cette facture
+            if (!subProductStockUpdate) return;
+
+            const subProductPreviousStock = subProductStockUpdate.previous_stock;
+            const subProductCountedStock = subProductStockUpdate.counted_stock;
+            const subProductNewDeposit = subProductStockUpdate.new_stock;
+            const subProductReassort = subProductNewDeposit - subProductCountedStock;
+
+            // Ajouter la ligne du sous-produit
+            // Les sous-produits sont identifiés par le fait qu'ils ont des cellules vides pour les prix
+            // S'assurer que le nom du sous-produit est valide
+            const subProductName = sp.name || 'Sous-produit';
+            tableData.push([
+              subProductName, // Nom du sous-produit
+              '',
+              '',
+              '',
+              subProductPreviousStock.toString(),
+              subProductCountedStock.toString(),
+              subProductReassort.toString(),
+              subProductNewDeposit.toString()
+            ]);
+          });
+        }
       });
 
       // Calculer la largeur disponible pour le tableau
@@ -360,6 +495,57 @@ export function StockReportDialog({
           overflow: 'linebreak',
           textColor: [0, 0, 0]
         },
+        didParseCell: (data: any) => {
+          try {
+            // Identifier les lignes de sous-produits
+            // Les sous-produits ont des cellules vides pour les colonnes prix (index 2 et 3) et info (index 1)
+            // mais ont du contenu dans la première colonne (index 0)
+            if (data.row && data.row.raw && Array.isArray(data.row.raw)) {
+              const row = data.row.raw;
+              // Vérifier si c'est une ligne de sous-produit : 
+              // - colonne 0 (nom) n'est pas vide
+              // - colonnes 1, 2, 3 (info, prix) sont vides
+              const hasName = row[0] && row[0] !== '';
+              const hasEmptyInfo = !row[1] || row[1] === '';
+              const hasEmptyPrice1 = !row[2] || row[2] === '';
+              const hasEmptyPrice2 = !row[3] || row[3] === '';
+              
+              const isSubProduct = hasName && hasEmptyInfo && hasEmptyPrice1 && hasEmptyPrice2;
+              
+              if (isSubProduct) {
+                // Initialiser les styles si nécessaire
+                if (!data.cell.styles) {
+                  data.cell.styles = {};
+                }
+                
+                // Fond gris très léger pour distinguer visuellement les sous-produits (toutes les cellules)
+                data.cell.styles.fillColor = [245, 247, 250]; // Couleur gris très clair
+                
+                // Bordure gauche uniquement pour la première colonne pour montrer le lien hiérarchique
+                if (data.column && data.column.index === 0) {
+                  if (!data.cell.styles.lineColor) {
+                    data.cell.styles.lineColor = [180, 180, 180];
+                  }
+                  if (!data.cell.styles.lineWidth) {
+                    data.cell.styles.lineWidth = {};
+                  }
+                  data.cell.styles.lineWidth.left = 3; // Bordure gauche plus épaisse et visible
+                  
+                  // Ajouter un padding gauche pour l'indentation (alinéa) uniquement sur la première colonne
+                  if (!data.cell.styles.cellPadding) {
+                    data.cell.styles.cellPadding = { left: 2, right: 2, top: 2, bottom: 2 };
+                  }
+                  data.cell.styles.cellPadding.left = 10; // Indentation plus prononcée
+                }
+                
+                // Garder la même police que la collection (pas de changement de style)
+              }
+            }
+          } catch (error) {
+            // Ignorer les erreurs dans le callback pour ne pas bloquer la génération du PDF
+            console.warn('Error in didParseCell:', error);
+          }
+        },
         columnStyles: {
           0: { cellWidth: columnWidths[0], halign: 'left' },
           1: { cellWidth: columnWidths[1], halign: 'left' },
@@ -412,7 +598,7 @@ export function StockReportDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-          {generating || loadingProfile ? (
+          {generating || loadingProfile || loadingSubProducts || loadingPreviousInvoice ? (
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
               <p className="text-slate-600">Génération du PDF en cours...</p>

@@ -63,6 +63,7 @@ export type StockUpdate = {
   id: string;
   client_id: string;
   collection_id?: string | null;
+  sub_product_id?: string | null;
   invoice_id?: string | null;
   previous_stock: number;
   counted_stock: number;
