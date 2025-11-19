@@ -1229,6 +1229,7 @@ export default function ClientDetailPage() {
 
       // Insert invoice adjustments (reprise de stock) only if invoice exists
       if (invoiceData && (pendingAdjustments || []).length > 0) {
+        const invoiceId = invoiceData.id; // Store in a const to help TypeScript
         const rows = pendingAdjustments
           .map(a => {
             const unitPrice = parseFloat(a.unit_price);
@@ -1237,7 +1238,7 @@ export default function ClientDetailPage() {
             const amount = unitPrice * quantity;
             return {
               client_id: clientId,
-              invoice_id: invoiceData.id,
+              invoice_id: invoiceId,
               operation_name: a.operation_name,
               unit_price: unitPrice,
               quantity: quantity,
