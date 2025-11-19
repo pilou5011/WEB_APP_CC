@@ -386,7 +386,7 @@ export function StockReportDialog({
       // Sort by display_order
       const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
-      // Créer des maps pour trouver rapidement les données
+      // Créer des maps pour trouver rapidement les données de la transaction actuelle
       const stockUpdatesByCollectionId = new Map<string, StockUpdate>();
       const stockUpdatesBySubProductId = new Map<string, StockUpdate>();
       stockUpdates.forEach(update => {
@@ -395,6 +395,37 @@ export function StockReportDialog({
         }
         if (update.sub_product_id) {
           stockUpdatesBySubProductId.set(update.sub_product_id, update);
+        }
+      });
+
+      // Charger l'historique des stock_updates pour trouver le dernier new_stock de chaque collection/sous-produit
+      const { data: historicalStockUpdates, error: historicalError } = await supabase
+        .from('stock_updates')
+        .select('*')
+        .eq('client_id', client.id)
+        .order('created_at', { ascending: false });
+
+      if (historicalError) {
+        console.error('Error loading historical stock updates:', historicalError);
+        throw historicalError;
+      }
+
+      // Créer des maps pour trouver le dernier new_stock de chaque collection et sous-produit
+      const lastNewStockByCollectionId = new Map<string, number>();
+      const lastNewStockBySubProductId = new Map<string, number>();
+      
+      (historicalStockUpdates || []).forEach((update: StockUpdate) => {
+        if (update.collection_id && !update.sub_product_id) {
+          // Stock update pour une collection (pas un sous-produit)
+          if (!lastNewStockByCollectionId.has(update.collection_id)) {
+            lastNewStockByCollectionId.set(update.collection_id, update.new_stock);
+          }
+        }
+        if (update.sub_product_id) {
+          // Stock update pour un sous-produit
+          if (!lastNewStockBySubProductId.has(update.sub_product_id)) {
+            lastNewStockBySubProductId.set(update.sub_product_id, update.new_stock);
+          }
         }
       });
 
@@ -422,12 +453,106 @@ export function StockReportDialog({
         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
         
         // Récupérer les données du stock update pour cette collection
+        // UNIQUEMENT utiliser les données de stock_updates (source unique de données)
         const stockUpdate = stockUpdatesByCollectionId.get(cc.collection_id || '');
-        const previousStock = stockUpdate?.previous_stock ?? cc.current_stock;
-        const countedStock = stockUpdate?.counted_stock ?? 0;
-        const newDeposit = stockUpdate?.new_stock ?? cc.current_stock; // Nouveau dépôt
+        
+        // Si pas de stock_update dans la transaction actuelle, utiliser le dernier new_stock de l'historique
+        let previousStock: number;
+        let countedStock: number;
+        let newDeposit: number;
+        let reassort: number;
+        
+        // Ajouter TOUS les sous-produits de cette collection (même sans mouvement de stock)
+        const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
+        const hasSubProducts = collectionSubProducts.length > 0;
+        
+        // Pour les collections avec sous-produits, calculer le stock compté comme la somme des sous-produits
+        let totalSubProductCountedStock = 0;
+        let totalSubProductPreviousStock = 0;
+        let totalSubProductNewDeposit = 0;
+        
+        if (hasSubProducts) {
+          // Calculer les totaux des sous-produits
+          collectionSubProducts.forEach(sp => {
+            const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
+            
+            let subProductPreviousStock: number;
+            let subProductCountedStock: number;
+            let subProductNewDeposit: number;
+
+            if (subProductStockUpdate) {
+              // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
+              // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
+              // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
+              subProductPreviousStock = subProductStockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+              
+              // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
+              // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
+              if (subProductStockUpdate.counted_stock !== null && subProductStockUpdate.counted_stock !== undefined) {
+                subProductCountedStock = subProductStockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+              } else {
+                // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
+                subProductCountedStock = subProductPreviousStock; // Utiliser previous_stock depuis stock_updates
+              }
+              
+              subProductNewDeposit = subProductStockUpdate.new_stock; // TOUJOURS depuis stock_updates
+            } else {
+              // Pas de stock_update dans la transaction actuelle
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+              subProductPreviousStock = lastNewStock;
+              subProductCountedStock = lastNewStock; // Stock compté = Ancien dépôt
+              subProductNewDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+            }
+            
+            totalSubProductCountedStock += subProductCountedStock;
+            totalSubProductPreviousStock += subProductPreviousStock;
+            totalSubProductNewDeposit += subProductNewDeposit;
+          });
+          
+          // Pour les collections avec sous-produits
+          if (stockUpdate) {
+            // Si stock_update existe, utiliser TOUTES ses valeurs depuis stock_updates
+            // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
+            previousStock = stockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+            newDeposit = stockUpdate.new_stock; // TOUJOURS depuis stock_updates
+            // Le stock compté de la collection = somme des stocks comptés des sous-produits
+            countedStock = totalSubProductCountedStock;
+          } else {
+            // Pas de stock_update : utiliser les totaux des sous-produits
+            previousStock = totalSubProductPreviousStock;
+            newDeposit = totalSubProductNewDeposit;
+            // Le stock compté = somme des stocks comptés des sous-produits
+            countedStock = totalSubProductCountedStock;
+          }
+        } else {
+          // Pour une collection sans sous-produits
+          if (stockUpdate) {
+            // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
+            // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
+            // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
+            previousStock = stockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+            newDeposit = stockUpdate.new_stock; // TOUJOURS depuis stock_updates
+            // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
+            // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
+            if (stockUpdate.counted_stock !== null && stockUpdate.counted_stock !== undefined) {
+              countedStock = stockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+            } else {
+              // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
+              countedStock = previousStock; // Utiliser previous_stock depuis stock_updates
+            }
+          } else {
+            // Pas de stock_update dans la transaction actuelle
+            // Utiliser le dernier new_stock de l'historique comme ancien dépôt
+            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            previousStock = lastNewStock;
+            countedStock = lastNewStock; // Stock compté = Ancien dépôt
+            newDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+          }
+        }
+        
         // Réassort = Nouveau dépôt - Stock compté
-        const reassort = stockUpdate ? (newDeposit - countedStock) : 0;
+        reassort = newDeposit - countedStock;
         
         // Ajouter la ligne de la collection
         tableData.push([
@@ -436,33 +561,57 @@ export function StockReportDialog({
           `${effectivePrice.toFixed(2)} €`,
           effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
           previousStock.toString(), // Ancien dépôt
-          countedStock.toString(), // Stock compté
+          countedStock.toString(), // Stock compté (somme des sous-produits si applicable)
           reassort.toString(), // Réassort = Nouveau dépôt - Stock compté
           newDeposit.toString() // Nouveau dépôt
         ]);
 
-        // Ajouter les sous-produits de cette collection s'ils existent et ont des stock_updates
-        const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
-        if (collectionSubProducts.length > 0) {
+        // Ajouter TOUS les sous-produits de cette collection
+        if (hasSubProducts) {
           collectionSubProducts.forEach(sp => {
-            const csp = clientSubProductsMap.get(sp.id);
-            if (!csp) return;
-
             const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
-            // Ne montrer que les sous-produits qui ont un stock_update pour cette facture
-            if (!subProductStockUpdate) return;
+            
+            let subProductPreviousStock: number;
+            let subProductCountedStock: number;
+            let subProductNewDeposit: number;
+            let subProductReassort: number;
 
-            const subProductPreviousStock = subProductStockUpdate.previous_stock;
-            const subProductCountedStock = subProductStockUpdate.counted_stock;
-            const subProductNewDeposit = subProductStockUpdate.new_stock;
-            const subProductReassort = subProductNewDeposit - subProductCountedStock;
+            if (subProductStockUpdate) {
+              // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
+              // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
+              // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
+              subProductPreviousStock = subProductStockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+              
+              // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
+              // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
+              if (subProductStockUpdate.counted_stock !== null && subProductStockUpdate.counted_stock !== undefined) {
+                subProductCountedStock = subProductStockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+              } else {
+                // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
+                subProductCountedStock = subProductPreviousStock; // Utiliser previous_stock depuis stock_updates
+              }
+              
+              subProductNewDeposit = subProductStockUpdate.new_stock; // TOUJOURS depuis stock_updates
+              subProductReassort = subProductNewDeposit - subProductCountedStock;
+            } else {
+              // Pas de stock_update dans la transaction actuelle
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+              subProductPreviousStock = lastNewStock;
+              subProductCountedStock = lastNewStock; // Stock compté = Ancien dépôt
+              subProductNewDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+              subProductReassort = 0; // Réassort = 0
+            }
 
             // Ajouter la ligne du sous-produit
             // Les sous-produits sont identifiés par le fait qu'ils ont des cellules vides pour les prix
             // S'assurer que le nom du sous-produit est valide
+            // Ajouter des espaces pour créer un alinéa visuel
             const subProductName = sp.name || 'Sous-produit';
+            // Ajouter 8 espaces non-breaking pour créer un alinéa visible et prononcé
+            const indentedSubProductName = '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0' + subProductName;
             tableData.push([
-              subProductName, // Nom du sous-produit
+              indentedSubProductName, // Nom du sous-produit avec indentation
               '',
               '',
               '',
@@ -567,10 +716,12 @@ export function StockReportDialog({
                   data.cell.styles.lineWidth.left = 3; // Bordure gauche plus épaisse et visible
                   
                   // Ajouter un padding gauche pour l'indentation (alinéa) uniquement sur la première colonne
+                  // S'assurer que le padding est toujours défini, même s'il existe déjà
                   if (!data.cell.styles.cellPadding) {
                     data.cell.styles.cellPadding = { left: 2, right: 2, top: 2, bottom: 2 };
                   }
-                  data.cell.styles.cellPadding.left = 10; // Indentation plus prononcée
+                  // Augmenter significativement le padding gauche pour créer un alinéa visible
+                  data.cell.styles.cellPadding.left = 10; // Indentation prononcée pour les sous-produits
                 }
                 
                 // Garder la même police que la collection (pas de changement de style)
