@@ -118,7 +118,32 @@ export function StockReportDialog({
   const loadPreviousInvoiceDate = async () => {
     try {
       if (!invoice) {
-        setPreviousInvoiceDate(null);
+        // If no invoice, try to get the date from stock updates
+        if (stockUpdates.length > 0) {
+          // Get the most recent stock update date
+          const mostRecentDate = stockUpdates.reduce((latest, update) => {
+            const updateDate = new Date(update.created_at);
+            return updateDate > latest ? updateDate : latest;
+          }, new Date(0));
+          
+          // Find the previous invoice or stock update before this date
+          const { data: previousInvoice, error } = await supabase
+            .from('invoices')
+            .select('created_at')
+            .eq('client_id', client.id)
+            .lt('created_at', mostRecentDate.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (error && error.code !== 'PGRST116') {
+            throw error;
+          }
+
+          setPreviousInvoiceDate(previousInvoice?.created_at || null);
+        } else {
+          setPreviousInvoiceDate(null);
+        }
         setLoadingPreviousInvoice(false);
         return;
       }
@@ -335,9 +360,19 @@ export function StockReportDialog({
       yPosition += 5;
       
       // Date de facture
-      const invoiceDateText = invoice
-        ? `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`
-        : `Date de facture : ${new Date().toLocaleDateString('fr-FR')}`;
+      let invoiceDateText: string;
+      if (invoice && invoice.id) {
+        invoiceDateText = `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`;
+      } else if (stockUpdates.length > 0) {
+        // Use the date from the most recent stock update
+        const mostRecentDate = stockUpdates.reduce((latest, update) => {
+          const updateDate = new Date(update.created_at);
+          return updateDate > latest ? updateDate : latest;
+        }, new Date(0));
+        invoiceDateText = `Date de facture : ${mostRecentDate.toLocaleDateString('fr-FR')}`;
+      } else {
+        invoiceDateText = `Date de facture : ${new Date().toLocaleDateString('fr-FR')}`;
+      }
       doc.text(invoiceDateText, 15, yPosition);
       yPosition += 10;
 
@@ -560,7 +595,7 @@ export function StockReportDialog({
           lineColor: [0, 0, 0],
           lineWidth: 0.1
         }
-      });
+      } as any); // Type assertion nécessaire car didParseCell n'est pas dans les types TypeScript mais est supporté par jspdf-autotable
 
       // Generate PDF blob for preview
       const pdfBlobData = doc.output('blob');

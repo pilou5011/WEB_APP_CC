@@ -283,6 +283,15 @@ export default function ClientDetailPage() {
   const [stockReportDialogOpen, setStockReportDialogOpen] = useState(false);
   const [selectedInvoiceForStockReport, setSelectedInvoiceForStockReport] = useState<Invoice | null>(null);
   const [selectedInvoiceForDepositSlip, setSelectedInvoiceForDepositSlip] = useState<Invoice | null>(null);
+  const [recentStockUpdatesWithoutInvoice, setRecentStockUpdatesWithoutInvoice] = useState<StockUpdate[]>([]);
+  // Stocker les mises à jour de stock sans facture pour l'historique
+  const [stockUpdatesWithoutInvoice, setStockUpdatesWithoutInvoice] = useState<Array<{
+    id: string;
+    created_at: string;
+    total_cards_sold: number;
+    total_amount: number;
+    stockUpdates: StockUpdate[];
+  }>>([]);
   const [lastVisitDate, setLastVisitDate] = useState<string | null>(null);
   
   // Calendar data
@@ -1052,18 +1061,24 @@ export default function ClientDetailPage() {
         return sum + (unitPrice * quantity);
       }, 0);
 
-      // Create global invoice
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert([{
-          client_id: clientId,
-          total_cards_sold: totalCardsSold,
-          total_amount: totalAmount + adjustmentsTotal
-        }])
-        .select()
-        .single();
+      const finalTotalAmount = totalAmount + adjustmentsTotal;
 
-      if (invoiceError) throw invoiceError;
+      // Create global invoice only if total amount is not zero
+      let invoiceData: Invoice | null = null;
+      if (finalTotalAmount !== 0) {
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .insert([{
+            client_id: clientId,
+            total_cards_sold: totalCardsSold,
+            total_amount: finalTotalAmount
+          }])
+          .select()
+          .single();
+
+        if (invoiceError) throw invoiceError;
+        invoiceData = invoice;
+      }
 
       // Prepare stock updates with invoice_id
       const updatesToInsert: any[] = [];
@@ -1139,7 +1154,7 @@ export default function ClientDetailPage() {
               updatesToInsert.push({
                 client_id: clientId,
                 sub_product_id: sp.id,
-                invoice_id: invoiceData.id,
+                invoice_id: invoiceData?.id || null,
                 previous_stock: previousStock,
                 counted_stock: countedStock,
                 cards_sold: cardsSold,
@@ -1158,7 +1173,7 @@ export default function ClientDetailPage() {
               updatesToInsert.push({
                 client_id: clientId,
                 collection_id: cc.collection_id, // Parent collection ID for invoice
-                invoice_id: invoiceData.id,
+                invoice_id: invoiceData?.id || null,
                 previous_stock: totalPreviousStock,
                 counted_stock: totalCountedStock,
                 cards_sold: totalCardsSold,
@@ -1188,7 +1203,7 @@ export default function ClientDetailPage() {
             updatesToInsert.push({
               client_id: clientId,
               collection_id: cc.collection_id,
-              invoice_id: invoiceData.id,
+              invoice_id: invoiceData?.id || null,
               previous_stock: previousStock,
               counted_stock: countedStock,
               cards_sold: cardsSold,
@@ -1202,15 +1217,18 @@ export default function ClientDetailPage() {
       }
 
       // Insert stock updates only if there are any
+      let insertedStockUpdates: StockUpdate[] = [];
       if (updatesToInsert.length > 0) {
-        const { error: updatesInsertError } = await supabase
+        const { data: insertedUpdates, error: updatesInsertError } = await supabase
           .from('stock_updates')
-          .insert(updatesToInsert);
+          .insert(updatesToInsert)
+          .select('*');
         if (updatesInsertError) throw updatesInsertError;
+        insertedStockUpdates = insertedUpdates || [];
       }
 
-      // Insert invoice adjustments (reprise de stock)
-      if ((pendingAdjustments || []).length > 0) {
+      // Insert invoice adjustments (reprise de stock) only if invoice exists
+      if (invoiceData && (pendingAdjustments || []).length > 0) {
         const rows = pendingAdjustments
           .map(a => {
             const unitPrice = parseFloat(a.unit_price);
@@ -1278,16 +1296,60 @@ export default function ClientDetailPage() {
       setSubmitting(false);
 
       // Success message based on what was done
-      if (hasStockUpdates && hasAdjustments) {
-        toast.success('Facture créée avec reprises de stock et mise à jour du stock');
-      } else if (hasStockUpdates) {
-        toast.success('Facture créée et stock mis à jour');
+      if (invoiceData) {
+        if (hasStockUpdates && hasAdjustments) {
+          toast.success('Facture créée avec reprises de stock et mise à jour du stock');
+        } else if (hasStockUpdates) {
+          toast.success('Facture créée et stock mis à jour');
+        } else {
+          toast.success('Facture créée avec reprises de stock');
+        }
       } else {
-        toast.success('Facture créée avec reprises de stock');
+        // No invoice created (amount = 0)
+        if (hasStockUpdates) {
+          toast.success('Stock mis à jour (montant nul, aucune facture créée)');
+        }
       }
       
       // ✅ Reset adjustments et reload data
       setPendingAdjustments([]);
+      
+      // Open dialogs for deposit slip and stock report if stock was updated
+      if (hasStockUpdates && insertedStockUpdates.length > 0) {
+        // Create a temporary invoice-like object for the dialogs if no invoice was created
+        const tempInvoiceForDialogs: Invoice | null = invoiceData || {
+          id: '', // Will not be used for filtering, but needed for dialog
+          client_id: clientId,
+          total_cards_sold: totalCardsSold,
+          total_amount: 0,
+          invoice_number: null, // No invoice number when amount is 0
+          created_at: new Date().toISOString()
+        } as Invoice;
+        
+        // Set the stock updates and open dialogs
+        // Store the inserted stock updates in state so dialogs can access them
+        // We'll reload the data which will include these new stock updates
+        // For now, just set the invoice (or temp invoice) and open dialogs after reload
+        if (invoiceData) {
+          setSelectedInvoiceForStockReport(invoiceData);
+          setSelectedInvoiceForDepositSlip(invoiceData);
+        } else {
+          // For stock updates without invoice, store them for history display
+          // Don't open dialogs automatically
+          setRecentStockUpdatesWithoutInvoice(insertedStockUpdates);
+          setSelectedInvoiceForStockReport(tempInvoiceForDialogs);
+          setSelectedInvoiceForDepositSlip(tempInvoiceForDialogs);
+          
+          // Add to history without invoice
+          setStockUpdatesWithoutInvoice(prev => [...prev, {
+            id: `stock-update-${Date.now()}`, // Generate a unique ID
+            created_at: new Date().toISOString(),
+            total_cards_sold: totalCardsSold,
+            total_amount: 0,
+            stockUpdates: insertedStockUpdates
+          }]);
+        }
+      }
       
       // Reload client data pour rafraîchir (sans await pour ne pas bloquer)
       loadClientData().catch(err => {
@@ -2392,82 +2454,160 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {globalInvoices.length > 0 && (
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0) && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
                 <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length} document{globalInvoices.length > 1 ? 's' : ''} enregistré{globalInvoices.length > 1 ? 's' : ''}
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {globalInvoices.map((invoice) => {
-                    const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
-                    return (
-                      <div
-                        key={invoice.id}
-                        className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <span className="text-sm text-slate-500">
-                              {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                            <p className="text-xs text-slate-600 mt-1">
-                              {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
-                            </p>
+                  {/* Combine invoices and stock updates without invoice, sorted by date */}
+                  {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
+                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at }))]
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .map((item) => {
+                      if (item.type === 'invoice') {
+                        const invoice = item.data as Invoice;
+                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
+                        return (
+                          <div
+                            key={invoice.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedGlobalInvoice(invoice);
+                                    setGlobalInvoiceDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Facture
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForStockReport(invoice);
+                                    setStockReportDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Relevé de stock
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForDepositSlip(invoice);
+                                    setDepositSlipDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Bon de dépôt
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{invoice.total_amount.toFixed(2)} €</span>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedGlobalInvoice(invoice);
-                                setGlobalInvoiceDialogOpen(true);
-                              }}
-                            >
-                              <FileText className="mr-2 h-4 w-4" />
-                              Facture
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedInvoiceForStockReport(invoice);
-                                setStockReportDialogOpen(true);
-                              }}
-                            >
-                              <ClipboardList className="mr-2 h-4 w-4" />
-                              Relevé de stock
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedInvoiceForDepositSlip(invoice);
-                                setDepositSlipDialogOpen(true);
-                              }}
-                            >
-                              <ClipboardList className="mr-2 h-4 w-4" />
-                              Bon de dépôt
-                            </Button>
+                        );
+                      } else {
+                        const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
+                        const tempInvoice: Invoice = {
+                          id: stockUpdate.id,
+                          client_id: clientId,
+                          total_cards_sold: stockUpdate.total_cards_sold,
+                          total_amount: stockUpdate.total_amount,
+                          invoice_number: null,
+                          created_at: stockUpdate.created_at
+                        };
+                        // Count unique collections from stock updates
+                        const uniqueCollections = new Set(stockUpdate.stockUpdates
+                          .filter(u => u.collection_id)
+                          .map(u => u.collection_id));
+                        const collectionCount = uniqueCollections.size;
+                        
+                        return (
+                          <div
+                            key={stockUpdate.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(stockUpdate.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {collectionCount} collection{collectionCount > 1 ? 's' : ''}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                {/* Pas de bouton Facture pour les mises à jour sans facture */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForStockReport(tempInvoice);
+                                    setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
+                                    setStockReportDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Relevé de stock
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForDepositSlip(tempInvoice);
+                                    setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
+                                    setDepositSlipDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Bon de dépôt
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{stockUpdate.total_cards_sold} carte{stockUpdate.total_cards_sold > 1 ? 's' : ''} vendue{stockUpdate.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{stockUpdate.total_amount.toFixed(2)} €</span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-slate-600">
-                          <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
-                          <span>•</span>
-                          <span>{invoice.total_amount.toFixed(2)} €</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      }
+                    })}
                 </div>
               </CardContent>
             </Card>
@@ -2676,7 +2816,11 @@ export default function ClientDetailPage() {
             onOpenChange={setDepositSlipDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)}
+            stockUpdates={
+              selectedInvoiceForDepositSlip.id 
+                ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
+                : recentStockUpdatesWithoutInvoice
+            }
           />
         )}
 
@@ -2686,7 +2830,11 @@ export default function ClientDetailPage() {
             onOpenChange={setStockReportDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)}
+            stockUpdates={
+              selectedInvoiceForStockReport.id 
+                ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)
+                : recentStockUpdatesWithoutInvoice
+            }
             invoice={selectedInvoiceForStockReport}
           />
         )}
