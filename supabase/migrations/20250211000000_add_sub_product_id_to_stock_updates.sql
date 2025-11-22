@@ -13,3 +13,4 @@ ADD COLUMN IF NOT EXISTS sub_product_id uuid REFERENCES sub_products(id) ON DELE
 -- Créer un index pour améliorer les performances
 CREATE INDEX IF NOT EXISTS idx_stock_updates_sub_product_id ON stock_updates(sub_product_id);
 
+

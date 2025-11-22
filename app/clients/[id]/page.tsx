@@ -124,15 +124,17 @@ function SortableCollectionRow({
         </div>
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
-        <p className="text-sm font-medium text-slate-600">
-          {hasSubProducts ? parentCurrentStock : cc.current_stock}
-        </p>
+        {hasSubProducts ? (
+          <></>
+        ) : (
+          <p className="text-sm font-medium text-slate-600">
+            {cc.current_stock}
+          </p>
+        )}
       </TableCell>
       <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCountedStock}
-          </p>
+          <></>
         ) : (
           <Input
             type="text"
@@ -153,9 +155,7 @@ function SortableCollectionRow({
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCardsAdded - parentCountedStock}
-          </p>
+          <></>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {(() => {
@@ -170,9 +170,7 @@ function SortableCollectionRow({
       </TableCell>
       <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCardsAdded}
-          </p>
+          <></>
         ) : (
           <Input
             type="text"
@@ -1063,9 +1061,10 @@ export default function ClientDetailPage() {
 
       const finalTotalAmount = totalAmount + adjustmentsTotal;
 
-      // Create global invoice only if total amount is not zero
+      // Create global invoice only if cards were sold OR if there are adjustments
+      // (even if total amount is zero, we may want to create invoice for adjustments)
       let invoiceData: Invoice | null = null;
-      if (finalTotalAmount !== 0) {
+      if (totalCardsSold > 0 || adjustmentsTotal !== 0) {
         const { data: invoice, error: invoiceError } = await supabase
           .from('invoices')
           .insert([{
@@ -1092,13 +1091,14 @@ export default function ClientDetailPage() {
 
           if (hasSubProducts) {
             // Handle sub-products
-            // IMPORTANT: Traiter TOUS les sous-produits de la collection
+            // IMPORTANT: Le stock de la collection parent doit être la somme de TOUS les sous-produits
             let totalNewStock = 0;
             let totalCountedStock = 0;
             let totalPreviousStock = 0;
             let totalCardsAdded = 0;
             let totalCardsSold = 0;
 
+            // D'abord, s'assurer que tous les sous-produits existent et calculer le stock total
             for (const sp of collectionSubProducts) {
               let csp = clientSubProducts[sp.id];
               
@@ -1135,56 +1135,76 @@ export default function ClientDetailPage() {
               const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
               const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
 
-              if (!hasCountedStock || !hasNewDeposit) continue;
-
-              const countedStock = parseInt(formData.counted_stock);
-              const newDeposit = parseInt(formData.cards_added);
               const previousStock = csp.current_stock;
-              const cardsSold = Math.max(0, previousStock - countedStock);
-              const newStock = newDeposit;
-              const cardsAdded = Math.max(0, newStock - countedStock);
+              
+              // Déterminer le nouveau stock et le stock compté pour ce sous-produit
+              let newStock: number;
+              let countedStock: number;
+              
+              if (hasCountedStock || hasNewDeposit) {
+                // Sous-produit mis à jour : utiliser les valeurs du formulaire
+                countedStock = parseInt(formData.counted_stock || '0');
+                const newDeposit = parseInt(formData.cards_added || '0');
+                // Si newDeposit n'est pas renseigné, utiliser countedStock comme nouveau stock
+                newStock = hasNewDeposit ? newDeposit : countedStock;
+                
+                // Si counted_stock n'est pas renseigné (0), il est égal à l'ancien dépôt (pas de mouvement)
+                if (countedStock === 0 && !hasCountedStock) {
+                  countedStock = previousStock;
+                }
+                
+                const cardsSold = Math.max(0, previousStock - countedStock);
+                const cardsAdded = Math.max(0, newStock - countedStock);
 
+                totalCardsAdded += cardsAdded;
+                totalCardsSold += cardsSold;
+
+                // Create stock update for sub-product (for stock report)
+                updatesToInsert.push({
+                  client_id: clientId,
+                  sub_product_id: sp.id,
+                  invoice_id: invoiceData?.id || null,
+                  previous_stock: previousStock,
+                  counted_stock: countedStock,
+                  cards_sold: cardsSold,
+                  cards_added: cardsAdded,
+                  new_stock: newStock
+                });
+
+                // Update sub-product stock
+                cspUpdates.push({ id: csp.id, new_stock: newStock });
+              } else {
+                // Sous-produit non mis à jour : conserver son stock actuel
+                // Le stock compté = ancien dépôt (pas de mouvement)
+                newStock = previousStock;
+                countedStock = previousStock;
+              }
+
+              // TOUJOURS inclure le stock et le stock compté de ce sous-produit dans les totaux de la collection
               totalNewStock += newStock;
-              totalCountedStock += countedStock;
               totalPreviousStock += previousStock;
-              totalCardsAdded += cardsAdded;
-              totalCardsSold += cardsSold;
-
-              // Create stock update for sub-product (for stock report)
-              updatesToInsert.push({
-                client_id: clientId,
-                sub_product_id: sp.id,
-                invoice_id: invoiceData?.id || null,
-                previous_stock: previousStock,
-                counted_stock: countedStock,
-                cards_sold: cardsSold,
-                cards_added: cardsAdded,
-                new_stock: newStock
-              });
-
-              // Update sub-product stock
-              cspUpdates.push({ id: csp.id, new_stock: newStock });
+              totalCountedStock += countedStock;
             }
 
             // Create stock update for the parent collection (for invoice)
-            if (totalCountedStock > 0 || totalNewStock > 0) {
-              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
-              
-              updatesToInsert.push({
-                client_id: clientId,
-                collection_id: cc.collection_id, // Parent collection ID for invoice
-                invoice_id: invoiceData?.id || null,
-                previous_stock: totalPreviousStock,
-                counted_stock: totalCountedStock,
-                cards_sold: totalCardsSold,
-                cards_added: totalCardsAdded,
-                new_stock: totalNewStock,
-                collection_info: collectionInfo
-              });
+            // Toujours créer le stock_update pour la collection parent si elle a des sous-produits
+            // (même si aucun sous-produit n'a été mis à jour, pour avoir l'historique)
+            const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+            
+            updatesToInsert.push({
+              client_id: clientId,
+              collection_id: cc.collection_id, // Parent collection ID for invoice
+              invoice_id: invoiceData?.id || null,
+              previous_stock: totalPreviousStock,
+              counted_stock: totalCountedStock,
+              cards_sold: totalCardsSold,
+              cards_added: totalCardsAdded,
+              new_stock: totalNewStock,
+              collection_info: collectionInfo
+            });
 
-              // Update parent collection stock (sum of sub-products)
-              ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
-            }
+            // Update parent collection stock (sum of ALL sub-products)
+            ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
           } else {
             // Normal collection without sub-products
             const form = perCollectionForm[cc.id];
@@ -1288,13 +1308,83 @@ export default function ClientDetailPage() {
         if (clientUpdateError) throw clientUpdateError;
       }
 
-      // ✅ CRITICAL: Supprimer le brouillon EN PREMIER pour éviter qu'il se rouvre
-      await draft.deleteDraft();
-      setHasDraft(false);
-      
       // ✅ Débloquer l'interface IMMÉDIATEMENT
       setConfirmationDialogOpen(false);
       setSubmitting(false);
+      
+      // ✅ CRITICAL: Supprimer le brouillon après succès de toutes les opérations
+      // (facture créée et stock updates insérés sans erreur)
+      // Désactiver temporairement l'auto-save pour éviter qu'il recrée le brouillon
+      draftCheckDoneRef.current = false;
+      
+      try {
+        console.log('[Draft] Attempting to delete draft after successful stock update for client:', clientId);
+        
+        // Vérifier d'abord si un brouillon existe
+        const { data: existingDraft, error: checkError } = await supabase
+          .from('draft_stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .maybeSingle();
+        
+        if (checkError) {
+          console.error('[Draft] Error checking for existing draft:', checkError);
+        } else if (existingDraft) {
+          console.log('[Draft] Found existing draft with id:', existingDraft.id);
+        } else {
+          console.log('[Draft] No draft found to delete');
+        }
+        
+        // Supprimer le brouillon via le hook
+        await draft.deleteDraft();
+        setHasDraft(false);
+        console.log('[Draft] Draft deleted successfully after successful stock update');
+        
+        // Vérifier que la suppression a bien fonctionné
+        const { data: verifyDraft, error: verifyError } = await supabase
+          .from('draft_stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .maybeSingle();
+        
+        if (verifyError) {
+          console.error('[Draft] Error verifying draft deletion:', verifyError);
+        } else if (verifyDraft) {
+          console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
+          // Essayer une suppression directe
+          const { error: directDeleteError } = await supabase
+            .from('draft_stock_updates')
+            .delete()
+            .eq('id', verifyDraft.id);
+          
+          if (directDeleteError) {
+            console.error('[Draft] Direct deletion also failed:', directDeleteError);
+            throw directDeleteError;
+          } else {
+            console.log('[Draft] Draft deleted via direct deletion');
+          }
+        } else {
+          console.log('[Draft] Draft deletion verified: no draft remains');
+        }
+        
+        // Réinitialiser les formulaires pour éviter qu'un auto-save recrée le brouillon
+        setPerCollectionForm({});
+        setPerSubProductForm({});
+        setPendingAdjustments([]);
+        
+        // Réactiver l'auto-save après un délai pour s'assurer que la suppression est complète
+        setTimeout(() => {
+          draftCheckDoneRef.current = true;
+          console.log('[Draft] Auto-save re-enabled after draft deletion');
+        }, 2000);
+      } catch (draftError) {
+        console.error('[Draft] Error deleting draft after stock update:', draftError);
+        toast.error('Erreur lors de la suppression du brouillon. Veuillez le supprimer manuellement.');
+        // Réactiver l'auto-save même en cas d'erreur
+        setTimeout(() => {
+          draftCheckDoneRef.current = true;
+        }, 1000);
+      }
 
       // Success message based on what was done
       if (invoiceData) {
@@ -1306,9 +1396,9 @@ export default function ClientDetailPage() {
           toast.success('Facture créée avec reprises de stock');
         }
       } else {
-        // No invoice created (amount = 0)
+        // No invoice created (no cards sold and no adjustments)
         if (hasStockUpdates) {
-          toast.success('Stock mis à jour (montant nul, aucune facture créée)');
+          toast.success('Stock mis à jour (aucune carte vendue, aucune facture créée)');
         }
       }
       
