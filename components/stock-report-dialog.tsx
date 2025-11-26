@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
+import { Client, Collection, ClientCollection, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2 } from 'lucide-react';
@@ -13,6 +13,7 @@ interface StockReportDialogProps {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates: StockUpdate[];
+  invoice: Invoice | null;
 }
 
 export function StockReportDialog({
@@ -20,7 +21,8 @@ export function StockReportDialog({
   onOpenChange,
   client,
   clientCollections,
-  stockUpdates
+  stockUpdates,
+  invoice
 }: StockReportDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -28,6 +30,24 @@ export function StockReportDialog({
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [subProducts, setSubProducts] = useState<SubProduct[]>([]);
+  const [clientSubProducts, setClientSubProducts] = useState<ClientSubProduct[]>([]);
+  const [loadingSubProducts, setLoadingSubProducts] = useState(true);
+  const [previousInvoiceDate, setPreviousInvoiceDate] = useState<string | null>(null);
+  const [loadingPreviousInvoice, setLoadingPreviousInvoice] = useState(true);
+
+  // Mode débogage (activer/désactiver avec une variable d'environnement ou un flag)
+  const DEBUG_MODE = process.env.NODE_ENV === 'development';
+
+  // Fonction utilitaire pour le débogage
+  const debugLog = (label: string, data: any, condition: boolean = true) => {
+    if (DEBUG_MODE && condition) {
+      console.group(`🔍 [StockReport Debug] ${label}`);
+      console.log('Données:', data);
+      console.trace('Stack trace');
+      console.groupEnd();
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -35,9 +55,13 @@ export function StockReportDialog({
       setPdfUrl(null);
       setPdfBlob(null);
       setLoadingProfile(true);
+      setLoadingSubProducts(true);
+      setLoadingPreviousInvoice(true);
       loadUserProfile();
+      loadSubProducts();
+      loadPreviousInvoiceDate();
     }
-  }, [open]);
+  }, [open, invoice]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -50,11 +74,11 @@ export function StockReportDialog({
 
   // Generate PDF preview when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated) {
+    if (open && !loadingProfile && !loadingSubProducts && !loadingPreviousInvoice && !pdfGenerated) {
       setPdfGenerated(true);
       generatePDFPreview();
     }
-  }, [open, loadingProfile, pdfGenerated]);
+  }, [open, loadingProfile, loadingSubProducts, loadingPreviousInvoice, pdfGenerated]);
 
   const loadUserProfile = async () => {
     try {
@@ -74,6 +98,89 @@ export function StockReportDialog({
       toast.error('Erreur lors du chargement du profil');
     } finally {
       setLoadingProfile(false);
+    }
+  };
+
+  const loadSubProducts = async () => {
+    try {
+      // Load all sub-products
+      const { data: subProductsData, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('*');
+
+      if (subProductsError) throw subProductsError;
+
+      // Load client sub-products
+      const { data: clientSubProductsData, error: clientSubProductsError } = await supabase
+        .from('client_sub_products')
+        .select('*')
+        .eq('client_id', client.id);
+
+      if (clientSubProductsError) throw clientSubProductsError;
+
+      setSubProducts(subProductsData || []);
+      setClientSubProducts(clientSubProductsData || []);
+    } catch (error) {
+      console.error('Error loading sub-products:', error);
+      toast.error('Erreur lors du chargement des sous-produits');
+    } finally {
+      setLoadingSubProducts(false);
+    }
+  };
+
+  const loadPreviousInvoiceDate = async () => {
+    try {
+      if (!invoice) {
+        // If no invoice, try to get the date from stock updates
+        if (stockUpdates.length > 0) {
+          // Get the most recent stock update date
+          const mostRecentDate = stockUpdates.reduce((latest, update) => {
+            const updateDate = new Date(update.created_at);
+            return updateDate > latest ? updateDate : latest;
+          }, new Date(0));
+          
+          // Find the previous invoice or stock update before this date
+          const { data: previousInvoice, error } = await supabase
+            .from('invoices')
+            .select('created_at')
+            .eq('client_id', client.id)
+            .lt('created_at', mostRecentDate.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (error && error.code !== 'PGRST116') {
+            throw error;
+          }
+
+          setPreviousInvoiceDate(previousInvoice?.created_at || null);
+        } else {
+          setPreviousInvoiceDate(null);
+        }
+        setLoadingPreviousInvoice(false);
+        return;
+      }
+
+      // Récupérer la date de la facture précédente la plus récente avant celle-ci
+      const { data: previousInvoice, error } = await supabase
+        .from('invoices')
+        .select('created_at')
+        .eq('client_id', client.id)
+        .lt('created_at', invoice.created_at)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setPreviousInvoiceDate(previousInvoice?.created_at || null);
+    } catch (error) {
+      console.error('Error loading previous invoice date:', error);
+      toast.error('Erreur lors du chargement de la date du dépôt précédent');
+    } finally {
+      setLoadingPreviousInvoice(false);
     }
   };
 
@@ -254,10 +361,32 @@ export function StockReportDialog({
       // Position après les encarts
       yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-      // Date
+      // Dates : Dépôt précédent et Date de facture
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
+      
+      // Dépôt précédent
+      const previousDepositText = previousInvoiceDate 
+        ? `Dépôt précédent : ${new Date(previousInvoiceDate).toLocaleDateString('fr-FR')}`
+        : 'Dépôt précédent : -';
+      doc.text(previousDepositText, 15, yPosition);
+      yPosition += 5;
+      
+      // Date de facture
+      let invoiceDateText: string;
+      if (invoice && invoice.id) {
+        invoiceDateText = `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`;
+      } else if (stockUpdates.length > 0) {
+        // Use the date from the most recent stock update
+        const mostRecentDate = stockUpdates.reduce((latest, update) => {
+          const updateDate = new Date(update.created_at);
+          return updateDate > latest ? updateDate : latest;
+        }, new Date(0));
+        invoiceDateText = `Date de facture : ${mostRecentDate.toLocaleDateString('fr-FR')}`;
+      } else {
+        invoiceDateText = `Date de facture : ${new Date().toLocaleDateString('fr-FR')}`;
+      }
+      doc.text(invoiceDateText, 15, yPosition);
       yPosition += 10;
 
       // Titre "Relevé de stock"
@@ -270,39 +399,350 @@ export function StockReportDialog({
       // Sort by display_order
       const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
-      // Créer un map pour trouver rapidement les stock updates par collection_id
-      const stockUpdatesMap = new Map<string, StockUpdate>();
+      // Créer des maps pour trouver rapidement les données de la transaction actuelle
+      const stockUpdatesByCollectionId = new Map<string, StockUpdate>();
+      const stockUpdatesBySubProductId = new Map<string, StockUpdate>();
       stockUpdates.forEach(update => {
         if (update.collection_id) {
-          stockUpdatesMap.set(update.collection_id, update);
+          stockUpdatesByCollectionId.set(update.collection_id, update);
+        }
+        if (update.sub_product_id) {
+          stockUpdatesBySubProductId.set(update.sub_product_id, update);
         }
       });
 
-      const tableData = sortedCollections.map((cc) => {
+      debugLog('Stock Updates Maps', {
+        stockUpdatesCount: stockUpdates.length,
+        collectionsInMap: Array.from(stockUpdatesByCollectionId.keys()),
+        subProductsInMap: Array.from(stockUpdatesBySubProductId.keys()),
+        stockUpdates: stockUpdates
+      });
+
+      // Charger l'historique des stock_updates pour trouver le dernier new_stock de chaque collection/sous-produit
+      const { data: historicalStockUpdates, error: historicalError } = await supabase
+        .from('stock_updates')
+        .select('*')
+        .eq('client_id', client.id)
+        .order('created_at', { ascending: false });
+
+      if (historicalError) {
+        console.error('Error loading historical stock updates:', historicalError);
+        throw historicalError;
+      }
+
+      // Créer des maps pour trouver le dernier new_stock de chaque collection et sous-produit
+      const lastNewStockByCollectionId = new Map<string, number>();
+      const lastNewStockBySubProductId = new Map<string, number>();
+      
+      (historicalStockUpdates || []).forEach((update: StockUpdate) => {
+        if (update.collection_id && !update.sub_product_id) {
+          // Stock update pour une collection (pas un sous-produit)
+          if (!lastNewStockByCollectionId.has(update.collection_id)) {
+            lastNewStockByCollectionId.set(update.collection_id, update.new_stock);
+          }
+        }
+        if (update.sub_product_id) {
+          // Stock update pour un sous-produit
+          if (!lastNewStockBySubProductId.has(update.sub_product_id)) {
+            lastNewStockBySubProductId.set(update.sub_product_id, update.new_stock);
+          }
+        }
+      });
+
+      debugLog('Historique des stocks', {
+        historicalUpdatesCount: historicalStockUpdates?.length || 0,
+        lastNewStockByCollection: Object.fromEntries(lastNewStockByCollectionId),
+        lastNewStockBySubProduct: Object.fromEntries(lastNewStockBySubProductId)
+      });
+
+      // Créer un map des sous-produits par collection
+      const subProductsByCollectionId = new Map<string, SubProduct[]>();
+      subProducts.forEach(sp => {
+        if (!subProductsByCollectionId.has(sp.collection_id)) {
+          subProductsByCollectionId.set(sp.collection_id, []);
+        }
+        subProductsByCollectionId.get(sp.collection_id)!.push(sp);
+      });
+
+      // Créer un map des client_sub_products par sub_product_id
+      const clientSubProductsMap = new Map<string, ClientSubProduct>();
+      clientSubProducts.forEach(csp => {
+        clientSubProductsMap.set(csp.sub_product_id, csp);
+      });
+
+      const tableData: any[] = [];
+      
+      sortedCollections.forEach((cc) => {
         const collectionName = cc.collection?.name || 'Collection';
         const info = ''; // Pas d'info pour le relevé de stock
         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
-        const stock = cc.current_stock.toString();
         
         // Récupérer les données du stock update pour cette collection
-        const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
-        const previousStock = stockUpdate?.previous_stock ?? cc.current_stock;
-        const countedStock = stockUpdate?.counted_stock ?? 0;
-        const newDeposit = stockUpdate?.new_stock ?? cc.current_stock; // Nouveau dépôt
-        // Réassort = Nouveau dépôt - Stock compté
-        const reassort = stockUpdate ? (newDeposit - countedStock) : 0;
+        // UNIQUEMENT utiliser les données de stock_updates (source unique de données)
+        const stockUpdate = stockUpdatesByCollectionId.get(cc.collection_id || '');
         
-        return [
+        // Si pas de stock_update dans la transaction actuelle, utiliser le dernier new_stock de l'historique
+        let previousStock: number;
+        let countedStock: number;
+        let newDeposit: number;
+        let reassort: number;
+        
+        // Ajouter TOUS les sous-produits de cette collection (même sans mouvement de stock)
+        const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
+        const hasSubProducts = collectionSubProducts.length > 0;
+        
+        debugLog('collectionSubProducts', { collectionSubProducts: collectionSubProducts });
+        debugLog('hasSubProducts', { hasSubProducts: hasSubProducts });
+
+        // Pour les collections avec sous-produits, calculer le stock compté comme la somme des sous-produits
+        let totalSubProductCountedStock = 0;
+        let totalSubProductPreviousStock = 0;
+        let totalSubProductNewDeposit = 0;
+        
+        if (hasSubProducts) {
+          // Calculer les totaux des sous-produits
+          let totalSubProductReassort = 0;
+          collectionSubProducts.forEach(sp => {
+            const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
+            
+            let subProductPreviousStock: number;
+            let subProductCountedStock: number;
+            let subProductNewDeposit: number;
+            let subProductReassort: number;
+            
+            if (subProductStockUpdate) {
+              // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+              const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+              
+              // Vérifier si le "Stock compté" est renseigné
+              const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
+                                     subProductStockUpdate.counted_stock !== undefined;
+              
+              debugLog(`Sous-produit ${sp.id} - Analyse`, {
+                subProductName: sp.name,
+                subProductId: sp.id,
+                stockUpdate: subProductStockUpdate,
+                hasCountedStock,
+                hasNewDeposit,
+                cards_added: subProductStockUpdate.cards_added,
+                counted_stock: subProductStockUpdate.counted_stock,
+                new_stock: subProductStockUpdate.new_stock,
+                previous_stock: subProductStockUpdate.previous_stock
+              });
+              
+              if (hasCountedStock && !hasNewDeposit) {
+                // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+                // Utiliser le dernier new_stock de l'historique
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              } else if (hasCountedStock && hasNewDeposit) {
+                // Cas 2: Stock compté et Nouveau dépôt renseignés
+                // Utiliser les valeurs de stock_updates
+                subProductPreviousStock = subProductStockUpdate.previous_stock;
+                subProductCountedStock = subProductStockUpdate.counted_stock;
+                subProductReassort = subProductStockUpdate.cards_added;
+                subProductNewDeposit = subProductStockUpdate.new_stock;
+              } else {
+                // Stock compté non renseigné : utiliser le dernier new_stock
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              }
+            } else {
+              // Pas de stock_update dans la transaction actuelle
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+              subProductPreviousStock = lastNewStock;
+              subProductCountedStock = lastNewStock;
+              subProductReassort = 0;
+              subProductNewDeposit = lastNewStock;
+            }
+            
+            totalSubProductCountedStock += subProductCountedStock;
+            totalSubProductPreviousStock += subProductPreviousStock;
+            totalSubProductNewDeposit += subProductNewDeposit;
+            totalSubProductReassort += subProductReassort;
+          });
+          
+          // Pour les collections avec sous-produits : utiliser les sommes des sous-produits
+          previousStock = totalSubProductPreviousStock;
+          countedStock = totalSubProductCountedStock;
+          reassort = totalSubProductReassort;
+          newDeposit = totalSubProductNewDeposit;
+
+          debugLog(`Collection ${cc.collection_id} - Totaux sous-produits`, {
+            collectionName: cc.collection?.name,
+            collectionId: cc.collection_id,
+            totalSubProductPreviousStock,
+            totalSubProductCountedStock,
+            totalSubProductReassort,
+            totalSubProductNewDeposit,
+            subProductsCount: collectionSubProducts.length
+          });
+        } else {
+          // Pour une collection sans sous-produits
+          if (stockUpdate) {
+            // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+            const hasNewDeposit = stockUpdate.cards_added > 0;
+            
+            // Vérifier si le "Stock compté" est renseigné
+            const hasCountedStock = stockUpdate.counted_stock !== null && 
+                                   stockUpdate.counted_stock !== undefined;
+            
+            debugLog(`Collection ${cc.collection_id} - Analyse`, {
+              collectionName: cc.collection?.name,
+              collectionId: cc.collection_id,
+              stockUpdate,
+              hasCountedStock,
+              hasNewDeposit,
+              cards_added: stockUpdate.cards_added,
+              counted_stock: stockUpdate.counted_stock,
+              new_stock: stockUpdate.new_stock,
+              previous_stock: stockUpdate.previous_stock
+            });
+            
+            if (hasCountedStock && !hasNewDeposit) {
+              // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+              previousStock = lastNewStock;
+              countedStock = lastNewStock;
+              reassort = 0;
+              newDeposit = lastNewStock;
+            } else if (hasCountedStock && hasNewDeposit) {
+              // Cas 2: Stock compté et Nouveau dépôt renseignés
+              // Utiliser les valeurs de stock_updates
+              previousStock = stockUpdate.previous_stock;
+              countedStock = stockUpdate.counted_stock;
+              reassort = stockUpdate.cards_added;
+              newDeposit = stockUpdate.new_stock;
+            } else {
+              // Stock compté non renseigné : utiliser le dernier new_stock
+              const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+              previousStock = lastNewStock;
+              countedStock = lastNewStock;
+              reassort = 0;
+              newDeposit = lastNewStock;
+            }
+          } else {
+            // Pas de stock_update dans la transaction actuelle
+            // Utiliser le dernier new_stock de l'historique
+            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            previousStock = lastNewStock;
+            countedStock = lastNewStock;
+            reassort = 0;
+            newDeposit = lastNewStock;
+          }
+        }
+        
+        // Ajouter la ligne de la collection
+        const collectionRow = [
           collectionName,
           info,
           `${effectivePrice.toFixed(2)} €`,
           effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
           previousStock.toString(), // Ancien dépôt
-          countedStock.toString(), // Stock compté
+          countedStock.toString(), // Stock compté (somme des sous-produits si applicable)
           reassort.toString(), // Réassort = Nouveau dépôt - Stock compté
           newDeposit.toString() // Nouveau dépôt
         ];
+        
+        debugLog(`Collection ${cc.collection_id} - Ligne finale`, {
+          collectionName,
+          collectionId: cc.collection_id,
+          previousStock,
+          countedStock,
+          reassort,
+          newDeposit,
+          row: collectionRow
+        });
+        
+        tableData.push(collectionRow);
+
+        // Ajouter TOUS les sous-produits de cette collection
+        if (hasSubProducts) {
+          collectionSubProducts.forEach(sp => {
+            const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
+            
+            let subProductPreviousStock: number;
+            let subProductCountedStock: number;
+            let subProductNewDeposit: number;
+            let subProductReassort: number;
+
+            if (subProductStockUpdate) {
+              // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+              const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+              
+              // Vérifier si le "Stock compté" est renseigné
+              const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
+                                     subProductStockUpdate.counted_stock !== undefined;
+              
+              debugLog(`Sous-produit ${sp.id} - Affichage`, {
+                subProductName: sp.name,
+                subProductId: sp.id,
+                stockUpdate: subProductStockUpdate,
+                hasCountedStock,
+                hasNewDeposit
+              });
+              
+              if (hasCountedStock && !hasNewDeposit) {
+                // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+                // Utiliser le dernier new_stock de l'historique
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              } else if (hasCountedStock && hasNewDeposit) {
+                // Cas 2: Stock compté et Nouveau dépôt renseignés
+                // Utiliser les valeurs de stock_updates
+                subProductPreviousStock = subProductStockUpdate.previous_stock;
+                subProductCountedStock = subProductStockUpdate.counted_stock;
+                subProductReassort = subProductStockUpdate.cards_added;
+                subProductNewDeposit = subProductStockUpdate.new_stock;
+              } else {
+                // Stock compté non renseigné : utiliser le dernier new_stock
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              }
+            } else {
+              // Pas de stock_update dans la transaction actuelle
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+              subProductPreviousStock = lastNewStock;
+              subProductCountedStock = lastNewStock; // Stock compté = Ancien dépôt
+              subProductNewDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+              subProductReassort = 0; // Réassort = 0
+            }
+
+            // Ajouter la ligne du sous-produit
+            // Les sous-produits sont identifiés par le fait qu'ils ont des cellules vides pour les prix
+            // S'assurer que le nom du sous-produit est valide
+            // Ajouter des espaces pour créer un alinéa visuel
+            const subProductName = sp.name || 'Sous-produit';
+            // Ajouter 8 espaces non-breaking pour créer un alinéa visible et prononcé
+            const indentedSubProductName = '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0' + subProductName;
+            tableData.push([
+              indentedSubProductName, // Nom du sous-produit avec indentation
+              '',
+              '',
+              '',
+              subProductPreviousStock.toString(),
+              subProductCountedStock.toString(),
+              subProductReassort.toString(),
+              subProductNewDeposit.toString()
+            ]);
+          });
+        }
       });
 
       // Calculer la largeur disponible pour le tableau
@@ -360,6 +800,59 @@ export function StockReportDialog({
           overflow: 'linebreak',
           textColor: [0, 0, 0]
         },
+        didParseCell: (data: any) => {
+          try {
+            // Identifier les lignes de sous-produits
+            // Les sous-produits ont des cellules vides pour les colonnes prix (index 2 et 3) et info (index 1)
+            // mais ont du contenu dans la première colonne (index 0)
+            if (data.row && data.row.raw && Array.isArray(data.row.raw)) {
+              const row = data.row.raw;
+              // Vérifier si c'est une ligne de sous-produit : 
+              // - colonne 0 (nom) n'est pas vide
+              // - colonnes 1, 2, 3 (info, prix) sont vides
+              const hasName = row[0] && row[0] !== '';
+              const hasEmptyInfo = !row[1] || row[1] === '';
+              const hasEmptyPrice1 = !row[2] || row[2] === '';
+              const hasEmptyPrice2 = !row[3] || row[3] === '';
+              
+              const isSubProduct = hasName && hasEmptyInfo && hasEmptyPrice1 && hasEmptyPrice2;
+              
+              if (isSubProduct) {
+                // Initialiser les styles si nécessaire
+                if (!data.cell.styles) {
+                  data.cell.styles = {};
+                }
+                
+                // Fond gris très léger pour distinguer visuellement les sous-produits (toutes les cellules)
+                data.cell.styles.fillColor = [245, 247, 250]; // Couleur gris très clair
+                
+                // Bordure gauche uniquement pour la première colonne pour montrer le lien hiérarchique
+                if (data.column && data.column.index === 0) {
+                  if (!data.cell.styles.lineColor) {
+                    data.cell.styles.lineColor = [180, 180, 180];
+                  }
+                  if (!data.cell.styles.lineWidth) {
+                    data.cell.styles.lineWidth = {};
+                  }
+                  data.cell.styles.lineWidth.left = 3; // Bordure gauche plus épaisse et visible
+                  
+                  // Ajouter un padding gauche pour l'indentation (alinéa) uniquement sur la première colonne
+                  // S'assurer que le padding est toujours défini, même s'il existe déjà
+                  if (!data.cell.styles.cellPadding) {
+                    data.cell.styles.cellPadding = { left: 2, right: 2, top: 2, bottom: 2 };
+                  }
+                  // Augmenter significativement le padding gauche pour créer un alinéa visible
+                  data.cell.styles.cellPadding.left = 10; // Indentation prononcée pour les sous-produits
+                }
+                
+                // Garder la même police que la collection (pas de changement de style)
+              }
+            }
+          } catch (error) {
+            // Ignorer les erreurs dans le callback pour ne pas bloquer la génération du PDF
+            console.warn('Error in didParseCell:', error);
+          }
+        },
         columnStyles: {
           0: { cellWidth: columnWidths[0], halign: 'left' },
           1: { cellWidth: columnWidths[1], halign: 'left' },
@@ -374,7 +867,7 @@ export function StockReportDialog({
           lineColor: [0, 0, 0],
           lineWidth: 0.1
         }
-      });
+      } as any); // Type assertion nécessaire car didParseCell n'est pas dans les types TypeScript mais est supporté par jspdf-autotable
 
       // Generate PDF blob for preview
       const pdfBlobData = doc.output('blob');
@@ -412,7 +905,7 @@ export function StockReportDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-          {generating || loadingProfile ? (
+          {generating || loadingProfile || loadingSubProducts || loadingPreviousInvoice ? (
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
               <p className="text-slate-600">Génération du PDF en cours...</p>

@@ -377,10 +377,26 @@ export default function CollectionDetailPage() {
         return;
       }
 
+      // Vérifier si une autre collection avec le même nom existe déjà (sauf celle en cours de modification)
+      const { data: existingCollection, error: checkError } = await supabase
+        .from('collections')
+        .select('id, name')
+        .eq('name', formData.name.trim())
+        .neq('id', collectionId)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingCollection) {
+        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        setSubmitting(false);
+        return;
+      }
+
       const { error } = await supabase
         .from('collections')
         .update({
-          name: formData.name,
+          name: formData.name.trim(),
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
@@ -390,7 +406,16 @@ export default function CollectionDetailPage() {
         })
         .eq('id', collectionId);
 
-      if (error) throw error;
+      if (error) {
+        // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
+        if (error.code === '23505') {
+          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        } else {
+          throw error;
+        }
+        setSubmitting(false);
+        return;
+      }
 
       // Handle sub-products
       if (hasSubProducts) {
@@ -411,6 +436,7 @@ export default function CollectionDetailPage() {
         }
 
         // Update or insert sub-products
+        const newlyCreatedSubProductIds: string[] = [];
         for (const sp of validSubProducts) {
           if (sp.id) {
             // Update existing
@@ -424,13 +450,52 @@ export default function CollectionDetailPage() {
             if (updateError) throw updateError;
           } else {
             // Insert new
-            const { error: insertError } = await supabase
+            const { data: newSubProduct, error: insertError } = await supabase
               .from('sub_products')
               .insert({
                 collection_id: collectionId,
                 name: sp.name.trim()
-              });
+              })
+              .select('id')
+              .single();
             if (insertError) throw insertError;
+            if (newSubProduct) {
+              newlyCreatedSubProductIds.push(newSubProduct.id);
+            }
+          }
+        }
+
+        // Ajouter les nouveaux sous-produits à tous les clients ayant cette collection
+        if (newlyCreatedSubProductIds.length > 0) {
+          // Récupérer tous les clients ayant cette collection
+          const { data: clientCollections, error: clientCollectionsError } = await supabase
+            .from('client_collections')
+            .select('client_id')
+            .eq('collection_id', collectionId);
+
+          if (clientCollectionsError) throw clientCollectionsError;
+
+          // Pour chaque client, ajouter les nouveaux sous-produits avec stock 0
+          if (clientCollections && clientCollections.length > 0) {
+            const clientSubProductsToInsert: any[] = [];
+            for (const cc of clientCollections) {
+              for (const subProductId of newlyCreatedSubProductIds) {
+                clientSubProductsToInsert.push({
+                  client_id: cc.client_id,
+                  sub_product_id: subProductId,
+                  initial_stock: 0,
+                  current_stock: 0
+                });
+              }
+            }
+
+            if (clientSubProductsToInsert.length > 0) {
+              const { error: insertClientSubProductsError } = await supabase
+                .from('client_sub_products')
+                .insert(clientSubProductsToInsert);
+
+              if (insertClientSubProductsError) throw insertClientSubProductsError;
+            }
           }
         }
       } else {

@@ -300,11 +300,26 @@ export default function NewCollectionPage() {
         return;
       }
 
+      // Vérifier si une collection avec le même nom existe déjà
+      const { data: existingCollection, error: checkError } = await supabase
+        .from('collections')
+        .select('id, name')
+        .eq('name', formData.name.trim())
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingCollection) {
+        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        setSubmitting(false);
+        return;
+      }
+
       // Create collection
       const { data: newCollection, error: collectionError } = await supabase
         .from('collections')
         .insert({
-          name: formData.name,
+          name: formData.name.trim(),
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
@@ -314,7 +329,16 @@ export default function NewCollectionPage() {
         .select()
         .single();
 
-      if (collectionError) throw collectionError;
+      if (collectionError) {
+        // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
+        if (collectionError.code === '23505') {
+          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        } else {
+          throw collectionError;
+        }
+        setSubmitting(false);
+        return;
+      }
 
       // Handle sub-products if hasSubProducts is true
       if (hasSubProducts && newCollection) {

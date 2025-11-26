@@ -290,8 +290,13 @@ export function GlobalInvoiceDialog({
       yPosition += 10;
 
       // 3) Tableau des collections
+      // Filter out sub-products: only include stock updates with collection_id and no sub_product_id
+      const collectionStockUpdates = stockUpdates.filter(update => 
+        update.collection_id && !update.sub_product_id
+      );
+      
       // Sort stock updates by collection display_order
-      const sortedStockUpdates = [...stockUpdates].sort((a, b) => {
+      const sortedStockUpdates = [...collectionStockUpdates].sort((a, b) => {
         const aCC = clientCollections.find(cc => cc.collection_id === a.collection_id);
         const bCC = clientCollections.find(cc => cc.collection_id === b.collection_id);
         const aOrder = aCC?.display_order || 0;
@@ -365,8 +370,8 @@ export function GlobalInvoiceDialog({
         margin: { left: globalLeftMargin, right: globalRightMargin }
       });
 
-      // Calculer les totaux
-      const totalHT = stockUpdates.reduce((sum, update) => {
+      // Calculer les totaux (uniquement pour les collections, pas les sous-produits)
+      const totalHT = collectionStockUpdates.reduce((sum, update) => {
         const collection = collections.find(c => c.id === update.collection_id);
         const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
         const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
@@ -423,9 +428,18 @@ export function GlobalInvoiceDialog({
         }
       });
 
-      // Conditions de Dépôt-Vente en bas de page
-      const footerY = pageHeight - 20;
+      // Conditions de Dépôt-Vente - toujours en bas de page
+      const finalSummaryTableY = (doc as any).lastAutoTable.finalY;
+      const conditionsHeight = 4 * 3.5; // Hauteur approximative des 4 lignes de conditions
+      const footerY = pageHeight - 20; // Position en bas de page pour les conditions
       
+      // Vérifier si le tableau récapitulatif chevaucherait l'espace réservé aux conditions
+      // Si oui, créer une nouvelle page pour placer les conditions en bas
+      if (finalSummaryTableY + 10 > footerY - conditionsHeight) {
+        doc.addPage();
+      }
+      
+      // Toujours placer les conditions en bas de la page actuelle
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
       doc.setTextColor(0, 0, 0);
@@ -437,6 +451,7 @@ export function GlobalInvoiceDialog({
         "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
       ];
       
+      // Placer les conditions en bas de page (footerY)
       conditionsText.forEach((line, index) => {
         doc.text(line, globalLeftMargin, footerY + (index * 3.5));
       });

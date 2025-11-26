@@ -124,15 +124,17 @@ function SortableCollectionRow({
         </div>
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
-        <p className="text-sm font-medium text-slate-600">
-          {hasSubProducts ? parentCurrentStock : cc.current_stock}
-        </p>
+        {hasSubProducts ? (
+          <></>
+        ) : (
+          <p className="text-sm font-medium text-slate-600">
+            {cc.current_stock}
+          </p>
+        )}
       </TableCell>
       <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCountedStock}
-          </p>
+          <></>
         ) : (
           <Input
             type="text"
@@ -153,9 +155,7 @@ function SortableCollectionRow({
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCardsAdded - parentCountedStock}
-          </p>
+          <></>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {(() => {
@@ -170,9 +170,7 @@ function SortableCollectionRow({
       </TableCell>
       <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
         {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCardsAdded}
-          </p>
+          <></>
         ) : (
           <Input
             type="text"
@@ -283,6 +281,17 @@ export default function ClientDetailPage() {
   const [stockReportDialogOpen, setStockReportDialogOpen] = useState(false);
   const [selectedInvoiceForStockReport, setSelectedInvoiceForStockReport] = useState<Invoice | null>(null);
   const [selectedInvoiceForDepositSlip, setSelectedInvoiceForDepositSlip] = useState<Invoice | null>(null);
+  const [recentStockUpdatesWithoutInvoice, setRecentStockUpdatesWithoutInvoice] = useState<StockUpdate[]>([]);
+  const [stockUpdatesForDialog, setStockUpdatesForDialog] = useState<StockUpdate[]>([]);
+  const [stockUpdatesFromHistory, setStockUpdatesFromHistory] = useState<StockUpdate[]>([]);
+  // Stocker les mises à jour de stock sans facture pour l'historique
+  const [stockUpdatesWithoutInvoice, setStockUpdatesWithoutInvoice] = useState<Array<{
+    id: string;
+    created_at: string;
+    total_cards_sold: number;
+    total_amount: number;
+    stockUpdates: StockUpdate[];
+  }>>([]);
   const [lastVisitDate, setLastVisitDate] = useState<string | null>(null);
   
   // Calendar data
@@ -679,6 +688,34 @@ export default function ClientDetailPage() {
           (clientSubProductsData || []).forEach((csp: ClientSubProduct) => {
             clientSubProductsMap[csp.sub_product_id] = csp;
           });
+
+          // Créer automatiquement les client_sub_products manquants pour tous les sous-produits
+          const missingSubProducts: any[] = [];
+          (subProductsData || []).forEach((sp: SubProduct) => {
+            if (!clientSubProductsMap[sp.id]) {
+              missingSubProducts.push({
+                client_id: clientId,
+                sub_product_id: sp.id,
+                initial_stock: 0,
+                current_stock: 0
+              });
+            }
+          });
+
+          if (missingSubProducts.length > 0) {
+            const { data: createdSubProducts, error: createError } = await supabase
+              .from('client_sub_products')
+              .insert(missingSubProducts)
+              .select('*');
+
+            if (createError) throw createError;
+
+            // Ajouter les nouveaux client_sub_products au map
+            (createdSubProducts || []).forEach((csp: ClientSubProduct) => {
+              clientSubProductsMap[csp.sub_product_id] = csp;
+            });
+          }
+
           setClientSubProducts(clientSubProductsMap as any); // Temporary cast
         }
       }
@@ -1024,18 +1061,25 @@ export default function ClientDetailPage() {
         return sum + (unitPrice * quantity);
       }, 0);
 
-      // Create global invoice
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from('invoices')
-        .insert([{
-          client_id: clientId,
-          total_cards_sold: totalCardsSold,
-          total_amount: totalAmount + adjustmentsTotal
-        }])
-        .select()
-        .single();
+      const finalTotalAmount = totalAmount + adjustmentsTotal;
 
-      if (invoiceError) throw invoiceError;
+      // Toujours créer un enregistrement invoice si il y a des mises à jour de stock
+      // Cela permet d'avoir un invoice_id unique pour regrouper les stock_updates d'un relevé
+      let invoiceData: Invoice | null = null;
+      if (hasStockUpdates || adjustmentsTotal !== 0) {
+        const { data: invoice, error: invoiceError } = await supabase
+          .from('invoices')
+          .insert([{
+            client_id: clientId,
+            total_cards_sold: totalCardsSold,
+            total_amount: finalTotalAmount
+          }])
+          .select()
+          .single();
+
+        if (invoiceError) throw invoiceError;
+        invoiceData = invoice;
+      }
 
       // Prepare stock updates with invoice_id
       const updatesToInsert: any[] = [];
@@ -1049,58 +1093,120 @@ export default function ClientDetailPage() {
 
           if (hasSubProducts) {
             // Handle sub-products
+            // IMPORTANT: Le stock de la collection parent doit être la somme de TOUS les sous-produits
             let totalNewStock = 0;
             let totalCountedStock = 0;
             let totalPreviousStock = 0;
             let totalCardsAdded = 0;
             let totalCardsSold = 0;
 
+            // D'abord, s'assurer que tous les sous-produits existent et calculer le stock total
             for (const sp of collectionSubProducts) {
-              const csp = clientSubProducts[sp.id];
+              let csp = clientSubProducts[sp.id];
+              
+              // Si le client_sub_product n'existe pas, le créer avec stock 0
+              if (!csp) {
+                try {
+                  const { data: newCsp, error: createError } = await supabase
+                    .from('client_sub_products')
+                    .insert({
+                      client_id: clientId,
+                      sub_product_id: sp.id,
+                      initial_stock: 0,
+                      current_stock: 0
+                    })
+                    .select('*')
+                    .single();
+                  
+                  if (createError) throw createError;
+                  if (newCsp) {
+                    csp = newCsp as ClientSubProduct;
+                    // Mettre à jour le state pour éviter de recréer
+                    setClientSubProducts(prev => ({ ...prev, [sp.id]: csp! }));
+                  }
+                } catch (err) {
+                  console.error('Error creating missing client_sub_product:', err);
+                  // Continuer avec le prochain sous-produit
+                  continue;
+                }
+              }
+
               if (!csp) continue;
 
               const formData = perSubProductForm[sp.id];
               const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
               const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
 
-              if (!hasCountedStock || !hasNewDeposit) continue;
-
-              const countedStock = parseInt(formData.counted_stock);
-              const newDeposit = parseInt(formData.cards_added);
               const previousStock = csp.current_stock;
-              const cardsSold = Math.max(0, previousStock - countedStock);
-              const newStock = newDeposit;
-              const cardsAdded = Math.max(0, newStock - countedStock);
+              
+              // Déterminer le nouveau stock et le stock compté pour ce sous-produit
+              let newStock: number;
+              let countedStock: number;
+              
+              if (hasCountedStock || hasNewDeposit) {
+                // Sous-produit mis à jour : utiliser les valeurs du formulaire
+                countedStock = parseInt(formData.counted_stock || '0');
+                const newDeposit = parseInt(formData.cards_added || '0');
+                // Si newDeposit n'est pas renseigné, utiliser countedStock comme nouveau stock
+                newStock = hasNewDeposit ? newDeposit : countedStock;
+                
+                // Si counted_stock n'est pas renseigné (0), il est égal à l'ancien dépôt (pas de mouvement)
+                if (countedStock === 0 && !hasCountedStock) {
+                  countedStock = previousStock;
+                }
+                
+                const cardsSold = Math.max(0, previousStock - countedStock);
+                const cardsAdded = Math.max(0, newStock - countedStock);
 
+                totalCardsAdded += cardsAdded;
+                totalCardsSold += cardsSold;
+
+                // Create stock update for sub-product (for stock report)
+                updatesToInsert.push({
+                  client_id: clientId,
+                  sub_product_id: sp.id,
+                  invoice_id: invoiceData?.id || null,
+                  previous_stock: previousStock,
+                  counted_stock: countedStock,
+                  cards_sold: cardsSold,
+                  cards_added: cardsAdded,
+                  new_stock: newStock
+                });
+
+                // Update sub-product stock
+                cspUpdates.push({ id: csp.id, new_stock: newStock });
+              } else {
+                // Sous-produit non mis à jour : conserver son stock actuel
+                // Le stock compté = ancien dépôt (pas de mouvement)
+                newStock = previousStock;
+                countedStock = previousStock;
+              }
+
+              // TOUJOURS inclure le stock et le stock compté de ce sous-produit dans les totaux de la collection
               totalNewStock += newStock;
-              totalCountedStock += countedStock;
               totalPreviousStock += previousStock;
-              totalCardsAdded += cardsAdded;
-              totalCardsSold += cardsSold;
-
-              // Update sub-product stock
-              cspUpdates.push({ id: csp.id, new_stock: newStock });
+              totalCountedStock += countedStock;
             }
 
             // Create stock update for the parent collection (for invoice)
-            if (totalCountedStock > 0 || totalNewStock > 0) {
-              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
-              
-              updatesToInsert.push({
-                client_id: clientId,
-                collection_id: cc.collection_id, // Parent collection ID for invoice
-                invoice_id: invoiceData.id,
-                previous_stock: totalPreviousStock,
-                counted_stock: totalCountedStock,
-                cards_sold: totalCardsSold,
-                cards_added: totalCardsAdded,
-                new_stock: totalNewStock,
-                collection_info: collectionInfo
-              });
+            // Toujours créer le stock_update pour la collection parent si elle a des sous-produits
+            // (même si aucun sous-produit n'a été mis à jour, pour avoir l'historique)
+            const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+            
+            updatesToInsert.push({
+              client_id: clientId,
+              collection_id: cc.collection_id, // Parent collection ID for invoice
+              invoice_id: invoiceData?.id || null,
+              previous_stock: totalPreviousStock,
+              counted_stock: totalCountedStock,
+              cards_sold: totalCardsSold,
+              cards_added: totalCardsAdded,
+              new_stock: totalNewStock,
+              collection_info: collectionInfo
+            });
 
-              // Update parent collection stock (sum of sub-products)
-              ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
-            }
+            // Update parent collection stock (sum of ALL sub-products)
+            ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
           } else {
             // Normal collection without sub-products
             const form = perCollectionForm[cc.id];
@@ -1119,7 +1225,7 @@ export default function ClientDetailPage() {
             updatesToInsert.push({
               client_id: clientId,
               collection_id: cc.collection_id,
-              invoice_id: invoiceData.id,
+              invoice_id: invoiceData?.id || null,
               previous_stock: previousStock,
               counted_stock: countedStock,
               cards_sold: cardsSold,
@@ -1133,15 +1239,19 @@ export default function ClientDetailPage() {
       }
 
       // Insert stock updates only if there are any
+      let insertedStockUpdates: StockUpdate[] = [];
       if (updatesToInsert.length > 0) {
-        const { error: updatesInsertError } = await supabase
+        const { data: insertedUpdates, error: updatesInsertError } = await supabase
           .from('stock_updates')
-          .insert(updatesToInsert);
+          .insert(updatesToInsert)
+          .select('*');
         if (updatesInsertError) throw updatesInsertError;
+        insertedStockUpdates = insertedUpdates || [];
       }
 
-      // Insert invoice adjustments (reprise de stock)
-      if ((pendingAdjustments || []).length > 0) {
+      // Insert invoice adjustments (reprise de stock) only if invoice exists
+      if (invoiceData && (pendingAdjustments || []).length > 0) {
+        const invoiceId = invoiceData.id; // Store in a const to help TypeScript
         const rows = pendingAdjustments
           .map(a => {
             const unitPrice = parseFloat(a.unit_price);
@@ -1150,7 +1260,7 @@ export default function ClientDetailPage() {
             const amount = unitPrice * quantity;
             return {
               client_id: clientId,
-              invoice_id: invoiceData.id,
+              invoice_id: invoiceId,
               operation_name: a.operation_name,
               unit_price: unitPrice,
               quantity: quantity,
@@ -1200,25 +1310,127 @@ export default function ClientDetailPage() {
         if (clientUpdateError) throw clientUpdateError;
       }
 
-      // ✅ CRITICAL: Supprimer le brouillon EN PREMIER pour éviter qu'il se rouvre
-      await draft.deleteDraft();
-      setHasDraft(false);
-      
       // ✅ Débloquer l'interface IMMÉDIATEMENT
       setConfirmationDialogOpen(false);
       setSubmitting(false);
+      
+      // ✅ CRITICAL: Supprimer le brouillon après succès de toutes les opérations
+      // (facture créée et stock updates insérés sans erreur)
+      // Désactiver temporairement l'auto-save pour éviter qu'il recrée le brouillon
+      draftCheckDoneRef.current = false;
+      
+      try {
+        console.log('[Draft] Attempting to delete draft after successful stock update for client:', clientId);
+        
+        // Vérifier d'abord si un brouillon existe
+        const { data: existingDraft, error: checkError } = await supabase
+          .from('draft_stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .maybeSingle();
+        
+        if (checkError) {
+          console.error('[Draft] Error checking for existing draft:', checkError);
+        } else if (existingDraft) {
+          console.log('[Draft] Found existing draft with id:', existingDraft.id);
+        } else {
+          console.log('[Draft] No draft found to delete');
+        }
+        
+        // Supprimer le brouillon via le hook
+        await draft.deleteDraft();
+        setHasDraft(false);
+        console.log('[Draft] Draft deleted successfully after successful stock update');
+        
+        // Vérifier que la suppression a bien fonctionné
+        const { data: verifyDraft, error: verifyError } = await supabase
+          .from('draft_stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .maybeSingle();
+        
+        if (verifyError) {
+          console.error('[Draft] Error verifying draft deletion:', verifyError);
+        } else if (verifyDraft) {
+          console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
+          // Essayer une suppression directe
+          const { error: directDeleteError } = await supabase
+            .from('draft_stock_updates')
+            .delete()
+            .eq('id', verifyDraft.id);
+          
+          if (directDeleteError) {
+            console.error('[Draft] Direct deletion also failed:', directDeleteError);
+            throw directDeleteError;
+          } else {
+            console.log('[Draft] Draft deleted via direct deletion');
+          }
+        } else {
+          console.log('[Draft] Draft deletion verified: no draft remains');
+        }
+        
+        // Réinitialiser les formulaires pour éviter qu'un auto-save recrée le brouillon
+        setPerCollectionForm({});
+        setPerSubProductForm({});
+        setPendingAdjustments([]);
+        
+        // Réactiver l'auto-save après un délai pour s'assurer que la suppression est complète
+        setTimeout(() => {
+          draftCheckDoneRef.current = true;
+          console.log('[Draft] Auto-save re-enabled after draft deletion');
+        }, 2000);
+      } catch (draftError) {
+        console.error('[Draft] Error deleting draft after stock update:', draftError);
+        toast.error('Erreur lors de la suppression du brouillon. Veuillez le supprimer manuellement.');
+        // Réactiver l'auto-save même en cas d'erreur
+        setTimeout(() => {
+          draftCheckDoneRef.current = true;
+        }, 1000);
+      }
 
       // Success message based on what was done
-      if (hasStockUpdates && hasAdjustments) {
-        toast.success('Facture créée avec reprises de stock et mise à jour du stock');
-      } else if (hasStockUpdates) {
-        toast.success('Facture créée et stock mis à jour');
+      if (invoiceData) {
+        if (hasStockUpdates && hasAdjustments) {
+          toast.success('Facture créée avec reprises de stock et mise à jour du stock');
+        } else if (hasStockUpdates) {
+          toast.success('Facture créée et stock mis à jour');
+        } else {
+          toast.success('Facture créée avec reprises de stock');
+        }
       } else {
-        toast.success('Facture créée avec reprises de stock');
+        // No invoice created (no cards sold and no adjustments)
+        if (hasStockUpdates) {
+          toast.success('Stock mis à jour (aucune carte vendue, aucune facture créée)');
+        }
       }
       
       // ✅ Reset adjustments et reload data
       setPendingAdjustments([]);
+      
+      // Open dialogs for deposit slip and stock report if stock was updated
+      if (hasStockUpdates && insertedStockUpdates.length > 0) {
+        // Create a temporary invoice-like object for the dialogs if no invoice was created
+        const tempInvoiceForDialogs: Invoice | null = invoiceData || {
+          id: '', // Will not be used for filtering, but needed for dialog
+          client_id: clientId,
+          total_cards_sold: totalCardsSold,
+          total_amount: 0,
+          invoice_number: null, // No invoice number when amount is 0
+          created_at: new Date().toISOString()
+        } as Invoice;
+        
+        // Set the stock updates and open dialogs
+        // Maintenant, invoiceData existe toujours si hasStockUpdates est vrai
+        if (invoiceData) {
+          setSelectedInvoiceForStockReport(invoiceData);
+          setSelectedInvoiceForDepositSlip(invoiceData);
+        } else {
+          // Cas où il n'y a pas de stock updates mais seulement des adjustments
+          // (ne devrait plus arriver maintenant, mais gardons pour sécurité)
+          setSelectedInvoiceForStockReport(tempInvoiceForDialogs);
+          setSelectedInvoiceForDepositSlip(tempInvoiceForDialogs);
+        }
+      }
       
       // Reload client data pour rafraîchir (sans await pour ne pas bloquer)
       loadClientData().catch(err => {
@@ -1243,6 +1455,27 @@ export default function ClientDetailPage() {
     
     setDeletingCollection(true);
     try {
+      // Récupérer les IDs des sous-produits de la collection
+      const { data: collectionSubProducts, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('id')
+        .eq('collection_id', collectionToDelete.collection_id);
+
+      if (subProductsError) throw subProductsError;
+
+      // Supprimer tous les client_sub_products associés aux sous-produits de cette collection
+      if (collectionSubProducts && collectionSubProducts.length > 0) {
+        const subProductIds = collectionSubProducts.map(sp => sp.id);
+        const { error: deleteSubProductsError } = await supabase
+          .from('client_sub_products')
+          .delete()
+          .eq('client_id', clientId)
+          .in('sub_product_id', subProductIds);
+
+        if (deleteSubProductsError) throw deleteSubProductsError;
+      }
+
+      // Supprimer la collection du client
       const { error } = await supabase
         .from('client_collections')
         .delete()
@@ -1406,8 +1639,10 @@ export default function ClientDetailPage() {
 
       if (collectionSubProducts && collectionSubProducts.length > 0) {
         // Collection has sub-products: open dialog to enter initial stocks
+        // IMPORTANT: Utiliser TOUS les sous-produits de la collection
         setSubProductsForAssociation(collectionSubProducts);
         const initialStocks: Record<string, string> = {};
+        // Initialiser tous les sous-produits avec une chaîne vide (sera validé comme 0 si non rempli)
         collectionSubProducts.forEach(sp => {
           initialStocks[sp.id] = '';
         });
@@ -1441,25 +1676,40 @@ export default function ClientDetailPage() {
   const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate all stocks
-    const stocks: Record<string, number> = {};
-    for (const sp of subProductsForAssociation) {
-      const stockStr = subProductsInitialStocks[sp.id] || '0';
-      const stock = parseInt(stockStr);
-      if (isNaN(stock) || stock < 0) {
-        toast.error(`Le stock initial du sous-produit "${sp.name}" doit être un nombre positif`);
-        return;
+    // Récupérer TOUS les sous-produits de la collection (au cas où certains auraient été ajoutés entre-temps)
+    try {
+      const { data: allSubProducts, error: fetchError } = await supabase
+        .from('sub_products')
+        .select('*')
+        .eq('collection_id', associateForm.collection_id!);
+
+      if (fetchError) throw fetchError;
+
+      // Validate all stocks - inclure TOUS les sous-produits
+      const stocks: Record<string, number> = {};
+      for (const sp of (allSubProducts || [])) {
+        // Si le sous-produit était dans le formulaire, utiliser la valeur saisie
+        // Sinon, utiliser 0 par défaut
+        const stockStr = subProductsInitialStocks[sp.id] || '0';
+        const stock = parseInt(stockStr);
+        if (isNaN(stock) || stock < 0) {
+          toast.error(`Le stock initial du sous-produit "${sp.name}" doit être un nombre positif`);
+          return;
+        }
+        stocks[sp.id] = stock;
       }
-      stocks[sp.id] = stock;
+
+      if (!pendingAssociationData) return;
+
+      // Calculate total initial stock
+      const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
+
+      setSubProductsInitialStocksDialogOpen(false);
+      await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
+    } catch (err) {
+      console.error('Error fetching all sub-products:', err);
+      toast.error('Erreur lors de la récupération des sous-produits');
     }
-
-    if (!pendingAssociationData) return;
-
-    // Calculate total initial stock
-    const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
-
-    setSubProductsInitialStocksDialogOpen(false);
-    await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
   };
 
   const performAssociation = async (
@@ -1500,12 +1750,42 @@ export default function ClientDetailPage() {
         .single();
       if (error) throw error;
 
+      // Créer un stock_update pour la collection lors de l'association
+      const stockUpdateForCollection = {
+        client_id: clientId,
+        collection_id: associateForm.collection_id!,
+        previous_stock: 0,
+        counted_stock: 0,
+        cards_sold: 0,
+        cards_added: subProductsStocks ? 0 : initialStock,
+        new_stock: subProductsStocks ? 0 : initialStock
+      };
+
+      const { error: stockUpdateError } = await supabase
+        .from('stock_updates')
+        .insert([stockUpdateForCollection]);
+
+      if (stockUpdateError) {
+        console.error('Error creating stock_update for collection:', stockUpdateError);
+        // Ne pas bloquer l'association si l'insertion du stock_update échoue
+      }
+
       if (subProductsStocks) {
         // Collection has sub-products: create client_sub_products with provided stocks
-        const clientSubProductsToInsert = subProductsForAssociation.map(sp => ({
+        // IMPORTANT: Ajouter TOUS les sous-produits de la collection, même ceux qui n'ont pas été saisis
+        // Récupérer tous les sous-produits de la collection
+        const { data: allSubProducts, error: fetchSubProductsError } = await supabase
+          .from('sub_products')
+          .select('*')
+          .eq('collection_id', associateForm.collection_id!);
+
+        if (fetchSubProductsError) throw fetchSubProductsError;
+
+        // Créer les client_sub_products pour TOUS les sous-produits
+        const clientSubProductsToInsert = (allSubProducts || []).map(sp => ({
           client_id: clientId,
           sub_product_id: sp.id,
-          initial_stock: subProductsStocks[sp.id] || 0,
+          initial_stock: subProductsStocks[sp.id] || 0, // Utiliser le stock saisi ou 0 par défaut
           current_stock: subProductsStocks[sp.id] || 0
         }));
 
@@ -1515,6 +1795,26 @@ export default function ClientDetailPage() {
 
         if (insertClientSubProductsError) throw insertClientSubProductsError;
 
+        // Créer un stock_update pour chaque sous-produit lors de l'association
+        const stockUpdatesForSubProducts = (allSubProducts || []).map(sp => ({
+          client_id: clientId,
+          sub_product_id: sp.id,
+          previous_stock: 0,
+          counted_stock: 0,
+          cards_sold: 0,
+          cards_added: subProductsStocks[sp.id] || 0,
+          new_stock: subProductsStocks[sp.id] || 0
+        }));
+
+        const { error: stockUpdatesSubProductsError } = await supabase
+          .from('stock_updates')
+          .insert(stockUpdatesForSubProducts);
+
+        if (stockUpdatesSubProductsError) {
+          console.error('Error creating stock_updates for sub-products:', stockUpdatesSubProductsError);
+          // Ne pas bloquer l'association si l'insertion des stock_updates échoue
+        }
+
         // Update the collection's stock to sum of sub-products
         const totalStock = Object.values(subProductsStocks).reduce((sum, stock) => sum + stock, 0);
         const { error: updateCollectionError } = await supabase
@@ -1523,6 +1823,33 @@ export default function ClientDetailPage() {
           .eq('id', data.id);
 
         if (updateCollectionError) throw updateCollectionError;
+
+        // Mettre à jour le stock_update de la collection parent avec le total des sous-produits
+        // Récupérer d'abord le dernier stock_update de la collection
+        const { data: lastCollectionStockUpdate, error: fetchStockUpdateError } = await supabase
+          .from('stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('collection_id', associateForm.collection_id!)
+          .is('sub_product_id', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!fetchStockUpdateError && lastCollectionStockUpdate) {
+          const { error: updateCollectionStockUpdateError } = await supabase
+            .from('stock_updates')
+            .update({ 
+              cards_added: totalStock,
+              new_stock: totalStock
+            })
+            .eq('id', lastCollectionStockUpdate.id);
+
+          if (updateCollectionStockUpdateError) {
+            console.error('Error updating stock_update for collection:', updateCollectionStockUpdateError);
+            // Ne pas bloquer l'association si la mise à jour du stock_update échoue
+          }
+        }
 
         // Update client's total stock
         const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + totalStock;
@@ -1995,13 +2322,13 @@ export default function ClientDetailPage() {
                         if (hasSubProducts) {
                           collectionSubProducts.forEach(sp => {
                             const csp = clientSubProducts[sp.id];
-                            if (csp) {
-                              parentCurrentStock += csp.current_stock || 0;
-                              const formData = perSubProductForm[sp.id];
-                              if (formData) {
-                                parentCountedStock += parseInt(formData.counted_stock) || 0;
-                                parentCardsAdded += parseInt(formData.cards_added) || 0;
-                              }
+                            // Inclure tous les sous-produits, même ceux sans client_sub_product (stock = 0)
+                            const subProductStock = csp ? (csp.current_stock || 0) : 0;
+                            parentCurrentStock += subProductStock;
+                            const formData = perSubProductForm[sp.id];
+                            if (formData) {
+                              parentCountedStock += parseInt(formData.counted_stock) || 0;
+                              parentCardsAdded += parseInt(formData.cards_added) || 0;
                             }
                           });
                         }
@@ -2031,7 +2358,9 @@ export default function ClientDetailPage() {
                             {/* Sub-products rows */}
                             {hasSubProducts && collectionSubProducts.map((sp) => {
                               const csp = clientSubProducts[sp.id];
-                              if (!csp) return null;
+                              // Afficher tous les sous-produits, même s'ils n'ont pas encore de client_sub_product
+                              // (ils seront créés automatiquement lors du chargement)
+                              const currentStock = csp ? (csp.current_stock || 0) : 0;
                               
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
@@ -2039,7 +2368,7 @@ export default function ClientDetailPage() {
                                     <p className="text-sm text-slate-600">└ {sp.name}</p>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center">
-                                    <p className="text-xs text-slate-500">{csp.current_stock || 0}</p>
+                                    <p className="text-xs text-slate-500">{currentStock}</p>
                                   </TableCell>
                                   <TableCell className="align-top py-2">
                                     <Input
@@ -2273,82 +2602,168 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {globalInvoices.length > 0 && (
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0) && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
                 <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length} document{globalInvoices.length > 1 ? 's' : ''} enregistré{globalInvoices.length > 1 ? 's' : ''}
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {globalInvoices.map((invoice) => {
-                    const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
-                    return (
-                      <div
-                        key={invoice.id}
-                        className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
-                      >
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <span className="text-sm text-slate-500">
-                              {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
-                                day: 'numeric',
-                                month: 'long',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </span>
-                            <p className="text-xs text-slate-600 mt-1">
-                              {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
-                            </p>
+                  {/* Combine invoices and stock updates without invoice, sorted by date */}
+                  {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
+                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at }))]
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .map((item) => {
+                      if (item.type === 'invoice') {
+                        const invoice = item.data as Invoice;
+                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
+                        return (
+                          <div
+                            key={invoice.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {invoiceUpdates.length} collection{invoiceUpdates.length > 1 ? 's' : ''}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedGlobalInvoice(invoice);
+                                    setGlobalInvoiceDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Facture
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForStockReport(invoice);
+                                    setStockUpdatesFromHistory([]); // Réinitialiser car on vient d'une facture
+                                    setStockReportDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Relevé de stock
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForDepositSlip(invoice);
+                                    setDepositSlipDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Bon de dépôt
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{invoice.total_amount.toFixed(2)} €</span>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedGlobalInvoice(invoice);
-                                setGlobalInvoiceDialogOpen(true);
-                              }}
-                            >
-                              <FileText className="mr-2 h-4 w-4" />
-                              Facture
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedInvoiceForStockReport(invoice);
-                                setStockReportDialogOpen(true);
-                              }}
-                            >
-                              <ClipboardList className="mr-2 h-4 w-4" />
-                              Relevé de stock
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedInvoiceForDepositSlip(invoice);
-                                setDepositSlipDialogOpen(true);
-                              }}
-                            >
-                              <ClipboardList className="mr-2 h-4 w-4" />
-                              Bon de dépôt
-                            </Button>
+                        );
+                      } else {
+                        // Cas des anciennes données sans facture (compatibilité)
+                        // Récupérer l'invoice_id depuis les stockUpdates (ils ont tous le même invoice_id)
+                        const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
+                        const invoiceId = stockUpdate.stockUpdates.length > 0 
+                          ? stockUpdate.stockUpdates[0].invoice_id 
+                          : null;
+                        
+                        const tempInvoice: Invoice = {
+                          id: invoiceId || stockUpdate.id, // Utiliser invoice_id si disponible, sinon fallback
+                          client_id: clientId,
+                          total_cards_sold: stockUpdate.total_cards_sold,
+                          total_amount: stockUpdate.total_amount,
+                          invoice_number: null,
+                          created_at: stockUpdate.created_at
+                        };
+                        // Count unique collections from stock updates
+                        const uniqueCollections = new Set(stockUpdate.stockUpdates
+                          .filter(u => u.collection_id)
+                          .map(u => u.collection_id));
+                        const collectionCount = uniqueCollections.size;
+                        
+                        return (
+                          <div
+                            key={stockUpdate.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(stockUpdate.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {collectionCount} collection{collectionCount > 1 ? 's' : ''}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                {/* Pas de bouton Facture pour les mises à jour sans facture */}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    // Maintenant, tempInvoice.id devrait être l'ID de la facture réelle
+                                    // Les stock_updates seront récupérés via invoice_id depuis la base
+                                    setSelectedInvoiceForStockReport(tempInvoice);
+                                    setStockReportDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Relevé de stock
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedInvoiceForDepositSlip(tempInvoice);
+                                    setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
+                                    setDepositSlipDialogOpen(true);
+                                  }}
+                                >
+                                  <ClipboardList className="mr-2 h-4 w-4" />
+                                  Bon de dépôt
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{stockUpdate.total_cards_sold} carte{stockUpdate.total_cards_sold > 1 ? 's' : ''} vendue{stockUpdate.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{stockUpdate.total_amount.toFixed(2)} €</span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-slate-600">
-                          <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
-                          <span>•</span>
-                          <span>{invoice.total_amount.toFixed(2)} €</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      }
+                    })}
                 </div>
               </CardContent>
             </Card>
@@ -2557,7 +2972,11 @@ export default function ClientDetailPage() {
             onOpenChange={setDepositSlipDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)}
+            stockUpdates={
+              selectedInvoiceForDepositSlip.id 
+                ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
+                : recentStockUpdatesWithoutInvoice
+            }
           />
         )}
 
@@ -2567,7 +2986,33 @@ export default function ClientDetailPage() {
             onOpenChange={setStockReportDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)}
+            stockUpdates={(() => {
+              // Maintenant, toutes les mises à jour de stock ont un invoice_id
+              // Utiliser invoice_id pour filtrer les stock_updates depuis la base
+              if (selectedInvoiceForStockReport.id && selectedInvoiceForStockReport.id.trim() !== '') {
+                const filtered = stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id);
+                console.log('[StockReportDialog] Using filtered stockUpdates from invoice', { 
+                  invoiceId: selectedInvoiceForStockReport.id,
+                  count: filtered.length, 
+                  filtered 
+                });
+                return filtered;
+              } else {
+                // Fallback pour compatibilité avec anciennes données (ne devrait plus arriver)
+                console.warn('[StockReportDialog] No invoice ID, using fallback logic');
+                if (stockUpdatesFromHistory.length > 0) {
+                  return stockUpdatesFromHistory;
+                }
+                if (stockUpdatesForDialog.length > 0) {
+                  return stockUpdatesForDialog;
+                }
+                if (recentStockUpdatesWithoutInvoice.length > 0) {
+                  return recentStockUpdatesWithoutInvoice;
+                }
+                return [];
+              }
+            })()}
+            invoice={selectedInvoiceForStockReport}
           />
         )}
 
