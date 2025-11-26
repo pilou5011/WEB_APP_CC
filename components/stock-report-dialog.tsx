@@ -36,6 +36,19 @@ export function StockReportDialog({
   const [previousInvoiceDate, setPreviousInvoiceDate] = useState<string | null>(null);
   const [loadingPreviousInvoice, setLoadingPreviousInvoice] = useState(true);
 
+  // Mode débogage (activer/désactiver avec une variable d'environnement ou un flag)
+  const DEBUG_MODE = process.env.NODE_ENV === 'development';
+
+  // Fonction utilitaire pour le débogage
+  const debugLog = (label: string, data: any, condition: boolean = true) => {
+    if (DEBUG_MODE && condition) {
+      console.group(`🔍 [StockReport Debug] ${label}`);
+      console.log('Données:', data);
+      console.trace('Stack trace');
+      console.groupEnd();
+    }
+  };
+
   useEffect(() => {
     if (open) {
       setPdfGenerated(false);
@@ -398,6 +411,13 @@ export function StockReportDialog({
         }
       });
 
+      debugLog('Stock Updates Maps', {
+        stockUpdatesCount: stockUpdates.length,
+        collectionsInMap: Array.from(stockUpdatesByCollectionId.keys()),
+        subProductsInMap: Array.from(stockUpdatesBySubProductId.keys()),
+        stockUpdates: stockUpdates
+      });
+
       // Charger l'historique des stock_updates pour trouver le dernier new_stock de chaque collection/sous-produit
       const { data: historicalStockUpdates, error: historicalError } = await supabase
         .from('stock_updates')
@@ -427,6 +447,12 @@ export function StockReportDialog({
             lastNewStockBySubProductId.set(update.sub_product_id, update.new_stock);
           }
         }
+      });
+
+      debugLog('Historique des stocks', {
+        historicalUpdatesCount: historicalStockUpdates?.length || 0,
+        lastNewStockByCollection: Object.fromEntries(lastNewStockByCollectionId),
+        lastNewStockBySubProduct: Object.fromEntries(lastNewStockBySubProductId)
       });
 
       // Créer un map des sous-produits par collection
@@ -466,6 +492,9 @@ export function StockReportDialog({
         const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
         const hasSubProducts = collectionSubProducts.length > 0;
         
+        debugLog('collectionSubProducts', { collectionSubProducts: collectionSubProducts });
+        debugLog('hasSubProducts', { hasSubProducts: hasSubProducts });
+
         // Pour les collections avec sous-produits, calculer le stock compté comme la somme des sous-produits
         let totalSubProductCountedStock = 0;
         let totalSubProductPreviousStock = 0;
@@ -473,89 +502,147 @@ export function StockReportDialog({
         
         if (hasSubProducts) {
           // Calculer les totaux des sous-produits
+          let totalSubProductReassort = 0;
           collectionSubProducts.forEach(sp => {
             const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
             
             let subProductPreviousStock: number;
             let subProductCountedStock: number;
             let subProductNewDeposit: number;
-
+            let subProductReassort: number;
+            
             if (subProductStockUpdate) {
-              // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
-              // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
-              // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
-              subProductPreviousStock = subProductStockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+              // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+              const hasNewDeposit = subProductStockUpdate.cards_added > 0;
               
-              // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
-              // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
-              if (subProductStockUpdate.counted_stock !== null && subProductStockUpdate.counted_stock !== undefined) {
-                subProductCountedStock = subProductStockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+              // Vérifier si le "Stock compté" est renseigné
+              const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
+                                     subProductStockUpdate.counted_stock !== undefined;
+              
+              debugLog(`Sous-produit ${sp.id} - Analyse`, {
+                subProductName: sp.name,
+                subProductId: sp.id,
+                stockUpdate: subProductStockUpdate,
+                hasCountedStock,
+                hasNewDeposit,
+                cards_added: subProductStockUpdate.cards_added,
+                counted_stock: subProductStockUpdate.counted_stock,
+                new_stock: subProductStockUpdate.new_stock,
+                previous_stock: subProductStockUpdate.previous_stock
+              });
+              
+              if (hasCountedStock && !hasNewDeposit) {
+                // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+                // Utiliser le dernier new_stock de l'historique
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              } else if (hasCountedStock && hasNewDeposit) {
+                // Cas 2: Stock compté et Nouveau dépôt renseignés
+                // Utiliser les valeurs de stock_updates
+                subProductPreviousStock = subProductStockUpdate.previous_stock;
+                subProductCountedStock = subProductStockUpdate.counted_stock;
+                subProductReassort = subProductStockUpdate.cards_added;
+                subProductNewDeposit = subProductStockUpdate.new_stock;
               } else {
-                // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
-                subProductCountedStock = subProductPreviousStock; // Utiliser previous_stock depuis stock_updates
+                // Stock compté non renseigné : utiliser le dernier new_stock
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
               }
-              
-              subProductNewDeposit = subProductStockUpdate.new_stock; // TOUJOURS depuis stock_updates
             } else {
               // Pas de stock_update dans la transaction actuelle
               // Utiliser le dernier new_stock de l'historique
               const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
               subProductPreviousStock = lastNewStock;
-              subProductCountedStock = lastNewStock; // Stock compté = Ancien dépôt
-              subProductNewDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+              subProductCountedStock = lastNewStock;
+              subProductReassort = 0;
+              subProductNewDeposit = lastNewStock;
             }
             
             totalSubProductCountedStock += subProductCountedStock;
             totalSubProductPreviousStock += subProductPreviousStock;
             totalSubProductNewDeposit += subProductNewDeposit;
+            totalSubProductReassort += subProductReassort;
           });
           
-          // Pour les collections avec sous-produits
-          if (stockUpdate) {
-            // Si stock_update existe, utiliser TOUTES ses valeurs depuis stock_updates
-            // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
-            previousStock = stockUpdate.previous_stock; // TOUJOURS depuis stock_updates
-            newDeposit = stockUpdate.new_stock; // TOUJOURS depuis stock_updates
-            // Le stock compté de la collection = somme des stocks comptés des sous-produits
-            countedStock = totalSubProductCountedStock;
-          } else {
-            // Pas de stock_update : utiliser les totaux des sous-produits
-            previousStock = totalSubProductPreviousStock;
-            newDeposit = totalSubProductNewDeposit;
-            // Le stock compté = somme des stocks comptés des sous-produits
-            countedStock = totalSubProductCountedStock;
-          }
+          // Pour les collections avec sous-produits : utiliser les sommes des sous-produits
+          previousStock = totalSubProductPreviousStock;
+          countedStock = totalSubProductCountedStock;
+          reassort = totalSubProductReassort;
+          newDeposit = totalSubProductNewDeposit;
+
+          debugLog(`Collection ${cc.collection_id} - Totaux sous-produits`, {
+            collectionName: cc.collection?.name,
+            collectionId: cc.collection_id,
+            totalSubProductPreviousStock,
+            totalSubProductCountedStock,
+            totalSubProductReassort,
+            totalSubProductNewDeposit,
+            subProductsCount: collectionSubProducts.length
+          });
         } else {
           // Pour une collection sans sous-produits
           if (stockUpdate) {
-            // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
-            // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
-            // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
-            previousStock = stockUpdate.previous_stock; // TOUJOURS depuis stock_updates
-            newDeposit = stockUpdate.new_stock; // TOUJOURS depuis stock_updates
-            // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
-            // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
-            if (stockUpdate.counted_stock !== null && stockUpdate.counted_stock !== undefined) {
-              countedStock = stockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+            // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+            const hasNewDeposit = stockUpdate.cards_added > 0;
+            
+            // Vérifier si le "Stock compté" est renseigné
+            const hasCountedStock = stockUpdate.counted_stock !== null && 
+                                   stockUpdate.counted_stock !== undefined;
+            
+            debugLog(`Collection ${cc.collection_id} - Analyse`, {
+              collectionName: cc.collection?.name,
+              collectionId: cc.collection_id,
+              stockUpdate,
+              hasCountedStock,
+              hasNewDeposit,
+              cards_added: stockUpdate.cards_added,
+              counted_stock: stockUpdate.counted_stock,
+              new_stock: stockUpdate.new_stock,
+              previous_stock: stockUpdate.previous_stock
+            });
+            
+            if (hasCountedStock && !hasNewDeposit) {
+              // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+              // Utiliser le dernier new_stock de l'historique
+              const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+              previousStock = lastNewStock;
+              countedStock = lastNewStock;
+              reassort = 0;
+              newDeposit = lastNewStock;
+            } else if (hasCountedStock && hasNewDeposit) {
+              // Cas 2: Stock compté et Nouveau dépôt renseignés
+              // Utiliser les valeurs de stock_updates
+              previousStock = stockUpdate.previous_stock;
+              countedStock = stockUpdate.counted_stock;
+              reassort = stockUpdate.cards_added;
+              newDeposit = stockUpdate.new_stock;
             } else {
-              // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
-              countedStock = previousStock; // Utiliser previous_stock depuis stock_updates
+              // Stock compté non renseigné : utiliser le dernier new_stock
+              const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+              previousStock = lastNewStock;
+              countedStock = lastNewStock;
+              reassort = 0;
+              newDeposit = lastNewStock;
             }
           } else {
             // Pas de stock_update dans la transaction actuelle
-            // Utiliser le dernier new_stock de l'historique comme ancien dépôt
+            // Utiliser le dernier new_stock de l'historique
             const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
             previousStock = lastNewStock;
-            countedStock = lastNewStock; // Stock compté = Ancien dépôt
-            newDeposit = lastNewStock; // Nouveau dépôt = Ancien dépôt
+            countedStock = lastNewStock;
+            reassort = 0;
+            newDeposit = lastNewStock;
           }
         }
         
-        // Réassort = Nouveau dépôt - Stock compté
-        reassort = newDeposit - countedStock;
-        
         // Ajouter la ligne de la collection
-        tableData.push([
+        const collectionRow = [
           collectionName,
           info,
           `${effectivePrice.toFixed(2)} €`,
@@ -564,7 +651,19 @@ export function StockReportDialog({
           countedStock.toString(), // Stock compté (somme des sous-produits si applicable)
           reassort.toString(), // Réassort = Nouveau dépôt - Stock compté
           newDeposit.toString() // Nouveau dépôt
-        ]);
+        ];
+        
+        debugLog(`Collection ${cc.collection_id} - Ligne finale`, {
+          collectionName,
+          collectionId: cc.collection_id,
+          previousStock,
+          countedStock,
+          reassort,
+          newDeposit,
+          row: collectionRow
+        });
+        
+        tableData.push(collectionRow);
 
         // Ajouter TOUS les sous-produits de cette collection
         if (hasSubProducts) {
@@ -577,22 +676,44 @@ export function StockReportDialog({
             let subProductReassort: number;
 
             if (subProductStockUpdate) {
-              // Utiliser TOUJOURS les données de la transaction actuelle depuis stock_updates
-              // Même si "Stock compté" = "Ancien dépôt" (pas de mouvement), utiliser les valeurs de stock_updates
-              // Même si counted_stock est 0, cela signifie que le stock a été mis à jour (stock compté = 0)
-              subProductPreviousStock = subProductStockUpdate.previous_stock; // TOUJOURS depuis stock_updates
+              // Vérifier si le "Nouveau dépôt" est renseigné (cards_added > 0)
+              const hasNewDeposit = subProductStockUpdate.cards_added > 0;
               
-              // Si counted_stock est null ou non défini, il est égal à l'ancien dépôt (pas de mouvement)
-              // Mais si counted_stock est 0, c'est une valeur valide (stock compté = 0)
-              if (subProductStockUpdate.counted_stock !== null && subProductStockUpdate.counted_stock !== undefined) {
-                subProductCountedStock = subProductStockUpdate.counted_stock; // TOUJOURS depuis stock_updates
+              // Vérifier si le "Stock compté" est renseigné
+              const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
+                                     subProductStockUpdate.counted_stock !== undefined;
+              
+              debugLog(`Sous-produit ${sp.id} - Affichage`, {
+                subProductName: sp.name,
+                subProductId: sp.id,
+                stockUpdate: subProductStockUpdate,
+                hasCountedStock,
+                hasNewDeposit
+              });
+              
+              if (hasCountedStock && !hasNewDeposit) {
+                // Cas 1: Stock compté renseigné mais Nouveau dépôt non renseigné
+                // Utiliser le dernier new_stock de l'historique
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
+              } else if (hasCountedStock && hasNewDeposit) {
+                // Cas 2: Stock compté et Nouveau dépôt renseignés
+                // Utiliser les valeurs de stock_updates
+                subProductPreviousStock = subProductStockUpdate.previous_stock;
+                subProductCountedStock = subProductStockUpdate.counted_stock;
+                subProductReassort = subProductStockUpdate.cards_added;
+                subProductNewDeposit = subProductStockUpdate.new_stock;
               } else {
-                // Stock compté non renseigné (null/undefined) = ancien dépôt (pas de mouvement)
-                subProductCountedStock = subProductPreviousStock; // Utiliser previous_stock depuis stock_updates
+                // Stock compté non renseigné : utiliser le dernier new_stock
+                const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
+                subProductPreviousStock = lastNewStock;
+                subProductCountedStock = lastNewStock;
+                subProductReassort = 0;
+                subProductNewDeposit = lastNewStock;
               }
-              
-              subProductNewDeposit = subProductStockUpdate.new_stock; // TOUJOURS depuis stock_updates
-              subProductReassort = subProductNewDeposit - subProductCountedStock;
             } else {
               // Pas de stock_update dans la transaction actuelle
               // Utiliser le dernier new_stock de l'historique

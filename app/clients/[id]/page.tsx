@@ -282,6 +282,8 @@ export default function ClientDetailPage() {
   const [selectedInvoiceForStockReport, setSelectedInvoiceForStockReport] = useState<Invoice | null>(null);
   const [selectedInvoiceForDepositSlip, setSelectedInvoiceForDepositSlip] = useState<Invoice | null>(null);
   const [recentStockUpdatesWithoutInvoice, setRecentStockUpdatesWithoutInvoice] = useState<StockUpdate[]>([]);
+  const [stockUpdatesForDialog, setStockUpdatesForDialog] = useState<StockUpdate[]>([]);
+  const [stockUpdatesFromHistory, setStockUpdatesFromHistory] = useState<StockUpdate[]>([]);
   // Stocker les mises à jour de stock sans facture pour l'historique
   const [stockUpdatesWithoutInvoice, setStockUpdatesWithoutInvoice] = useState<Array<{
     id: string;
@@ -1061,10 +1063,10 @@ export default function ClientDetailPage() {
 
       const finalTotalAmount = totalAmount + adjustmentsTotal;
 
-      // Create global invoice only if cards were sold OR if there are adjustments
-      // (even if total amount is zero, we may want to create invoice for adjustments)
+      // Toujours créer un enregistrement invoice si il y a des mises à jour de stock
+      // Cela permet d'avoir un invoice_id unique pour regrouper les stock_updates d'un relevé
       let invoiceData: Invoice | null = null;
-      if (totalCardsSold > 0 || adjustmentsTotal !== 0) {
+      if (hasStockUpdates || adjustmentsTotal !== 0) {
         const { data: invoice, error: invoiceError } = await supabase
           .from('invoices')
           .insert([{
@@ -1418,27 +1420,15 @@ export default function ClientDetailPage() {
         } as Invoice;
         
         // Set the stock updates and open dialogs
-        // Store the inserted stock updates in state so dialogs can access them
-        // We'll reload the data which will include these new stock updates
-        // For now, just set the invoice (or temp invoice) and open dialogs after reload
+        // Maintenant, invoiceData existe toujours si hasStockUpdates est vrai
         if (invoiceData) {
           setSelectedInvoiceForStockReport(invoiceData);
           setSelectedInvoiceForDepositSlip(invoiceData);
         } else {
-          // For stock updates without invoice, store them for history display
-          // Don't open dialogs automatically
-          setRecentStockUpdatesWithoutInvoice(insertedStockUpdates);
+          // Cas où il n'y a pas de stock updates mais seulement des adjustments
+          // (ne devrait plus arriver maintenant, mais gardons pour sécurité)
           setSelectedInvoiceForStockReport(tempInvoiceForDialogs);
           setSelectedInvoiceForDepositSlip(tempInvoiceForDialogs);
-          
-          // Add to history without invoice
-          setStockUpdatesWithoutInvoice(prev => [...prev, {
-            id: `stock-update-${Date.now()}`, // Generate a unique ID
-            created_at: new Date().toISOString(),
-            total_cards_sold: totalCardsSold,
-            total_amount: 0,
-            stockUpdates: insertedStockUpdates
-          }]);
         }
       }
       
@@ -1760,6 +1750,26 @@ export default function ClientDetailPage() {
         .single();
       if (error) throw error;
 
+      // Créer un stock_update pour la collection lors de l'association
+      const stockUpdateForCollection = {
+        client_id: clientId,
+        collection_id: associateForm.collection_id!,
+        previous_stock: 0,
+        counted_stock: 0,
+        cards_sold: 0,
+        cards_added: subProductsStocks ? 0 : initialStock,
+        new_stock: subProductsStocks ? 0 : initialStock
+      };
+
+      const { error: stockUpdateError } = await supabase
+        .from('stock_updates')
+        .insert([stockUpdateForCollection]);
+
+      if (stockUpdateError) {
+        console.error('Error creating stock_update for collection:', stockUpdateError);
+        // Ne pas bloquer l'association si l'insertion du stock_update échoue
+      }
+
       if (subProductsStocks) {
         // Collection has sub-products: create client_sub_products with provided stocks
         // IMPORTANT: Ajouter TOUS les sous-produits de la collection, même ceux qui n'ont pas été saisis
@@ -1785,6 +1795,26 @@ export default function ClientDetailPage() {
 
         if (insertClientSubProductsError) throw insertClientSubProductsError;
 
+        // Créer un stock_update pour chaque sous-produit lors de l'association
+        const stockUpdatesForSubProducts = (allSubProducts || []).map(sp => ({
+          client_id: clientId,
+          sub_product_id: sp.id,
+          previous_stock: 0,
+          counted_stock: 0,
+          cards_sold: 0,
+          cards_added: subProductsStocks[sp.id] || 0,
+          new_stock: subProductsStocks[sp.id] || 0
+        }));
+
+        const { error: stockUpdatesSubProductsError } = await supabase
+          .from('stock_updates')
+          .insert(stockUpdatesForSubProducts);
+
+        if (stockUpdatesSubProductsError) {
+          console.error('Error creating stock_updates for sub-products:', stockUpdatesSubProductsError);
+          // Ne pas bloquer l'association si l'insertion des stock_updates échoue
+        }
+
         // Update the collection's stock to sum of sub-products
         const totalStock = Object.values(subProductsStocks).reduce((sum, stock) => sum + stock, 0);
         const { error: updateCollectionError } = await supabase
@@ -1793,6 +1823,33 @@ export default function ClientDetailPage() {
           .eq('id', data.id);
 
         if (updateCollectionError) throw updateCollectionError;
+
+        // Mettre à jour le stock_update de la collection parent avec le total des sous-produits
+        // Récupérer d'abord le dernier stock_update de la collection
+        const { data: lastCollectionStockUpdate, error: fetchStockUpdateError } = await supabase
+          .from('stock_updates')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('collection_id', associateForm.collection_id!)
+          .is('sub_product_id', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!fetchStockUpdateError && lastCollectionStockUpdate) {
+          const { error: updateCollectionStockUpdateError } = await supabase
+            .from('stock_updates')
+            .update({ 
+              cards_added: totalStock,
+              new_stock: totalStock
+            })
+            .eq('id', lastCollectionStockUpdate.id);
+
+          if (updateCollectionStockUpdateError) {
+            console.error('Error updating stock_update for collection:', updateCollectionStockUpdateError);
+            // Ne pas bloquer l'association si la mise à jour du stock_update échoue
+          }
+        }
 
         // Update client's total stock
         const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + totalStock;
@@ -2600,6 +2657,7 @@ export default function ClientDetailPage() {
                                   size="sm"
                                   onClick={() => {
                                     setSelectedInvoiceForStockReport(invoice);
+                                    setStockUpdatesFromHistory([]); // Réinitialiser car on vient d'une facture
                                     setStockReportDialogOpen(true);
                                   }}
                                 >
@@ -2627,9 +2685,15 @@ export default function ClientDetailPage() {
                           </div>
                         );
                       } else {
+                        // Cas des anciennes données sans facture (compatibilité)
+                        // Récupérer l'invoice_id depuis les stockUpdates (ils ont tous le même invoice_id)
                         const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
+                        const invoiceId = stockUpdate.stockUpdates.length > 0 
+                          ? stockUpdate.stockUpdates[0].invoice_id 
+                          : null;
+                        
                         const tempInvoice: Invoice = {
-                          id: stockUpdate.id,
+                          id: invoiceId || stockUpdate.id, // Utiliser invoice_id si disponible, sinon fallback
                           client_id: clientId,
                           total_cards_sold: stockUpdate.total_cards_sold,
                           total_amount: stockUpdate.total_amount,
@@ -2668,8 +2732,9 @@ export default function ClientDetailPage() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
+                                    // Maintenant, tempInvoice.id devrait être l'ID de la facture réelle
+                                    // Les stock_updates seront récupérés via invoice_id depuis la base
                                     setSelectedInvoiceForStockReport(tempInvoice);
-                                    setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
                                     setStockReportDialogOpen(true);
                                   }}
                                 >
@@ -2921,11 +2986,32 @@ export default function ClientDetailPage() {
             onOpenChange={setStockReportDialogOpen}
             client={client}
             clientCollections={clientCollections}
-            stockUpdates={
-              selectedInvoiceForStockReport.id 
-                ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id)
-                : recentStockUpdatesWithoutInvoice
-            }
+            stockUpdates={(() => {
+              // Maintenant, toutes les mises à jour de stock ont un invoice_id
+              // Utiliser invoice_id pour filtrer les stock_updates depuis la base
+              if (selectedInvoiceForStockReport.id && selectedInvoiceForStockReport.id.trim() !== '') {
+                const filtered = stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id);
+                console.log('[StockReportDialog] Using filtered stockUpdates from invoice', { 
+                  invoiceId: selectedInvoiceForStockReport.id,
+                  count: filtered.length, 
+                  filtered 
+                });
+                return filtered;
+              } else {
+                // Fallback pour compatibilité avec anciennes données (ne devrait plus arriver)
+                console.warn('[StockReportDialog] No invoice ID, using fallback logic');
+                if (stockUpdatesFromHistory.length > 0) {
+                  return stockUpdatesFromHistory;
+                }
+                if (stockUpdatesForDialog.length > 0) {
+                  return stockUpdatesForDialog;
+                }
+                if (recentStockUpdatesWithoutInvoice.length > 0) {
+                  return recentStockUpdatesWithoutInvoice;
+                }
+                return [];
+              }
+            })()}
             invoice={selectedInvoiceForStockReport}
           />
         )}
