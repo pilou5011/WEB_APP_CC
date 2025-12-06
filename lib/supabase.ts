@@ -9,6 +9,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export type Client = {
   id: string;
   name: string;
+  company_name: string | null;
   address: string; // Ancien champ, conservé pour compatibilité
   street_address: string | null;
   postal_code: string | null;
@@ -22,8 +23,8 @@ export type Client = {
   phone_2_info: string | null;
   phone_3: string | null;
   phone_3_info: string | null;
-  rcs_number: string | null;
-  naf_code: string | null;
+  siret_number: string | null;
+  tva_number: string | null;
   client_number: string | null;
   establishment_type_id: string | null;
   opening_hours: any | null;
