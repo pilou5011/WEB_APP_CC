@@ -85,8 +85,8 @@ export default function ClientsPage() {
           client.postal_code?.toLowerCase().includes(searchLower) ||
           client.city?.toLowerCase().includes(searchLower) ||
           client.phone?.toLowerCase().includes(searchLower) ||
-          client.rcs_number?.toLowerCase().includes(searchLower) ||
-          client.naf_code?.toLowerCase().includes(searchLower) ||
+          client.siret_number?.toLowerCase().includes(searchLower) ||
+          client.tva_number?.toLowerCase().includes(searchLower) ||
           client.client_number?.toLowerCase().includes(searchLower)
         );
       });

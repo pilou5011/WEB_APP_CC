@@ -60,6 +60,7 @@ export default function ClientInfoPage() {
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
+    company_name: '',
     street_address: '',
     postal_code: '',
     city: '',
@@ -72,8 +73,8 @@ export default function ClientInfoPage() {
     phone_2_info: '',
     phone_3: '',
     phone_3_info: '',
-    rcs_number: '',
-    naf_code: '',
+    siret_number: '',
+    tva_number: '',
     client_number: '',
     establishment_type_id: '',
     visit_frequency_number: '',
@@ -213,6 +214,7 @@ export default function ClientInfoPage() {
       
       setFormData({
         name: data.name || '',
+        company_name: data.company_name || '',
         street_address: data.street_address || '',
         postal_code: data.postal_code || '',
         city: data.city || '',
@@ -225,8 +227,8 @@ export default function ClientInfoPage() {
         phone_2_info: data.phone_2_info || '',
         phone_3: data.phone_3 || '',
         phone_3_info: data.phone_3_info || '',
-        rcs_number: data.rcs_number || '',
-        naf_code: data.naf_code || '',
+        siret_number: data.siret_number || '',
+        tva_number: data.tva_number || '',
         client_number: data.client_number || '',
         establishment_type_id: data.establishment_type_id || '',
         visit_frequency_number: data.visit_frequency_number?.toString() || '',
@@ -551,6 +553,7 @@ export default function ClientInfoPage() {
         .from('clients')
         .update({
           name: formData.name,
+          company_name: formData.company_name || null,
           address: `${formData.street_address}, ${formData.postal_code} ${formData.city}`,
           street_address: formData.street_address,
           postal_code: formData.postal_code,
@@ -564,8 +567,8 @@ export default function ClientInfoPage() {
           phone_2_info: formData.phone_2_info || null,
           phone_3: formData.phone_3 || null,
           phone_3_info: formData.phone_3_info || null,
-          rcs_number: formData.rcs_number || null,
-          naf_code: formData.naf_code || null,
+          siret_number: formData.siret_number || null,
+          tva_number: formData.tva_number || null,
           client_number: formData.client_number || null,
           establishment_type_id: formData.establishment_type_id || null,
           opening_hours: openingHours,
@@ -773,9 +776,16 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label className="text-slate-500 text-sm">Nom de la société</Label>
+                      <Label className="text-slate-500 text-sm">Nom Commercial</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.name || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Nom Société</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.company_name || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -910,16 +920,16 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label className="text-slate-500 text-sm">Numéro RCS</Label>
+                      <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.rcs_number || <span className="text-slate-400">Non renseigné</span>}
+                        {client.siret_number || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Code NAF</Label>
+                      <Label className="text-slate-500 text-sm">Numéro TVA</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.naf_code || <span className="text-slate-400">Non renseigné</span>}
+                        {client.tva_number || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
@@ -1038,6 +1048,7 @@ export default function ClientInfoPage() {
               const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
               setFormData({
                 name: client.name || '',
+                company_name: client.company_name || '',
                 street_address: client.street_address || '',
                 postal_code: client.postal_code || '',
                 city: client.city || '',
@@ -1050,8 +1061,8 @@ export default function ClientInfoPage() {
                 phone_2_info: client.phone_2_info || '',
                 phone_3: client.phone_3 || '',
                 phone_3_info: client.phone_3_info || '',
-                rcs_number: client.rcs_number || '',
-                naf_code: client.naf_code || '',
+                siret_number: client.siret_number || '',
+                tva_number: client.tva_number || '',
                 client_number: client.client_number || '',
                 establishment_type_id: client.establishment_type_id || '',
                 visit_frequency_number: client.visit_frequency_number?.toString() || '',
@@ -1130,7 +1141,7 @@ export default function ClientInfoPage() {
                 <Separator />
                 
                 <div>
-                  <Label htmlFor="name">Nom de la société *</Label>
+                  <Label htmlFor="name">Nom Commercial *</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -1139,6 +1150,19 @@ export default function ClientInfoPage() {
                     placeholder="Ex: Boutique du Centre"
                     className="mt-1.5"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="company_name">Nom Société *</Label>
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
+                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                    required
+                    placeholder="Ex: SARL Boutique du Centre"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Raison sociale utilisée dans les factures</p>
                 </div>
 
                 {/* Type d'établissement */}
@@ -1455,23 +1479,23 @@ export default function ClientInfoPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="rcs_number">Numéro RCS</Label>
+                    <Label htmlFor="siret_number">Numéro SIRET</Label>
                     <Input
-                      id="rcs_number"
-                      value={formData.rcs_number}
-                      onChange={(e) => setFormData({ ...formData, rcs_number: e.target.value })}
-                      placeholder="123 456 789"
+                      id="siret_number"
+                      value={formData.siret_number}
+                      onChange={(e) => setFormData({ ...formData, siret_number: e.target.value })}
+                      placeholder="123 456 789 00012"
                       className="mt-1.5"
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="naf_code">Code NAF</Label>
+                    <Label htmlFor="tva_number">Numéro TVA</Label>
                     <Input
-                      id="naf_code"
-                      value={formData.naf_code}
-                      onChange={(e) => setFormData({ ...formData, naf_code: e.target.value })}
-                      placeholder="Ex: 4759A"
+                      id="tva_number"
+                      value={formData.tva_number}
+                      onChange={(e) => setFormData({ ...formData, tva_number: e.target.value })}
+                      placeholder="Ex: FR12 345678901"
                       className="mt-1.5"
                     />
                   </div>
@@ -1771,6 +1795,7 @@ export default function ClientInfoPage() {
                     const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
                     setFormData({
                       name: client.name || '',
+                      company_name: client.company_name || '',
                       street_address: client.street_address || '',
                       postal_code: client.postal_code || '',
                       city: client.city || '',
@@ -1783,8 +1808,8 @@ export default function ClientInfoPage() {
                       phone_2_info: client.phone_2_info || '',
                       phone_3: client.phone_3 || '',
                       phone_3_info: client.phone_3_info || '',
-                      rcs_number: client.rcs_number || '',
-                      naf_code: client.naf_code || '',
+                      siret_number: client.siret_number || '',
+                      tva_number: client.tva_number || '',
                       client_number: client.client_number || '',
                       establishment_type_id: client.establishment_type_id || '',
                       visit_frequency_number: client.visit_frequency_number?.toString() || '',

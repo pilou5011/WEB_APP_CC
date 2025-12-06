@@ -2,17 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, EstablishmentType } from '@/lib/supabase';
+import { supabase, EstablishmentType, PaymentMethod } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Plus, X, Settings, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Plus, X, Settings, MessageSquare, Check, ChevronsUpDown, Pencil, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
+import { PaymentMethodsManager } from '@/components/payment-methods-manager';
+import { cn } from '@/lib/utils';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, validateWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, validateMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods } from '@/components/vacation-periods-editor';
@@ -27,11 +32,21 @@ export default function NewClientPage() {
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
+  const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
+  const [addingNewPaymentMethod, setAddingNewPaymentMethod] = useState(false);
+  const [managePaymentMethodsDialogOpen, setManagePaymentMethodsDialogOpen] = useState(false);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [editPaymentMethodName, setEditPaymentMethodName] = useState('');
+  const [deletingPaymentMethod, setDeletingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [deletePaymentMethodDialogOpen, setDeletePaymentMethodDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
+    company_name: '',
     street_address: '',
     postal_code: '',
     city: '',
@@ -44,8 +59,8 @@ export default function NewClientPage() {
     phone_2_info: '',
     phone_3: '',
     phone_3_info: '',
-    rcs_number: '',
-    naf_code: '',
+    siret_number: '',
+    tva_number: '',
     client_number: '',
     establishment_type_id: '',
     visit_frequency_number: '',
@@ -55,13 +70,14 @@ export default function NewClientPage() {
     vacation_start_date: '',
     vacation_end_date: '',
     closing_day: '',
-    payment_method: '',
+    payment_method_id: '',
     email: '',
     comment: ''
   });
 
   useEffect(() => {
     loadEstablishmentTypes();
+    loadPaymentMethods();
   }, []);
 
   const loadEstablishmentTypes = async () => {
@@ -75,6 +91,117 @@ export default function NewClientPage() {
       setEstablishmentTypes(data || []);
     } catch (error) {
       console.error('Error loading establishment types:', error);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setPaymentMethods(data || []);
+    } catch (error) {
+      console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const handleAddNewPaymentMethod = async () => {
+    if (!newPaymentMethodName.trim()) {
+      toast.error('Veuillez saisir un nom de méthode de paiement');
+      return;
+    }
+
+    setAddingNewPaymentMethod(true);
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .insert([{ name: newPaymentMethodName.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette méthode de paiement existe déjà');
+        } else {
+          throw error;
+        }
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
+      setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setFormData({ ...formData, payment_method_id: data.id });
+      setNewPaymentMethodName('');
+      setShowNewPaymentMethodInput(false);
+      toast.success('Méthode de paiement ajoutée');
+    } catch (error) {
+      console.error('Error adding payment method:', error);
+      toast.error('Erreur lors de l\'ajout de la méthode');
+    } finally {
+      setAddingNewPaymentMethod(false);
+    }
+  };
+
+  const handleEditPaymentMethod = async () => {
+    if (!editingPaymentMethod || !editPaymentMethodName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .update({ name: editPaymentMethodName.trim() })
+        .eq('id', editingPaymentMethod.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadPaymentMethods();
+      setEditingPaymentMethod(null);
+      setEditPaymentMethodName('');
+      toast.success('Méthode de paiement modifiée avec succès');
+    } catch (error) {
+      console.error('Error updating payment method:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeletePaymentMethodClick = (method: PaymentMethod) => {
+    setDeletingPaymentMethod(method);
+    setDeletePaymentMethodDialogOpen(true);
+  };
+
+  const handleDeletePaymentMethod = async () => {
+    if (!deletingPaymentMethod) return;
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', deletingPaymentMethod.id);
+
+      if (error) throw error;
+
+      await loadPaymentMethods();
+      if (formData.payment_method_id === deletingPaymentMethod.id) {
+        setFormData({ ...formData, payment_method_id: '' });
+      }
+      setDeletePaymentMethodDialogOpen(false);
+      setDeletingPaymentMethod(null);
+      toast.success('Méthode de paiement supprimée avec succès');
+    } catch (error) {
+      console.error('Error deleting payment method:', error);
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -120,9 +247,16 @@ export default function NewClientPage() {
     setSubmitting(true);
 
     try {
-      // Validation du nom (obligatoire)
+      // Validation du nom commercial (obligatoire)
       if (!formData.name.trim()) {
-        toast.error('Le nom de la société est obligatoire');
+        toast.error('Le nom commercial est obligatoire');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du nom société (obligatoire)
+      if (!formData.company_name.trim()) {
+        toast.error('Le nom société est obligatoire');
         setSubmitting(false);
         return;
       }
@@ -202,6 +336,7 @@ export default function NewClientPage() {
         .from('clients')
         .insert([{
           name: formData.name,
+          company_name: formData.company_name,
           address: `${formData.street_address}, ${formData.postal_code} ${formData.city}`,
           street_address: formData.street_address,
           postal_code: formData.postal_code,
@@ -215,8 +350,8 @@ export default function NewClientPage() {
           phone_2_info: formData.phone_2_info || null,
           phone_3: formData.phone_3 || null,
           phone_3_info: formData.phone_3_info || null,
-          rcs_number: formData.rcs_number || null,
-          naf_code: formData.naf_code || null,
+          siret_number: formData.siret_number || null,
+          tva_number: formData.tva_number || null,
           client_number: formData.client_number || null,
           establishment_type_id: formData.establishment_type_id || null,
           opening_hours: openingHours,
@@ -226,7 +361,7 @@ export default function NewClientPage() {
           average_time_minutes: averageTimeMinutes,
           market_days_schedule: marketDaysSchedule,
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
-          payment_method: formData.payment_method || null,
+          payment_method_id: formData.payment_method_id || null,
           email: formData.email || null,
           comment: formData.comment || null,
           initial_stock: 0,
@@ -290,7 +425,7 @@ export default function NewClientPage() {
                 <Separator />
                 
                 <div>
-                  <Label htmlFor="name">Nom de la société *</Label>
+                  <Label htmlFor="name">Nom Commercial *</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -299,6 +434,19 @@ export default function NewClientPage() {
                     placeholder="Ex: Boutique du Centre"
                     className="mt-1.5"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="company_name">Nom Société *</Label>
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
+                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                    required
+                    placeholder="Ex: SARL Boutique du Centre"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Raison sociale utilisée dans les factures</p>
                 </div>
 
                 {/* Type d'établissement */}
@@ -528,23 +676,23 @@ export default function NewClientPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="rcs_number">Numéro RCS</Label>
+                    <Label htmlFor="siret_number">Numéro SIRET</Label>
                     <Input
-                      id="rcs_number"
-                      value={formData.rcs_number}
-                      onChange={(e) => setFormData({ ...formData, rcs_number: e.target.value })}
-                      placeholder="123 456 789"
+                      id="siret_number"
+                      value={formData.siret_number}
+                      onChange={(e) => setFormData({ ...formData, siret_number: e.target.value })}
+                      placeholder="123 456 789 00012"
                       className="mt-1.5"
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="naf_code">Code NAF</Label>
+                    <Label htmlFor="tva_number">Numéro TVA</Label>
                     <Input
-                      id="naf_code"
-                      value={formData.naf_code}
-                      onChange={(e) => setFormData({ ...formData, naf_code: e.target.value })}
-                      placeholder="Ex: 4759A"
+                      id="tva_number"
+                      value={formData.tva_number}
+                      onChange={(e) => setFormData({ ...formData, tva_number: e.target.value })}
+                      placeholder="Ex: FR12 345678901"
                       className="mt-1.5"
                     />
                   </div>
@@ -649,15 +797,176 @@ export default function NewClientPage() {
                     <Separator />
 
                     <div>
-                      <Label htmlFor="payment_method">Règlement</Label>
-                      <p className="text-xs text-slate-500 mt-1">Ex: Virement, Chèque, Espèces, Carte bancaire...</p>
-                      <Input
-                        id="payment_method"
-                        value={formData.payment_method}
-                        onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                        placeholder="Ex: Virement"
-                        className="mt-1.5"
-                      />
+                      <div className="flex justify-between items-center mb-1.5">
+                        <Label htmlFor="payment_method_id">Règlement (optionnel)</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setManagePaymentMethodsDialogOpen(true)}
+                          className="h-7 text-xs"
+                        >
+                          <Settings className="h-3 w-3 mr-1" />
+                          Gérer les méthodes
+                        </Button>
+                      </div>
+                      {!showNewPaymentMethodInput && !editingPaymentMethod ? (
+                        <div className="flex gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                className="flex-1 justify-between"
+                              >
+                                {formData.payment_method_id
+                                  ? paymentMethods.find(m => m.id === formData.payment_method_id)?.name
+                                  : 'Sélectionner une méthode...'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Rechercher une méthode..." />
+                                <CommandList>
+                                  {paymentMethods.length === 0 ? (
+                                    <CommandEmpty>
+                                      <div className="py-6 text-center text-sm text-slate-400">
+                                        Liste vide, veuillez ajouter un élément
+                                      </div>
+                                    </CommandEmpty>
+                                  ) : (
+                                    <CommandGroup>
+                                      {paymentMethods.map((method) => (
+                                        <div key={method.id} className="flex items-center group">
+                                          <CommandItem
+                                            value={method.id}
+                                            onSelect={() => {
+                                              setFormData({ ...formData, payment_method_id: method.id });
+                                            }}
+                                            className="flex-1"
+                                          >
+                                            <Check
+                                              className={cn(
+                                                'mr-2 h-4 w-4',
+                                                formData.payment_method_id === method.id ? 'opacity-100' : 'opacity-0'
+                                              )}
+                                            />
+                                            {method.name}
+                                          </CommandItem>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingPaymentMethod(method);
+                                              setEditPaymentMethodName(method.name);
+                                            }}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeletePaymentMethodClick(method);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowNewPaymentMethodInput(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : editingPaymentMethod ? (
+                        <div className="flex gap-2">
+                          <Input
+                            value={editPaymentMethodName}
+                            onChange={(e) => setEditPaymentMethodName(e.target.value)}
+                            className="flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleEditPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setEditingPaymentMethod(null);
+                                setEditPaymentMethodName('');
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleEditPaymentMethod}
+                          >
+                            Enregistrer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingPaymentMethod(null);
+                              setEditPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Nouvelle méthode..."
+                            value={newPaymentMethodName}
+                            onChange={(e) => setNewPaymentMethodName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setShowNewPaymentMethodInput(false);
+                                setNewPaymentMethodName('');
+                              }
+                            }}
+                            className="flex-1"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddNewPaymentMethod}
+                            disabled={addingNewPaymentMethod}
+                          >
+                            {addingNewPaymentMethod ? '...' : 'Ajouter'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewPaymentMethodInput(false);
+                              setNewPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -700,6 +1009,35 @@ export default function NewClientPage() {
           types={establishmentTypes}
           onTypesUpdated={loadEstablishmentTypes}
         />
+
+        <PaymentMethodsManager
+          open={managePaymentMethodsDialogOpen}
+          onOpenChange={setManagePaymentMethodsDialogOpen}
+          methods={paymentMethods}
+          onMethodsUpdated={loadPaymentMethods}
+        />
+
+        {/* Dialog de confirmation de suppression - Méthode de paiement */}
+        <AlertDialog open={deletePaymentMethodDialogOpen} onOpenChange={setDeletePaymentMethodDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette méthode de paiement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la méthode "{deletingPaymentMethod?.name}" ?
+                Les clients utilisant cette méthode ne seront pas supprimés, mais leur méthode de paiement sera réinitialisée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeletePaymentMethod}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

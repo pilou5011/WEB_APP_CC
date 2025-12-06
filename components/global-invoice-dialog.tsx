@@ -260,11 +260,12 @@ export function GlobalInvoiceDialog({
       // Sauter une ligne
       clientYPosition += 4;
       
-      // Nom du client en gras et police plus grande
-      if (client.name) {
+      // Nom de la société en gras et police plus grande (utiliser company_name si disponible, sinon name)
+      const clientCompanyName = client.company_name || client.name;
+      if (clientCompanyName) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(client.name, rightBoxX + 2, clientYPosition);
+        doc.text(clientCompanyName, rightBoxX + 2, clientYPosition);
         clientYPosition += 5;
       }
       
@@ -279,12 +280,12 @@ export function GlobalInvoiceDialog({
         clientYPosition += 4;
       }
       
-      if (client.rcs_number) {
-        doc.text(`RCS: ${client.rcs_number}`, rightBoxX + 2, clientYPosition);
+      if (client.siret_number) {
+        doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
-      if (client.naf_code) {
-        doc.text(`NAF: ${client.naf_code}`, rightBoxX + 2, clientYPosition);
+      if (client.tva_number) {
+        doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 3; // Même espacement que N° Facture
       }
       
