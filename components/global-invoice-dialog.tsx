@@ -69,13 +69,43 @@ export function GlobalInvoiceDialog({
     };
   }, [open, invoice.id]);
 
-  // Generate PDF preview when dialog opens and data is loaded
+  // Load stored PDF or generate new one when dialog opens and data is loaded
   useEffect(() => {
     if (open && !loadingProfile && !pdfGenerated && adjustments !== undefined) {
       setPdfGenerated(true);
-      generatePDFPreview();
+      loadStoredPDFOrGenerate();
     }
   }, [open, loadingProfile, pdfGenerated, adjustments]);
+
+  const loadStoredPDFOrGenerate = async () => {
+    // First, try to load stored PDF if it exists
+    if (invoice.invoice_pdf_path) {
+      try {
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(invoice.invoice_pdf_path, 3600); // 1 hour expiry
+
+        if (!error && data) {
+          // Fetch the PDF
+          const response = await fetch(data.signedUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            setPdfBlob(blob);
+            setPdfUrl(url);
+            setGenerating(false);
+            return; // Successfully loaded stored PDF
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load stored PDF, will generate new one:', error);
+        // Fall through to generate new PDF
+      }
+    }
+    
+    // If no stored PDF or loading failed, generate new one
+    generatePDFPreview();
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -462,6 +492,58 @@ export function GlobalInvoiceDialog({
       
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
+
+      // Save PDF to storage if it doesn't exist yet
+      if (!invoice.invoice_pdf_path) {
+        try {
+          const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, pdfBlobData, {
+              contentType: 'application/pdf',
+              upsert: false // Don't overwrite if exists
+            });
+
+          if (uploadError) {
+            // Check if error is due to missing bucket or permissions
+            if (uploadError.message?.includes('Bucket not found') || 
+                uploadError.message?.includes('not found') ||
+                uploadError.message?.includes('permission denied') ||
+                uploadError.message?.includes('policy')) {
+              console.warn('Storage bucket "documents" not accessible. Please check:', {
+                message: '1. Bucket exists in Supabase Dashboard',
+                message2: '2. RLS policies are configured (see STORAGE_SETUP.md)',
+                message3: '3. Bucket name is exactly "documents"',
+                error: uploadError.message
+              });
+            } else {
+              // Log other errors
+              console.warn('Error uploading PDF to storage:', {
+                error: uploadError,
+                message: uploadError.message,
+                filePath: filePath
+              });
+            }
+            // Non-blocking: continue even if save fails
+          } else if (uploadData) {
+            // Update invoice with PDF path
+            const { error: updateError } = await supabase
+              .from('invoices')
+              .update({ invoice_pdf_path: filePath })
+              .eq('id', invoice.id);
+            
+            if (updateError) {
+              console.warn('Error updating invoice with PDF path:', updateError);
+            } else {
+              console.log('PDF saved successfully:', filePath);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not save PDF to storage:', error);
+          // Non-blocking: continue even if save fails
+        }
+      }
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.error('Erreur lors de la génération du PDF');

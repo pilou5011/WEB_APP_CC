@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Client, Collection, ClientCollection, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,7 @@ interface DepositSlipDialogProps {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates?: StockUpdate[];
+  invoice?: Invoice | null;
 }
 
 export function DepositSlipDialog({
@@ -22,7 +23,8 @@ export function DepositSlipDialog({
   onOpenChange,
   client,
   clientCollections,
-  stockUpdates = []
+  stockUpdates = [],
+  invoice = null
 }: DepositSlipDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -53,13 +55,43 @@ export function DepositSlipDialog({
     };
   }, [pdfUrl]);
 
-  // Generate PDF preview when dialog opens and data is loaded
+  // Load stored PDF or generate new one when dialog opens and data is loaded
   useEffect(() => {
     if (open && !loadingProfile && !pdfGenerated && !needsInfoInput) {
       setPdfGenerated(true);
-      generatePDFPreview();
+      loadStoredPDFOrGenerate();
     }
   }, [open, loadingProfile, pdfGenerated, needsInfoInput]);
+
+  const loadStoredPDFOrGenerate = async () => {
+    // First, try to load stored PDF if it exists
+    if (invoice?.deposit_slip_pdf_path) {
+      try {
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(invoice.deposit_slip_pdf_path, 3600); // 1 hour expiry
+
+        if (!error && data) {
+          // Fetch the PDF
+          const response = await fetch(data.signedUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            setPdfBlob(blob);
+            setPdfUrl(url);
+            setGenerating(false);
+            return; // Successfully loaded stored PDF
+          }
+        }
+      } catch (error) {
+        console.warn('Could not load stored PDF, will generate new one:', error);
+        // Fall through to generate new PDF
+      }
+    }
+    
+    // If no stored PDF or loading failed, generate new one
+    generatePDFPreview();
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -426,6 +458,58 @@ export function DepositSlipDialog({
       
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
+
+      // Save PDF to storage if it doesn't exist yet
+      if (invoice && !invoice.deposit_slip_pdf_path) {
+        try {
+          const filePath = `invoices/${invoice.id}/deposit_slip_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('documents')
+            .upload(filePath, pdfBlobData, {
+              contentType: 'application/pdf',
+              upsert: false // Don't overwrite if exists
+            });
+
+          if (uploadError) {
+            // Check if error is due to missing bucket or permissions
+            if (uploadError.message?.includes('Bucket not found') || 
+                uploadError.message?.includes('not found') ||
+                uploadError.message?.includes('permission denied') ||
+                uploadError.message?.includes('policy')) {
+              console.warn('Storage bucket "documents" not accessible. Please check:', {
+                message: '1. Bucket exists in Supabase Dashboard',
+                message2: '2. RLS policies are configured (see STORAGE_SETUP.md)',
+                message3: '3. Bucket name is exactly "documents"',
+                error: uploadError.message
+              });
+            } else {
+              // Log other errors
+              console.warn('Error uploading PDF to storage:', {
+                error: uploadError,
+                message: uploadError.message,
+                filePath: filePath
+              });
+            }
+            // Non-blocking: continue even if save fails
+          } else if (uploadData) {
+            // Update invoice with PDF path
+            const { error: updateError } = await supabase
+              .from('invoices')
+              .update({ deposit_slip_pdf_path: filePath })
+              .eq('id', invoice.id);
+            
+            if (updateError) {
+              console.warn('Error updating invoice with PDF path:', updateError);
+            } else {
+              console.log('PDF saved successfully:', filePath);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not save PDF to storage:', error);
+          // Non-blocking: continue even if save fails
+        }
+      }
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.error('Erreur lors de la génération du PDF');
@@ -453,6 +537,9 @@ export function DepositSlipDialog({
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-3 border-b flex-shrink-0">
           <DialogTitle>Prévisualisation du bon de dépôt</DialogTitle>
+          <DialogDescription className="sr-only">
+            Visualisez et téléchargez le bon de dépôt pour ce client
+          </DialogDescription>
         </DialogHeader>
 
         {needsInfoInput ? (

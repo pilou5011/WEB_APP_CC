@@ -91,6 +91,9 @@ export type Invoice = {
   total_cards_sold: number;
   total_amount: number;
   invoice_number: string | null;
+  invoice_pdf_path: string | null;
+  stock_report_pdf_path: string | null;
+  deposit_slip_pdf_path: string | null;
   created_at: string;
 };
 

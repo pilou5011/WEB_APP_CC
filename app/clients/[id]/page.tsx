@@ -2281,29 +2281,29 @@ export default function ClientDetailPage() {
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
                 <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
-                  <Table noWrapper>
-                    <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                      <TableRow className="bg-slate-50">
-                        <TableHead className="w-[15%] font-semibold">Collection</TableHead>
-                        <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
-                        <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
-                        <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
-                        <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
-                        <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleDragEnd}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={clientCollections.map(cc => cc.id)}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <SortableContext
-                        items={clientCollections.map(cc => cc.id)}
-                        strategy={verticalListSortingStrategy}
-                      >
+                      <Table noWrapper>
+                        <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-[15%] font-semibold">Collection</TableHead>
+                            <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                            <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
                         <TableBody>
                           {clientCollections.map((cc) => {
                         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
@@ -2436,9 +2436,9 @@ export default function ClientDetailPage() {
                         );
                       })}
                         </TableBody>
-                      </SortableContext>
-                    </DndContext>
-                  </Table>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
                 </div>
               )}
             </CardContent>
@@ -2588,7 +2588,10 @@ export default function ClientDetailPage() {
             <CardContent>
               <Button
                 variant="outline"
-                onClick={() => setDepositSlipDialogOpen(true)}
+                onClick={() => {
+                  setSelectedInvoiceForDepositSlip(null);
+                  setDepositSlipDialogOpen(true);
+                }}
                 disabled={clientCollections.length === 0}
               >
                 <Download className="mr-2 h-4 w-4" />
@@ -2698,6 +2701,9 @@ export default function ClientDetailPage() {
                           total_cards_sold: stockUpdate.total_cards_sold,
                           total_amount: stockUpdate.total_amount,
                           invoice_number: null,
+                          invoice_pdf_path: null,
+                          stock_report_pdf_path: null,
+                          deposit_slip_pdf_path: null,
                           created_at: stockUpdate.created_at
                         };
                         // Count unique collections from stock updates
@@ -2966,17 +2972,26 @@ export default function ClientDetailPage() {
         </Dialog>
 
         {/* Deposit Slip Dialog */}
-        {client && selectedInvoiceForDepositSlip && (
+        {client && (
           <DepositSlipDialog
             open={depositSlipDialogOpen}
-            onOpenChange={setDepositSlipDialogOpen}
+            onOpenChange={(open) => {
+              setDepositSlipDialogOpen(open);
+              if (!open) {
+                // Reset selected invoice when dialog closes
+                setSelectedInvoiceForDepositSlip(null);
+              }
+            }}
             client={client}
             clientCollections={clientCollections}
             stockUpdates={
-              selectedInvoiceForDepositSlip.id 
+              selectedInvoiceForDepositSlip?.id 
                 ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
-                : recentStockUpdatesWithoutInvoice
+                : recentStockUpdatesWithoutInvoice.length > 0
+                ? recentStockUpdatesWithoutInvoice
+                : []
             }
+            invoice={selectedInvoiceForDepositSlip}
           />
         )}
 
