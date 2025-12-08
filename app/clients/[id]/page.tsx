@@ -1576,8 +1576,10 @@ export default function ClientDetailPage() {
       toast.error('Le prix unitaire doit être un nombre');
       return;
     }
-    if (unitPrice >= 0) {
-      toast.error('Le prix unitaire doit être négatif');
+
+    // Accepter uniquement des valeurs positives
+    if (unitPrice <= 0) {
+      toast.error('Le prix unitaire doit être positif');
       return;
     }
     
@@ -1591,9 +1593,13 @@ export default function ClientDetailPage() {
       return;
     }
     
+     // Convertir le prix positif en négatif pour le stockage (la facture affichera un montant négatif)
+    const negativeUnitPrice = -Math.abs(unitPrice);
+
+
     setPendingAdjustments((list) => [
       ...list,
-      { operation_name: name, unit_price: unitPrice.toFixed(2), quantity: quantity.toString() }
+      { operation_name: name, unit_price: negativeUnitPrice.toFixed(2), quantity: quantity.toString() }
     ]);
     setAdjustmentForm({ operation_name: '', unit_price: '', quantity: '' });
     setAddAdjustmentOpen(false);
@@ -2443,7 +2449,6 @@ export default function ClientDetailPage() {
               )}
             </CardContent>
           </Card>
-
         {/* Reprise de stock */}
         <Card className="border-slate-200 shadow-md">
           <CardHeader>
@@ -2463,13 +2468,15 @@ export default function ClientDetailPage() {
               {pendingAdjustments.length > 0 && (
                 <div className="border border-slate-200 rounded-lg divide-y bg-white">
                   {pendingAdjustments.map((a, idx) => {
+                    // Afficher le prix positif pour l'utilisateur (mais stocké négatif)
+                    const displayPrice = Math.abs(parseFloat(a.unit_price));
                     const totalAmount = (parseFloat(a.unit_price) * parseInt(a.quantity)).toFixed(2);
                     return (
                       <div key={idx} className="flex items-center justify-between p-3">
                         <div>
                           <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
-                          <p className="text-xs text-slate-500">
-                            {a.quantity} carte(s) × {a.unit_price} € = {totalAmount} €
+                          <p className="text-xs text-slate-500">      
+                            {a.quantity} carte(s) × {displayPrice.toFixed(2)} € = {totalAmount} €
                           </p>
                         </div>
                         <Button
@@ -2497,7 +2504,7 @@ export default function ClientDetailPage() {
               <DialogHeader>
                 <DialogTitle>Ajouter une reprise de stock</DialogTitle>
                 <DialogDescription>
-                  Saisissez le nom de l'opération, le prix unitaire (négatif) et le nombre de cartes reprises
+                  Saisissez le nom de l'opération, le prix unitaire par carte et le nombre de cartes reprises
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -2521,14 +2528,15 @@ export default function ClientDetailPage() {
                     value={adjustmentForm.unit_price}
                     onChange={(e) => {
                       const value = e.target.value.replace(',', '.');
-                      if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      // Accepter uniquement des valeurs positives
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
                         setAdjustmentForm(f => ({ ...f, unit_price: value }));
                       }
                     }}
-                    placeholder="Ex: -2.00"
+                    placeholder="Ex: 2.00"
                     className="mt-1.5"
                   />
-                  <p className="text-xs text-slate-500 mt-1">Le prix doit être négatif (reprise)</p>
+                  <p className="text-xs text-slate-500 mt-1">Saisissez un prix positif (le montant sera négatif dans la facture)</p>
                 </div>
                 <div>
                   <Label htmlFor="adj-quantity">Nombre de cartes reprises</Label>
