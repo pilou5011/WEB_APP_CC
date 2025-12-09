@@ -81,9 +81,7 @@ export default function ClientInfoPage() {
     visit_frequency_unit: '',
     average_time_hours: '',
     average_time_minutes: '',
-    vacation_start_date: '',
-    vacation_end_date: '',
-    closing_day: '',
+
     payment_method_id: '',
     email: '',
     comment: ''
@@ -235,9 +233,6 @@ export default function ClientInfoPage() {
         visit_frequency_unit: data.visit_frequency_unit || '',
         average_time_hours: data.average_time_hours?.toString() || '',
         average_time_minutes: data.average_time_minutes?.toString() || '',
-        vacation_start_date: data.vacation_start_date || '',
-        vacation_end_date: data.vacation_end_date || '',
-        closing_day: data.closing_day || '',
         payment_method_id: data.payment_method_id || '',
         email: data.email || '',
         comment: data.comment || ''
@@ -1069,9 +1064,6 @@ export default function ClientInfoPage() {
                 visit_frequency_unit: client.visit_frequency_unit || '',
                 average_time_hours: client.average_time_hours?.toString() || '',
                 average_time_minutes: client.average_time_minutes?.toString() || '',
-                vacation_start_date: client.vacation_start_date || '',
-                vacation_end_date: client.vacation_end_date || '',
-                closing_day: client.closing_day || '',
                 payment_method_id: client.payment_method_id || '',
                 email: client.email || '',
                 comment: client.comment || ''
@@ -1816,9 +1808,6 @@ export default function ClientInfoPage() {
                       visit_frequency_unit: client.visit_frequency_unit || '',
                       average_time_hours: client.average_time_hours?.toString() || '',
                       average_time_minutes: client.average_time_minutes?.toString() || '',
-                      vacation_start_date: client.vacation_start_date || '',
-                      vacation_end_date: client.vacation_end_date || '',
-                      closing_day: client.closing_day || '',
                       payment_method_id: client.payment_method_id || '',
                       email: client.email || '',
                       comment: client.comment || ''
