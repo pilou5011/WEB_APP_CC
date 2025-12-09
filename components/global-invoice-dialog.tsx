@@ -30,7 +30,8 @@ export function GlobalInvoiceDialog({
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [adjustments, setAdjustments] = useState<InvoiceAdjustment[]>([]);
+  const [adjustments, setAdjustments] = useState<InvoiceAdjustment[] | null>(null); // null = not loaded yet
+  const [loadingAdjustments, setLoadingAdjustments] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
@@ -42,6 +43,8 @@ export function GlobalInvoiceDialog({
       setPdfUrl(null);
       setPdfBlob(null);
       setLoadingProfile(true);
+      setLoadingAdjustments(true);
+      setAdjustments(null); // Reset to null to indicate not loaded
       loadUserProfile();
       
       // Load invoice adjustments for this invoice
@@ -55,8 +58,11 @@ export function GlobalInvoiceDialog({
           if (error) throw error;
           setAdjustments(data || []);
         } catch (e) {
+          console.error('Error loading adjustments:', e);
           // Non-blocking for PDF
           setAdjustments([]);
+        } finally {
+          setLoadingAdjustments(false);
         }
       })();
     }
@@ -70,12 +76,13 @@ export function GlobalInvoiceDialog({
   }, [open, invoice.id]);
 
   // Load stored PDF or generate new one when dialog opens and data is loaded
+  // IMPORTANT: Wait for both profile AND adjustments to be loaded before generating PDF
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated && adjustments !== undefined) {
+    if (open && !loadingProfile && !loadingAdjustments && !pdfGenerated && adjustments !== null) {
       setPdfGenerated(true);
       loadStoredPDFOrGenerate();
     }
-  }, [open, loadingProfile, pdfGenerated, adjustments]);
+  }, [open, loadingProfile, loadingAdjustments, pdfGenerated, adjustments]);
 
   const loadStoredPDFOrGenerate = async () => {
     // First, try to load stored PDF if it exists
@@ -352,6 +359,7 @@ export function GlobalInvoiceDialog({
         ];
       });
 
+      // IMPORTANT: adjustments peut être null (pas encore chargé) ou [] (chargé mais vide)
       const adjustmentRows = (adjustments || []).map((adj) => {
         const amt = Number(adj.amount);
         const amtStr = (isNaN(amt) ? '0.00' : amt.toFixed(2)) + ' €';
@@ -402,12 +410,14 @@ export function GlobalInvoiceDialog({
       });
 
       // Calculer les totaux (uniquement pour les collections, pas les sous-produits)
+      // IMPORTANT: adjustments peut être null (pas encore chargé) ou [] (chargé mais vide)
+      const adjustmentsTotal = (adjustments || []).reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
       const totalHT = collectionStockUpdates.reduce((sum, update) => {
         const collection = collections.find(c => c.id === update.collection_id);
         const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
         const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
         return sum + (update.cards_sold * effectivePrice);
-      }, 0) + (adjustments || []).reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
+      }, 0) + adjustmentsTotal;
       
       const tva = totalHT * 0.20;
       const totalTTC = totalHT + tva;
@@ -494,7 +504,9 @@ export function GlobalInvoiceDialog({
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
 
-      // Save PDF to storage if it doesn't exist yet
+      // Save PDF to storage ONLY if it doesn't exist yet
+      // IMPORTANT: Factures are immutable - never overwrite or update existing PDFs
+      // This ensures that once a facture is generated, it remains unchanged forever
       if (!invoice.invoice_pdf_path) {
         try {
           const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
@@ -503,12 +515,16 @@ export function GlobalInvoiceDialog({
             .from('documents')
             .upload(filePath, pdfBlobData, {
               contentType: 'application/pdf',
-              upsert: false // Don't overwrite if exists
+              upsert: false // Never overwrite - factures are immutable
             });
 
           if (uploadError) {
-            // Check if error is due to missing bucket or permissions
-            if (uploadError.message?.includes('Bucket not found') || 
+            // Check if error is due to file already existing (this is expected if PDF was already saved)
+            if (uploadError.message?.includes('already exists') || 
+                uploadError.message?.includes('duplicate') ||
+                uploadError.message?.includes('409')) {
+              console.log('PDF already exists, not overwriting (facture is immutable):', filePath);
+            } else if (uploadError.message?.includes('Bucket not found') || 
                 uploadError.message?.includes('not found') ||
                 uploadError.message?.includes('permission denied') ||
                 uploadError.message?.includes('policy')) {
@@ -528,22 +544,25 @@ export function GlobalInvoiceDialog({
             }
             // Non-blocking: continue even if save fails
           } else if (uploadData) {
-            // Update invoice with PDF path
+            // Update invoice with PDF path ONLY if it doesn't exist yet
             const { error: updateError } = await supabase
               .from('invoices')
               .update({ invoice_pdf_path: filePath })
-              .eq('id', invoice.id);
+              .eq('id', invoice.id)
+              .is('invoice_pdf_path', null); // Only update if invoice_pdf_path is null
             
             if (updateError) {
               console.warn('Error updating invoice with PDF path:', updateError);
             } else {
-              console.log('PDF saved successfully:', filePath);
+              console.log('PDF saved successfully (facture is now immutable):', filePath);
             }
           }
         } catch (error) {
           console.warn('Could not save PDF to storage:', error);
           // Non-blocking: continue even if save fails
         }
+      } else {
+        console.log('PDF already exists for this invoice, not overwriting (facture is immutable)');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -633,10 +652,10 @@ export function GlobalInvoiceDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-          {generating || loadingProfile ? (
+          {generating || loadingProfile || loadingAdjustments ? (
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
-              <p className="text-slate-600">Génération du PDF en cours...</p>
+              <p className="text-slate-600">Chargement des données en cours...</p>
             </div>
           ) : pdfUrl ? (
             <iframe
