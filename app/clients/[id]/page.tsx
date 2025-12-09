@@ -29,7 +29,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
@@ -271,8 +270,6 @@ export default function ClientDetailPage() {
   const [clientSubProducts, setClientSubProducts] = useState<Record<string, ClientSubProduct>>({}); // sub_product_id -> ClientSubProduct
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<StockUpdate | null>(null);
-  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
@@ -1294,21 +1291,9 @@ export default function ClientDetailPage() {
         if (ccUpdateError) throw ccUpdateError;
       }
 
-      // Recompute client's total stock as sum of client_collections (only if stock was updated)
-      if (hasStockUpdates) {
-        const { data: sumRows, error: sumError } = await supabase
-          .from('client_collections')
-          .select('current_stock')
-          .eq('client_id', clientId);
-        if (sumError) throw sumError;
-        const total = (sumRows || []).reduce((acc: number, row: any) => acc + (row.current_stock || 0), 0);
-
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
-      }
+      // Stock is now managed at client_collections and client_sub_products level
+      // No need to update client.current_stock as it no longer exists
+      // The total stock can be computed by summing client_collections.current_stock when needed
 
       // ✅ Débloquer l'interface IMMÉDIATEMENT
       setConfirmationDialogOpen(false);
@@ -1483,13 +1468,8 @@ export default function ClientDetailPage() {
       
       if (error) throw error;
 
-      // Update client's total stock
-      const newTotal = client!.current_stock - collectionToDelete.current_stock;
-      const { error: clientUpdateError } = await supabase
-        .from('clients')
-        .update({ current_stock: Math.max(0, newTotal), updated_at: new Date().toISOString() })
-        .eq('id', clientId);
-      if (clientUpdateError) throw clientUpdateError;
+      // Stock is now managed at client_collections level
+      // No need to update client.current_stock as it no longer exists
 
       toast.success('Collection dissociée avec succès');
       setDeleteCollectionDialogOpen(false);
@@ -1664,19 +1644,17 @@ export default function ClientDetailPage() {
     }
 
     // No sub-products: proceed with normal association
-    if (!selectedCollectionHasSubProducts) {
-      // Stock initial is required (can be 0)
-      if (!associateForm.initial_stock || associateForm.initial_stock.trim() === '') {
-        toast.error('Le stock initial est obligatoire');
-        return;
-      }
-      const initialStock = parseInt(associateForm.initial_stock);
-      if (isNaN(initialStock) || initialStock < 0) {
-        toast.error('Le stock initial doit être un nombre positif ou zéro');
-        return;
-      }
-      await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
+    // Stock initial is required (can be 0)
+    if (!associateForm.initial_stock || associateForm.initial_stock.trim() === '') {
+      toast.error('Le stock initial est obligatoire');
+      return;
     }
+    const initialStock = parseInt(associateForm.initial_stock);
+    if (isNaN(initialStock) || initialStock < 0) {
+      toast.error('Le stock initial doit être un nombre positif ou zéro');
+      return;
+    }
+    await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
   };
 
   const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
@@ -1725,6 +1703,25 @@ export default function ClientDetailPage() {
     subProductsStocks: Record<string, number> | null
   ) => {
     try {
+      // Validate required fields
+      if (!clientId) {
+        toast.error('ID client manquant');
+        return;
+      }
+      if (!associateForm.collection_id) {
+        toast.error('ID collection manquant');
+        return;
+      }
+
+      console.log('performAssociation called with:', {
+        initialStock,
+        customPrice,
+        customRecommendedSalePrice,
+        subProductsStocks,
+        clientId,
+        collectionId: associateForm.collection_id
+      });
+
       // Calculate display_order: max + 1 to add at the bottom
       const maxOrder = clientCollections.length > 0 
         ? Math.max(...clientCollections.map(cc => cc.display_order || 0))
@@ -1733,7 +1730,7 @@ export default function ClientDetailPage() {
 
       const insertData: any = {
         client_id: clientId,
-        collection_id: associateForm.collection_id!,
+        collection_id: associateForm.collection_id,
         initial_stock: subProductsStocks ? 0 : initialStock,
         current_stock: subProductsStocks ? 0 : initialStock,
         display_order: newDisplayOrder
@@ -1749,12 +1746,41 @@ export default function ClientDetailPage() {
         insertData.custom_recommended_sale_price = customRecommendedSalePrice;
       }
 
+      console.log('Inserting client_collection with data:', insertData);
+
       const { data, error } = await supabase
         .from('client_collections')
         .insert([insertData])
-        .select('*, collection:collections(*)')
+        .select()
         .single();
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Error inserting client_collection:', error);
+        console.error('Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log('Successfully inserted client_collection:', data);
+
+      // Load the collection data separately if needed
+      if (data) {
+        const { data: collectionData, error: collectionError } = await supabase
+          .from('collections')
+          .select('*')
+          .eq('id', associateForm.collection_id)
+          .single();
+        
+        if (collectionError) {
+          console.error('Error loading collection:', collectionError);
+        } else {
+          console.log('Collection data loaded:', collectionData);
+        }
+      }
 
       // Créer un stock_update pour la collection lors de l'association
       const stockUpdateForCollection = {
@@ -1857,22 +1883,12 @@ export default function ClientDetailPage() {
           }
         }
 
-        // Update client's total stock
-        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + totalStock;
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
+        // Stock is now managed at client_collections and client_sub_products level
+        // No need to update client.current_stock as it no longer exists
       } else {
         // No sub-products: use the normal stock
-        // Update client's total stock
-        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + initialStock;
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
+        // Stock is now managed at client_collections level
+        // No need to update client.current_stock as it no longer exists
       }
 
       toast.success('Collection associée au client');
@@ -1889,9 +1905,23 @@ export default function ClientDetailPage() {
       setSubProductsInitialStocks({});
       setPendingAssociationData(null);
       await loadClientData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error associating collection:', err);
-      toast.error('Erreur lors de l\'association de la collection');
+      console.error('Error details:', {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+        hint: err.hint
+      });
+      if (err.code === '23505') {
+        toast.error('Cette collection est déjà associée à ce client');
+      } else if (err.code === '23503') {
+        toast.error('Erreur de référence : la collection ou le client n\'existe pas');
+      } else if (err.code === '23502') {
+        toast.error('Un champ obligatoire est manquant');
+      } else {
+        toast.error(`Erreur lors de l'association : ${err.message || JSON.stringify(err)}`);
+      }
     }
   };
 
@@ -1913,7 +1943,11 @@ export default function ClientDetailPage() {
     return null;
   }
 
-  const cardsSold = client.initial_stock - client.current_stock;
+  // Calculate total cards sold from client_collections
+  const cardsSold = clientCollections.reduce((sum, cc) => {
+    const sold = (cc.initial_stock || 0) - (cc.current_stock || 0);
+    return sum + Math.max(0, sold);
+  }, 0);
   const amountDue = cardsSold * 2;
 
   return (
@@ -2000,16 +2034,7 @@ export default function ClientDetailPage() {
                       </div>
                     )}
                     
-                    {/* Jour de fermeture */}
-                    {client.closing_day && (
-                      <div className="flex items-start gap-2">
-                        <XCircle className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-sm">Fermeture : </span>
-                          <span className="text-slate-600 text-sm">{client.closing_day}</span>
-                        </div>
-                      </div>
-                    )}
+                    {/* Jour de fermeture - removed as closing_day no longer exists */}
                   </div>
                   
                   {/* Commentaire */}
@@ -2783,15 +2808,6 @@ export default function ClientDetailPage() {
             </Card>
           )}
         </div>
-
-        {client && selectedInvoice && (
-          <InvoiceDialog
-            open={invoiceDialogOpen}
-            onOpenChange={setInvoiceDialogOpen}
-            client={client}
-            stockUpdate={selectedInvoice}
-          />
-        )}
 
         {client && (
           <StockUpdateConfirmationDialog
