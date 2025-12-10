@@ -67,9 +67,6 @@ export default function NewClientPage() {
     visit_frequency_unit: '',
     average_time_hours: '',
     average_time_minutes: '',
-    vacation_start_date: '',
-    vacation_end_date: '',
-    closing_day: '',
     payment_method_id: '',
     email: '',
     comment: ''
@@ -332,27 +329,32 @@ export default function NewClientPage() {
         }
       }
 
+      // Construire l'adresse complète (obligatoire dans la base de données)
+      const fullAddress = [formData.street_address, formData.postal_code, formData.city]
+        .filter(Boolean)
+        .join(', ') || 'Adresse non renseignée';
+
       const { data, error } = await supabase
         .from('clients')
         .insert([{
-          name: formData.name,
-          company_name: formData.company_name,
-          address: `${formData.street_address}, ${formData.postal_code} ${formData.city}`,
-          street_address: formData.street_address,
-          postal_code: formData.postal_code,
-          city: formData.city,
+          name: formData.name.trim(),
+          company_name: formData.company_name.trim() || null,
+          address: fullAddress,
+          street_address: formData.street_address || null,
+          postal_code: formData.postal_code || null,
+          city: formData.city || null,
           department: formData.department || null,
           latitude: formData.latitude,
           longitude: formData.longitude,
-          phone: formData.phone || null,
-          phone_1_info: formData.phone_1_info || null,
-          phone_2: formData.phone_2 || null,
-          phone_2_info: formData.phone_2_info || null,
-          phone_3: formData.phone_3 || null,
-          phone_3_info: formData.phone_3_info || null,
-          siret_number: formData.siret_number || null,
-          tva_number: formData.tva_number || null,
-          client_number: formData.client_number || null,
+          phone: formData.phone?.trim() || null,
+          phone_1_info: formData.phone_1_info?.trim() || null,
+          phone_2: formData.phone_2?.trim() || null,
+          phone_2_info: formData.phone_2_info?.trim() || null,
+          phone_3: formData.phone_3?.trim() || null,
+          phone_3_info: formData.phone_3_info?.trim() || null,
+          siret_number: formData.siret_number?.trim() || null,
+          tva_number: formData.tva_number?.trim() || null,
+          client_number: formData.client_number?.trim() || null,
           establishment_type_id: formData.establishment_type_id || null,
           opening_hours: openingHours,
           visit_frequency_number: visitFrequencyNumber,
@@ -362,20 +364,27 @@ export default function NewClientPage() {
           market_days_schedule: marketDaysSchedule,
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
           payment_method_id: formData.payment_method_id || null,
-          email: formData.email || null,
-          comment: formData.comment || null,
-          initial_stock: 0,
-          current_stock: 0
+          email: formData.email?.trim() || null,
+          comment: formData.comment?.trim() || null
         }])
         .select()
         .single();
 
       if (error) {
+        console.error('Erreur détaillée:', error);
         // Vérifier si c'est une erreur de numéro de client dupliqué
-        if (error.code === '23505' && error.message.includes('unique_client_number')) {
-          toast.error('Ce numéro de client existe déjà');
+        if (error.code === '23505') {
+          if (error.message.includes('unique_client_number')) {
+            toast.error('Ce numéro de client existe déjà');
+          } else if (error.message.includes('clients_name_key')) {
+            toast.error('Un client avec ce nom existe déjà');
+          } else {
+            toast.error('Une contrainte d\'unicité est violée');
+          }
+        } else if (error.code === '23502') {
+          toast.error('Un champ obligatoire est manquant');
         } else {
-          throw error;
+          toast.error(`Erreur lors de la création : ${error.message || 'Erreur inconnue'}`);
         }
         setSubmitting(false);
         return;
