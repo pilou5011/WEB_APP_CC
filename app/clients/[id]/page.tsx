@@ -1186,21 +1186,23 @@ export default function ClientDetailPage() {
             }
 
             // Create stock update for the parent collection (for invoice)
-            // Toujours créer le stock_update pour la collection parent si elle a des sous-produits
-            // (même si aucun sous-produit n'a été mis à jour, pour avoir l'historique)
-            const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
-            
-            updatesToInsert.push({
-              client_id: clientId,
-              collection_id: cc.collection_id, // Parent collection ID for invoice
-              invoice_id: invoiceData?.id || null,
-              previous_stock: totalPreviousStock,
-              counted_stock: totalCountedStock,
-              cards_sold: totalCardsSold,
-              cards_added: totalCardsAdded,
-              new_stock: totalNewStock,
-              collection_info: collectionInfo
-            });
+            // IMPORTANT: Ne créer le stock_update pour la collection parent QUE si des cartes ont été vendues
+            // (totalCardsSold > 0). Si aucune carte n'est vendue, pas de ligne dans stock_updates.
+            if (totalCardsSold > 0) {
+              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+              
+              updatesToInsert.push({
+                client_id: clientId,
+                collection_id: cc.collection_id, // Parent collection ID for invoice
+                invoice_id: invoiceData?.id || null,
+                previous_stock: totalPreviousStock,
+                counted_stock: totalCountedStock,
+                cards_sold: totalCardsSold,
+                cards_added: totalCardsAdded,
+                new_stock: totalNewStock,
+                collection_info: collectionInfo
+              });
+            }
 
             // Update parent collection stock (sum of ALL sub-products)
             ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
