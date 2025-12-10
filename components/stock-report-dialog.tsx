@@ -907,7 +907,9 @@ export function StockReportDialog({
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
 
-      // Save PDF to storage if it doesn't exist yet
+      // Save PDF to storage ONLY if it doesn't exist yet
+      // IMPORTANT: Documents are immutable - never overwrite or update existing PDFs
+      // This ensures that once a document is generated, it remains unchanged forever
       if (invoice && !invoice.stock_report_pdf_path) {
         try {
           const filePath = `invoices/${invoice.id}/stock_report_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
@@ -916,12 +918,16 @@ export function StockReportDialog({
             .from('documents')
             .upload(filePath, pdfBlobData, {
               contentType: 'application/pdf',
-              upsert: false // Don't overwrite if exists
+              upsert: false // Never overwrite - documents are immutable
             });
 
           if (uploadError) {
-            // Check if error is due to missing bucket or permissions
-            if (uploadError.message?.includes('Bucket not found') || 
+            // Check if error is due to file already existing (this is expected if PDF was already saved)
+            if (uploadError.message?.includes('already exists') || 
+                uploadError.message?.includes('duplicate') ||
+                uploadError.message?.includes('409')) {
+              console.log('PDF already exists, not overwriting (document is immutable):', filePath);
+            } else if (uploadError.message?.includes('Bucket not found') || 
                 uploadError.message?.includes('not found') ||
                 uploadError.message?.includes('permission denied') ||
                 uploadError.message?.includes('policy')) {
@@ -941,22 +947,25 @@ export function StockReportDialog({
             }
             // Non-blocking: continue even if save fails
           } else if (uploadData) {
-            // Update invoice with PDF path
+            // Update invoice with PDF path ONLY if it doesn't exist yet
             const { error: updateError } = await supabase
               .from('invoices')
               .update({ stock_report_pdf_path: filePath })
-              .eq('id', invoice.id);
+              .eq('id', invoice.id)
+              .is('stock_report_pdf_path', null); // Only update if stock_report_pdf_path is null
             
             if (updateError) {
               console.warn('Error updating invoice with PDF path:', updateError);
             } else {
-              console.log('PDF saved successfully:', filePath);
+              console.log('PDF saved successfully (document is now immutable):', filePath);
             }
           }
         } catch (error) {
           console.warn('Could not save PDF to storage:', error);
           // Non-blocking: continue even if save fails
         }
+      } else {
+        console.log('PDF already exists for this invoice, not overwriting (document is immutable)');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
