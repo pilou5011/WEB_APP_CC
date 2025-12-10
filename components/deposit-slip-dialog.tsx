@@ -55,18 +55,22 @@ export function DepositSlipDialog({
     };
   }, [pdfUrl]);
 
-  // Load stored PDF or generate new one when dialog opens and data is loaded
+  // Load stored PDF when dialog opens and data is loaded
+  // IMPORTANT: PDFs are now generated automatically when stock is updated
+  // This dialog only loads existing PDFs, it never generates new ones
   useEffect(() => {
     if (open && !loadingProfile && !pdfGenerated && !needsInfoInput) {
       setPdfGenerated(true);
-      loadStoredPDFOrGenerate();
+      loadStoredPDF();
     }
   }, [open, loadingProfile, pdfGenerated, needsInfoInput]);
 
-  const loadStoredPDFOrGenerate = async () => {
-    // First, try to load stored PDF if it exists
+  const loadStoredPDF = async () => {
+    // Load stored PDF if it exists
+    // PDFs are now generated automatically when stock is updated, so we only load existing ones
     if (invoice?.deposit_slip_pdf_path) {
       try {
+        setGenerating(true);
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(invoice.deposit_slip_pdf_path, 3600); // 1 hour expiry
@@ -83,14 +87,18 @@ export function DepositSlipDialog({
             return; // Successfully loaded stored PDF
           }
         }
+        throw new Error('Could not load PDF from storage');
       } catch (error) {
-        console.warn('Could not load stored PDF, will generate new one:', error);
-        // Fall through to generate new PDF
+        console.error('Could not load stored PDF:', error);
+        toast.error('Impossible de charger le bon de dépôt. Veuillez réessayer plus tard.');
+        setGenerating(false);
       }
+    } else {
+      // No PDF exists yet - this should not happen if stock was updated correctly
+      console.warn('No PDF path found for deposit slip:', invoice?.id);
+      toast.warning('Le bon de dépôt n\'a pas encore été généré. Veuillez mettre à jour le stock pour générer les documents.');
+      setGenerating(false);
     }
-    
-    // If no stored PDF or loading failed, generate new one
-    generatePDFPreview();
   };
 
   const loadUserProfile = async () => {
@@ -460,7 +468,9 @@ export function DepositSlipDialog({
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
 
-      // Save PDF to storage if it doesn't exist yet
+      // Save PDF to storage ONLY if it doesn't exist yet
+      // IMPORTANT: Documents are immutable - never overwrite or update existing PDFs
+      // This ensures that once a document is generated, it remains unchanged forever
       if (invoice && !invoice.deposit_slip_pdf_path) {
         try {
           const filePath = `invoices/${invoice.id}/deposit_slip_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
@@ -469,12 +479,16 @@ export function DepositSlipDialog({
             .from('documents')
             .upload(filePath, pdfBlobData, {
               contentType: 'application/pdf',
-              upsert: false // Don't overwrite if exists
+              upsert: false // Never overwrite - documents are immutable
             });
 
           if (uploadError) {
-            // Check if error is due to missing bucket or permissions
-            if (uploadError.message?.includes('Bucket not found') || 
+            // Check if error is due to file already existing (this is expected if PDF was already saved)
+            if (uploadError.message?.includes('already exists') || 
+                uploadError.message?.includes('duplicate') ||
+                uploadError.message?.includes('409')) {
+              console.log('PDF already exists, not overwriting (document is immutable):', filePath);
+            } else if (uploadError.message?.includes('Bucket not found') || 
                 uploadError.message?.includes('not found') ||
                 uploadError.message?.includes('permission denied') ||
                 uploadError.message?.includes('policy')) {
@@ -494,22 +508,25 @@ export function DepositSlipDialog({
             }
             // Non-blocking: continue even if save fails
           } else if (uploadData) {
-            // Update invoice with PDF path
+            // Update invoice with PDF path ONLY if it doesn't exist yet
             const { error: updateError } = await supabase
               .from('invoices')
               .update({ deposit_slip_pdf_path: filePath })
-              .eq('id', invoice.id);
+              .eq('id', invoice.id)
+              .is('deposit_slip_pdf_path', null); // Only update if deposit_slip_pdf_path is null
             
             if (updateError) {
               console.warn('Error updating invoice with PDF path:', updateError);
             } else {
-              console.log('PDF saved successfully:', filePath);
+              console.log('PDF saved successfully (document is now immutable):', filePath);
             }
           }
         } catch (error) {
           console.warn('Could not save PDF to storage:', error);
           // Non-blocking: continue even if save fails
         }
+      } else {
+        console.log('PDF already exists for this invoice, not overwriting (document is immutable)');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);

@@ -75,19 +75,22 @@ export function GlobalInvoiceDialog({
     };
   }, [open, invoice.id]);
 
-  // Load stored PDF or generate new one when dialog opens and data is loaded
-  // IMPORTANT: Wait for both profile AND adjustments to be loaded before generating PDF
+  // Load stored PDF when dialog opens and data is loaded
+  // IMPORTANT: PDFs are now generated automatically when stock is updated
+  // This dialog only loads existing PDFs, it never generates new ones
   useEffect(() => {
     if (open && !loadingProfile && !loadingAdjustments && !pdfGenerated && adjustments !== null) {
       setPdfGenerated(true);
-      loadStoredPDFOrGenerate();
+      loadStoredPDF();
     }
   }, [open, loadingProfile, loadingAdjustments, pdfGenerated, adjustments]);
 
-  const loadStoredPDFOrGenerate = async () => {
-    // First, try to load stored PDF if it exists
+  const loadStoredPDF = async () => {
+    // Load stored PDF if it exists
+    // PDFs are now generated automatically when stock is updated, so we only load existing ones
     if (invoice.invoice_pdf_path) {
       try {
+        setGenerating(true);
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(invoice.invoice_pdf_path, 3600); // 1 hour expiry
@@ -104,14 +107,18 @@ export function GlobalInvoiceDialog({
             return; // Successfully loaded stored PDF
           }
         }
+        throw new Error('Could not load PDF from storage');
       } catch (error) {
-        console.warn('Could not load stored PDF, will generate new one:', error);
-        // Fall through to generate new PDF
+        console.error('Could not load stored PDF:', error);
+        toast.error('Impossible de charger la facture. Veuillez réessayer plus tard.');
+        setGenerating(false);
       }
+    } else {
+      // No PDF exists yet - this should not happen if stock was updated correctly
+      console.warn('No PDF path found for invoice:', invoice.id);
+      toast.warning('La facture n\'a pas encore été générée. Veuillez mettre à jour le stock pour générer les documents.');
+      setGenerating(false);
     }
-    
-    // If no stored PDF or loading failed, generate new one
-    generatePDFPreview();
   };
 
   const loadUserProfile = async () => {

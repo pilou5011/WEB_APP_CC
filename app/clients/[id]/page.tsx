@@ -1186,21 +1186,23 @@ export default function ClientDetailPage() {
             }
 
             // Create stock update for the parent collection (for invoice)
-            // Toujours créer le stock_update pour la collection parent si elle a des sous-produits
-            // (même si aucun sous-produit n'a été mis à jour, pour avoir l'historique)
-            const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
-            
-            updatesToInsert.push({
-              client_id: clientId,
-              collection_id: cc.collection_id, // Parent collection ID for invoice
-              invoice_id: invoiceData?.id || null,
-              previous_stock: totalPreviousStock,
-              counted_stock: totalCountedStock,
-              cards_sold: totalCardsSold,
-              cards_added: totalCardsAdded,
-              new_stock: totalNewStock,
-              collection_info: collectionInfo
-            });
+            // IMPORTANT: Ne créer le stock_update pour la collection parent QUE si des cartes ont été vendues
+            // (totalCardsSold > 0). Si aucune carte n'est vendue, pas de ligne dans stock_updates.
+            if (totalCardsSold > 0) {
+              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+              
+              updatesToInsert.push({
+                client_id: clientId,
+                collection_id: cc.collection_id, // Parent collection ID for invoice
+                invoice_id: invoiceData?.id || null,
+                previous_stock: totalPreviousStock,
+                counted_stock: totalCountedStock,
+                cards_sold: totalCardsSold,
+                cards_added: totalCardsAdded,
+                new_stock: totalNewStock,
+                collection_info: collectionInfo
+              });
+            }
 
             // Update parent collection stock (sum of ALL sub-products)
             ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
@@ -1270,6 +1272,59 @@ export default function ClientDetailPage() {
             .from('invoice_adjustments')
             .insert(rows);
           if (adjError) throw adjError;
+        }
+      }
+
+      // Générer et sauvegarder les 3 PDFs (facture, relevé de stock, bon de dépôt)
+      // après que tous les stock_updates et adjustments ont été insérés
+      if (invoiceData) {
+        try {
+          // Import dynamique pour éviter de charger les dépendances lourdes si pas nécessaire
+          const pdfGenerators = await import('@/lib/pdf-generators');
+          const { generateAndSaveInvoicePDF, generateAndSaveStockReportPDF, generateAndSaveDepositSlipPDF } = pdfGenerators;
+          
+          // Charger les données nécessaires pour la génération des PDFs
+          const { data: userProfile } = await supabase
+            .from('user_profile')
+            .select('*')
+            .limit(1)
+            .maybeSingle();
+
+          const { data: invoiceAdjustments } = await supabase
+            .from('invoice_adjustments')
+            .select('*')
+            .eq('invoice_id', invoiceData.id);
+
+          // Générer les 3 PDFs en parallèle
+          await Promise.all([
+            generateAndSaveInvoicePDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              collections: allCollections,
+              stockUpdates: insertedStockUpdates,
+              adjustments: invoiceAdjustments || [],
+              userProfile: userProfile || null
+            }),
+            generateAndSaveStockReportPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            }),
+            generateAndSaveDepositSlipPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            })
+          ]);
+
+          console.log('All PDFs generated and saved successfully');
+        } catch (pdfError) {
+          console.error('Error generating PDFs:', pdfError);
+          // Ne pas bloquer le processus si la génération des PDFs échoue
+          toast.warning('Les documents PDF n\'ont pas pu être générés automatiquement. Vous pourrez les générer manuellement depuis l\'historique.');
         }
       }
 
