@@ -55,18 +55,22 @@ export function DepositSlipDialog({
     };
   }, [pdfUrl]);
 
-  // Load stored PDF or generate new one when dialog opens and data is loaded
+  // Load stored PDF when dialog opens and data is loaded
+  // IMPORTANT: PDFs are now generated automatically when stock is updated
+  // This dialog only loads existing PDFs, it never generates new ones
   useEffect(() => {
     if (open && !loadingProfile && !pdfGenerated && !needsInfoInput) {
       setPdfGenerated(true);
-      loadStoredPDFOrGenerate();
+      loadStoredPDF();
     }
   }, [open, loadingProfile, pdfGenerated, needsInfoInput]);
 
-  const loadStoredPDFOrGenerate = async () => {
-    // First, try to load stored PDF if it exists
+  const loadStoredPDF = async () => {
+    // Load stored PDF if it exists
+    // PDFs are now generated automatically when stock is updated, so we only load existing ones
     if (invoice?.deposit_slip_pdf_path) {
       try {
+        setGenerating(true);
         const { data, error } = await supabase.storage
           .from('documents')
           .createSignedUrl(invoice.deposit_slip_pdf_path, 3600); // 1 hour expiry
@@ -83,14 +87,18 @@ export function DepositSlipDialog({
             return; // Successfully loaded stored PDF
           }
         }
+        throw new Error('Could not load PDF from storage');
       } catch (error) {
-        console.warn('Could not load stored PDF, will generate new one:', error);
-        // Fall through to generate new PDF
+        console.error('Could not load stored PDF:', error);
+        toast.error('Impossible de charger le bon de dépôt. Veuillez réessayer plus tard.');
+        setGenerating(false);
       }
+    } else {
+      // No PDF exists yet - this should not happen if stock was updated correctly
+      console.warn('No PDF path found for deposit slip:', invoice?.id);
+      toast.warning('Le bon de dépôt n\'a pas encore été généré. Veuillez mettre à jour le stock pour générer les documents.');
+      setGenerating(false);
     }
-    
-    // If no stored PDF or loading failed, generate new one
-    generatePDFPreview();
   };
 
   const loadUserProfile = async () => {

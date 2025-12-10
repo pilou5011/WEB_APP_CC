@@ -1275,6 +1275,59 @@ export default function ClientDetailPage() {
         }
       }
 
+      // Générer et sauvegarder les 3 PDFs (facture, relevé de stock, bon de dépôt)
+      // après que tous les stock_updates et adjustments ont été insérés
+      if (invoiceData) {
+        try {
+          // Import dynamique pour éviter de charger les dépendances lourdes si pas nécessaire
+          const pdfGenerators = await import('@/lib/pdf-generators');
+          const { generateAndSaveInvoicePDF, generateAndSaveStockReportPDF, generateAndSaveDepositSlipPDF } = pdfGenerators;
+          
+          // Charger les données nécessaires pour la génération des PDFs
+          const { data: userProfile } = await supabase
+            .from('user_profile')
+            .select('*')
+            .limit(1)
+            .maybeSingle();
+
+          const { data: invoiceAdjustments } = await supabase
+            .from('invoice_adjustments')
+            .select('*')
+            .eq('invoice_id', invoiceData.id);
+
+          // Générer les 3 PDFs en parallèle
+          await Promise.all([
+            generateAndSaveInvoicePDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              collections: allCollections,
+              stockUpdates: insertedStockUpdates,
+              adjustments: invoiceAdjustments || [],
+              userProfile: userProfile || null
+            }),
+            generateAndSaveStockReportPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            }),
+            generateAndSaveDepositSlipPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            })
+          ]);
+
+          console.log('All PDFs generated and saved successfully');
+        } catch (pdfError) {
+          console.error('Error generating PDFs:', pdfError);
+          // Ne pas bloquer le processus si la génération des PDFs échoue
+          toast.warning('Les documents PDF n\'ont pas pu être générés automatiquement. Vous pourrez les générer manuellement depuis l\'historique.');
+        }
+      }
+
       // Apply per-sub-product stock updates first
       for (const upd of cspUpdates) {
         const { error: cspUpdateError } = await supabase
