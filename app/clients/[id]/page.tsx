@@ -3071,6 +3071,7 @@ export default function ClientDetailPage() {
                 : []
             }
             invoice={selectedInvoiceForDepositSlip}
+            generateMode={!selectedInvoiceForDepositSlip} // Mode génération si pas d'invoice sélectionnée (bouton "Générer un bon de dépôt")
           />
         )}
 

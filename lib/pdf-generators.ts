@@ -1038,11 +1038,32 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .limit(1)
       .maybeSingle();
 
-    // Get collection infos from stock updates
+    // Charger les collection_info depuis la dernière mise à jour de stock de chaque collection
+    // (même logique que dans le dialog "Générer un bon de dépôt")
+    const { data: allStockUpdates } = await supabase
+      .from('stock_updates')
+      .select('*')
+      .eq('client_id', client.id)
+      .order('created_at', { ascending: false });
+
+    // Créer un map pour stocker la dernière collection_info de chaque collection
     const collectionInfos: Record<string, string> = {};
-    stockUpdates.forEach((update) => {
-      if (update.collection_id && update.collection_info) {
-        collectionInfos[update.collection_id] = update.collection_info;
+    const processedCollections = new Set<string>();
+
+    // Parcourir les stock_updates triés par date décroissante
+    // Pour chaque collection, prendre la première occurrence (la plus récente)
+    // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+    (allStockUpdates || []).forEach((update: StockUpdate) => {
+      if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
+        collectionInfos[update.collection_id] = update.collection_info || '';
+        processedCollections.add(update.collection_id);
+      }
+    });
+
+    // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
+    clientCollections.forEach(cc => {
+      if (cc.collection_id && !collectionInfos[cc.collection_id]) {
+        collectionInfos[cc.collection_id] = '';
       }
     });
 
