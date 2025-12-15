@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -37,7 +37,8 @@ import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
 import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -66,7 +67,9 @@ function SortableCollectionRow({
   setPerSubProductForm,
   onEditPrice,
   onDelete,
-  subProducts
+  subProducts,
+  onAdjustStock,
+  clientId
 }: {
   cc: ClientCollection & { collection?: Collection };
   effectivePrice: number;
@@ -86,6 +89,8 @@ function SortableCollectionRow({
   onEditPrice: () => void;
   onDelete: () => void;
   subProducts: Record<string, SubProduct[]>;
+  onAdjustStock: () => void;
+  clientId: string;
 }) {
   const {
     attributes,
@@ -121,6 +126,19 @@ function SortableCollectionRow({
             {cc.collection?.name || 'Collection'}
           </p>
         </div>
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center w-[5%]">
+        {!hasSubProducts && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAdjustStock}
+            className="h-8 w-8 p-0"
+            title="Ajuster le stock"
+          >
+            <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+          </Button>
+        )}
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
         {hasSubProducts ? (
@@ -318,6 +336,23 @@ export default function ClientDetailPage() {
     custom_price: ''
   });
   const [updatingPrice, setUpdatingPrice] = useState(false);
+
+  // Adjust stock dialog
+  const [adjustStockDialogOpen, setAdjustStockDialogOpen] = useState(false);
+  const [itemToAdjust, setItemToAdjust] = useState<{
+    type: 'collection' | 'sub-product';
+    id: string;
+    name: string;
+    currentStock: number;
+    collectionId: string | null;
+  } | null>(null);
+  const [adjustStockForm, setAdjustStockForm] = useState<{
+    newStock: string;
+  }>({
+    newStock: ''
+  });
+  const [adjustingStock, setAdjustingStock] = useState(false);
+  const [confirmAdjustDialogOpen, setConfirmAdjustDialogOpen] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added, collection_info } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>>({});
@@ -1595,6 +1630,242 @@ export default function ClientDetailPage() {
     }
   };
 
+  const handleAdjustStockClick = async (type: 'collection' | 'sub-product', id: string) => {
+    try {
+      if (type === 'collection') {
+        const cc = clientCollections.find(c => c.id === id);
+        if (!cc) {
+          toast.error('Collection non trouvée');
+          return;
+        }
+        setItemToAdjust({
+          type: 'collection',
+          id: cc.id,
+          name: cc.collection?.name || 'Collection',
+          currentStock: cc.current_stock || 0,
+          collectionId: cc.collection_id
+        });
+      } else if (type === 'sub-product') {
+        const sp = Object.values(subProducts).flat().find(s => s.id === id);
+        if (!sp) {
+          toast.error('Sous-produit non trouvé');
+          return;
+        }
+        const csp = clientSubProducts[sp.id];
+        const currentStock = csp ? (csp.current_stock || 0) : 0;
+        setItemToAdjust({
+          type: 'sub-product',
+          id: sp.id,
+          name: sp.name,
+          currentStock,
+          collectionId: sp.collection_id
+        });
+      }
+      setAdjustStockForm({ newStock: '' });
+      setAdjustStockDialogOpen(true);
+    } catch (error) {
+      console.error('Error loading item for adjustment:', error);
+      toast.error('Erreur lors du chargement des données');
+    }
+  };
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemToAdjust || !adjustStockForm.newStock || adjustStockForm.newStock === '') {
+      toast.error('Veuillez saisir un nouveau stock');
+      return;
+    }
+
+    const newStockValue = parseInt(adjustStockForm.newStock);
+    if (isNaN(newStockValue) || newStockValue < 0) {
+      toast.error('Le nouveau stock doit être un nombre positif');
+      return;
+    }
+
+    if (newStockValue === itemToAdjust.currentStock) {
+      toast.error('Le nouveau stock est identique au stock actuel');
+      return;
+    }
+
+    setConfirmAdjustDialogOpen(true);
+  };
+
+  const handleConfirmAdjustStock = async () => {
+    if (!itemToAdjust || !adjustStockForm.newStock || adjustStockForm.newStock === '') {
+      return;
+    }
+
+    const newStockValue = parseInt(adjustStockForm.newStock);
+    if (isNaN(newStockValue) || newStockValue < 0) {
+      return;
+    }
+
+    setAdjustingStock(true);
+    setConfirmAdjustDialogOpen(false);
+
+    try {
+      if (itemToAdjust.type === 'collection') {
+        // Update client collection stock
+        const { error: updateError } = await supabase
+          .from('client_collections')
+          .update({ current_stock: newStockValue })
+          .eq('id', itemToAdjust.id)
+          .eq('client_id', clientId);
+
+        if (updateError) throw updateError;
+
+        // Create stock_update record with null invoice_id
+        const { error: stockUpdateError } = await supabase
+          .from('stock_updates')
+          .insert({
+            client_id: clientId,
+            collection_id: itemToAdjust.collectionId,
+            sub_product_id: null,
+            invoice_id: null,
+            previous_stock: itemToAdjust.currentStock,
+            counted_stock: newStockValue,
+            cards_sold: 0,
+            cards_added: newStockValue - itemToAdjust.currentStock,
+            new_stock: newStockValue
+          });
+
+        if (stockUpdateError) throw stockUpdateError;
+      } else if (itemToAdjust.type === 'sub-product') {
+        // Update or create client sub-product stock
+        const { data: existingCSP, error: checkError } = await supabase
+          .from('client_sub_products')
+          .select('*')
+          .eq('sub_product_id', itemToAdjust.id)
+          .eq('client_id', clientId)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        if (existingCSP) {
+          const { error: updateError } = await supabase
+            .from('client_sub_products')
+            .update({ current_stock: newStockValue })
+            .eq('id', existingCSP.id);
+
+          if (updateError) throw updateError;
+        } else {
+          // Create new client_sub_product
+          const { error: createError } = await supabase
+            .from('client_sub_products')
+            .insert({
+              client_id: clientId,
+              sub_product_id: itemToAdjust.id,
+              initial_stock: newStockValue,
+              current_stock: newStockValue
+            });
+
+          if (createError) throw createError;
+        }
+
+        // Create stock_update record for sub-product with null invoice_id
+        const { error: stockUpdateError } = await supabase
+          .from('stock_updates')
+          .insert({
+            client_id: clientId,
+            collection_id: null,
+            sub_product_id: itemToAdjust.id,
+            invoice_id: null,
+            previous_stock: itemToAdjust.currentStock,
+            counted_stock: newStockValue,
+            cards_sold: 0,
+            cards_added: newStockValue - itemToAdjust.currentStock,
+            new_stock: newStockValue
+          });
+
+        if (stockUpdateError) throw stockUpdateError;
+
+        // Update parent collection stock
+        if (itemToAdjust.collectionId) {
+          // Get all sub-products for this collection
+          const { data: allSubProducts, error: spError } = await supabase
+            .from('sub_products')
+            .select('id')
+            .eq('collection_id', itemToAdjust.collectionId);
+
+          if (spError) throw spError;
+
+          if (allSubProducts && allSubProducts.length > 0) {
+            const subProductIds = allSubProducts.map(sp => sp.id);
+
+            // Get all client_sub_products for these sub-products
+            const { data: allClientSubProducts, error: cspError } = await supabase
+              .from('client_sub_products')
+              .select('sub_product_id, current_stock')
+              .eq('client_id', clientId)
+              .in('sub_product_id', subProductIds);
+
+            if (cspError) throw cspError;
+
+            // Calculate total stock for parent collection
+            let parentStock = 0;
+            (allClientSubProducts || []).forEach(csp => {
+              if (csp.sub_product_id === itemToAdjust.id) {
+                parentStock += newStockValue;
+              } else {
+                parentStock += csp.current_stock || 0;
+              }
+            });
+
+            // Get current client collection
+            const { data: clientCollection, error: ccError } = await supabase
+              .from('client_collections')
+              .select('*')
+              .eq('client_id', clientId)
+              .eq('collection_id', itemToAdjust.collectionId)
+              .maybeSingle();
+
+            if (ccError) throw ccError;
+
+            if (clientCollection) {
+              const previousParentStock = clientCollection.current_stock || 0;
+
+              // Update parent collection stock
+              const { error: updateParentError } = await supabase
+                .from('client_collections')
+                .update({ current_stock: parentStock })
+                .eq('id', clientCollection.id);
+
+              if (updateParentError) throw updateParentError;
+
+              // Create stock_update record for parent collection with null invoice_id
+              const { error: parentStockUpdateError } = await supabase
+                .from('stock_updates')
+                .insert({
+                  client_id: clientId,
+                  collection_id: itemToAdjust.collectionId,
+                  sub_product_id: null,
+                  invoice_id: null,
+                  previous_stock: previousParentStock,
+                  counted_stock: parentStock,
+                  cards_sold: 0,
+                  cards_added: parentStock - previousParentStock,
+                  new_stock: parentStock
+                });
+
+              if (parentStockUpdateError) throw parentStockUpdateError;
+            }
+          }
+        }
+      }
+
+      toast.success('Stock ajusté avec succès');
+      setAdjustStockDialogOpen(false);
+      setItemToAdjust(null);
+      setAdjustStockForm({ newStock: '' });
+      await loadClientData();
+    } catch (error) {
+      console.error('Error adjusting stock:', error);
+      toast.error('Erreur lors de l\'ajustement du stock');
+    } finally {
+      setAdjustingStock(false);
+    }
+  };
+
   const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const name = adjustmentForm.operation_name.trim();
@@ -2380,6 +2651,7 @@ export default function ClientDetailPage() {
                         <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                           <TableRow className="bg-slate-50">
                             <TableHead className="w-[15%] font-semibold">Collection</TableHead>
+                            <TableHead className="w-[5%] font-semibold"></TableHead>
                             <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
                             <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
                             <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
@@ -2440,6 +2712,8 @@ export default function ClientDetailPage() {
                               onEditPrice={() => handleEditPriceClick(cc)}
                               onDelete={() => handleDeleteCollectionClick(cc)}
                               subProducts={subProducts}
+                              onAdjustStock={() => handleAdjustStockClick('collection', cc.id)}
+                              clientId={clientId}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && collectionSubProducts.map((sp) => {
@@ -2452,6 +2726,17 @@ export default function ClientDetailPage() {
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
                                   <TableCell className="align-middle py-2 pl-8">
                                     <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center w-[5%]">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleAdjustStockClick('sub-product', sp.id)}
+                                      className="h-8 w-8 p-0"
+                                      title="Ajuster le stock"
+                                    >
+                                      <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+                                    </Button>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center">
                                     <p className="text-xs text-slate-500">{currentStock}</p>
@@ -2998,6 +3283,102 @@ export default function ClientDetailPage() {
               </DialogFooter>
             </form>
           </DialogContent>
+        </Dialog>
+
+        {/* Adjust Stock Dialog */}
+        <Dialog open={adjustStockDialogOpen} onOpenChange={setAdjustStockDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleAdjustStockSubmit}>
+              <DialogHeader>
+                <DialogTitle>Ajuster le stock</DialogTitle>
+                <DialogDescription>
+                  Ajustez le stock de "{itemToAdjust?.name}" pour ce client
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-4">
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <p className="text-sm text-slate-600">
+                    Stock actuel : 
+                    <span className="font-semibold text-slate-900 ml-2">
+                      {itemToAdjust?.currentStock}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label htmlFor="adjust-new-stock">Nouveau stock</Label>
+                  <Input
+                    id="adjust-new-stock"
+                    type="number"
+                    min="0"
+                    value={adjustStockForm.newStock}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setAdjustStockForm({ newStock: value });
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Entrez le nouveau stock"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    required
+                  />
+                  
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAdjustStockDialogOpen(false)}
+                  disabled={adjustingStock}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={adjustingStock || !adjustStockForm.newStock || adjustStockForm.newStock === '' || parseInt(adjustStockForm.newStock) === itemToAdjust?.currentStock}>
+                  {adjustingStock ? 'Ajustement...' : 'Ajuster le stock'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirm Adjust Stock Dialog */}
+        <Dialog open={confirmAdjustDialogOpen} onOpenChange={setConfirmAdjustDialogOpen}>
+          <DialogPortal>
+            <DialogOverlay className="fixed inset-0 z-50 bg-slate-500/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <DialogPrimitive.Content
+              className={cn(
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg"
+              )}
+            >
+              <DialogHeader>
+                <DialogTitle>Êtes-vous sûr ?</DialogTitle>
+                <DialogDescription>
+                  Cette action ne peut pas être annulée. Cela ajustera le stock de <strong>"{itemToAdjust?.name}"</strong> de <strong>{itemToAdjust?.currentStock}</strong> à <strong>{adjustStockForm.newStock}</strong>.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmAdjustDialogOpen(false)}
+                  disabled={adjustingStock}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmAdjustStock}
+                  disabled={adjustingStock}
+                >
+                  {adjustingStock ? 'Ajustement en cours...' : 'Ajuster'}
+                </Button>
+              </DialogFooter>
+            </DialogPrimitive.Content>
+          </DialogPortal>
         </Dialog>
 
         {/* Sub-Products Initial Stocks Dialog */}
