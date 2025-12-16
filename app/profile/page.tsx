@@ -20,6 +20,7 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     company_name: '',
+    company_name_short: '',
     first_name: '',
     last_name: '',
     street_address: '',
@@ -54,6 +55,7 @@ export default function ProfilePage() {
         setProfile(data);
         setFormData({
           company_name: data.company_name || '',
+          company_name_short: data.company_name_short || '',
           first_name: data.first_name || '',
           last_name: data.last_name || '',
           street_address: data.street_address || '',
@@ -104,6 +106,7 @@ export default function ProfilePage() {
 
       const profileData = {
         company_name: formData.company_name || null,
+        company_name_short: formData.company_name_short || null,
         first_name: formData.first_name || null,
         last_name: formData.last_name || null,
         street_address: formData.street_address || null,
@@ -399,6 +402,19 @@ export default function ProfilePage() {
                     placeholder="Ex: Ma Société SARL"
                     className="mt-1.5"
                   />
+                <div>
+                  <Label htmlFor="company_name_short">Nom commercial (pour les emails) *</Label>
+                  <Input
+                    id="company_name_short"
+                    value={formData.company_name_short}
+                    onChange={(e) => setFormData({ ...formData, company_name_short: e.target.value })}
+                    placeholder="Ex: Ma Société (version courte)"
+                    className="mt-1.5"
+                    required
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Ce nom sera utilisé dans l'envoi des factures par email</p>
+                </div>
+
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

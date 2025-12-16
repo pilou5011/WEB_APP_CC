@@ -151,6 +151,7 @@ export type ClientCollection = {
 export type UserProfile = {
   id: string;
   company_name: string | null;
+  company_name_short: string | null;
   first_name: string | null;
   last_name: string | null;
   street_address: string | null;

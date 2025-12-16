@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     const resend = new Resend(process.env.RESEND_API_KEY);
     
-    const { clientEmail, clientName, pdfBase64, fileName } = await request.json();
+    const { clientEmail, clientName, pdfBase64, fileName, invoiceDate, senderEmail, senderName, senderCompanyName, senderPhone } = await request.json();
 
     // Validation
     if (!clientEmail || !pdfBase64) {
@@ -25,21 +25,26 @@ export async function POST(request: NextRequest) {
 
     // Envoyer l'email
     const { data, error } = await resend.emails.send({
-      from: 'Cartes de Vœux <onboarding@resend.dev>', // Email de test Resend
+      from: `${senderCompanyName || 'Dépôt-vente'} <contact@gastonstock.com>`, // Domaine générique d'envoi
       to: [clientEmail],
-      subject: `Facture - ${clientName}`,
+      replyTo: senderEmail || undefined, // Les réponses vont à l'email du profil
+      subject: `Facture - ${senderCompanyName || 'Dépôt-vente'} du ${invoiceDate || '___/___/____'}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #334155;">Bonjour,</h2>
-          <p style="color: #475569; line-height: 1.6;">
-            Veuillez trouver ci-joint votre facture pour les cartes de vœux en dépôt-vente.
+        <div style="font-family: Arial, sans-serif; width: 100%; text-align: left; color: #0f172a; line-height: 1.6;">
+          <p style="margin: 0 0 12px 0;">Bonjour,</p>
+          <p style="margin: 0 0 12px 0;">
+            Vous trouverez ci-joint votre facture du ${invoiceDate || '___/___/____'}.
           </p>
-          <p style="color: #475569; line-height: 1.6;">
-            N'hésitez pas à nous contacter si vous avez des questions.
+          <p style="margin: 0 0 12px 0;">
+            Pour toute question ou précision, merci de répondre directement à cette adresse : ${
+              senderEmail ? `<strong>${senderEmail}</strong>` : 'votre interlocuteur habituel'
+            }.
           </p>
-          <p style="color: #475569; line-height: 1.6;">
-            Cordialement,<br/>
-            <strong>L'équipe Cartes de Vœux</strong>
+            Bien cordialement,
+            <br/>
+            ${senderName || ''}${senderCompanyName ? ` - ${senderCompanyName}` : ''}${
+              senderPhone ? `<br/>${senderPhone}` : ''
+            }
           </p>
         </div>
       `,
