@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -34,6 +35,7 @@ import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { StockReportDialog } from '@/components/stock-report-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { CreditNoteDialog } from '@/components/credit-note-dialog';
 import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -353,6 +355,26 @@ export default function ClientDetailPage() {
   });
   const [adjustingStock, setAdjustingStock] = useState(false);
   const [confirmAdjustDialogOpen, setConfirmAdjustDialogOpen] = useState(false);
+
+  // Credit note dialog
+  const [creditNoteDialogOpen, setCreditNoteDialogOpen] = useState(false);
+  const [creditNoteForm, setCreditNoteForm] = useState<{
+    invoice_id: string;
+    operation_name: string;
+    quantity: string;
+    unit_price: string;
+  }>({
+    invoice_id: '',
+    operation_name: '',
+    quantity: '',
+    unit_price: ''
+  });
+  const [creditNoteConfirmDialogOpen, setCreditNoteConfirmDialogOpen] = useState(false);
+  const [creatingCreditNote, setCreatingCreditNote] = useState(false);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [invoicePopoverOpen, setInvoicePopoverOpen] = useState(false);
+  const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
+  const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added, collection_info } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>>({});
@@ -796,6 +818,16 @@ export default function ClientDetailPage() {
 
       if (invoicesError) throw invoicesError;
       setGlobalInvoices(invoicesData || []);
+
+      // Load credit notes
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (creditNotesError) throw creditNotesError;
+      setCreditNotes(creditNotesData || []);
       
       // Calculate last visit date (date of last invoice)
       if (invoicesData && invoicesData.length > 0) {
@@ -1863,6 +1895,114 @@ export default function ClientDetailPage() {
       toast.error('Erreur lors de l\'ajustement du stock');
     } finally {
       setAdjustingStock(false);
+    }
+  };
+
+  const handleCreditNoteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!creditNoteForm.invoice_id || !creditNoteForm.operation_name || !creditNoteForm.quantity || !creditNoteForm.unit_price) {
+      toast.error('Veuillez remplir tous les champs');
+      return;
+    }
+
+    const quantity = parseInt(creditNoteForm.quantity);
+    const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
+
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('La quantité doit être un nombre entier positif');
+      return;
+    }
+
+    if (isNaN(unitPrice) || unitPrice <= 0) {
+      toast.error('Le prix unitaire doit être un nombre positif');
+      return;
+    }
+
+    setCreditNoteConfirmDialogOpen(true);
+  };
+
+  const handleCreateCreditNote = async () => {
+    if (!creditNoteForm.invoice_id || !creditNoteForm.operation_name || !creditNoteForm.quantity || !creditNoteForm.unit_price) {
+      return;
+    }
+
+    setCreatingCreditNote(true);
+    try {
+      const quantity = parseInt(creditNoteForm.quantity);
+      const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
+      const totalAmount = quantity * unitPrice;
+
+      // Create credit note
+      const { data: creditNote, error: creditNoteError } = await supabase
+        .from('credit_notes')
+        .insert({
+          invoice_id: creditNoteForm.invoice_id,
+          client_id: clientId,
+          unit_price: unitPrice,
+          quantity: quantity,
+          total_amount: totalAmount,
+          operation_name: creditNoteForm.operation_name
+        })
+        .select()
+        .single();
+
+      if (creditNoteError) throw creditNoteError;
+
+      if (!creditNote) {
+        throw new Error('Erreur lors de la création de l\'avoir');
+      }
+
+      // Generate PDF
+      const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
+      
+      const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
+      if (!invoice) {
+        throw new Error('Facture non trouvée');
+      }
+
+      if (!client) {
+        throw new Error('Client non trouvé');
+      }
+
+      // Load user profile
+      const { data: userProfileData } = await supabase
+        .from('user_profile')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      await generateAndSaveCreditNotePDF({
+        creditNote: creditNote as CreditNote,
+        invoice,
+        client,
+        userProfile: userProfileData
+      });
+
+      // Reload credit notes
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (creditNotesError) throw creditNotesError;
+      setCreditNotes(creditNotesData || []);
+
+      toast.success('Avoir créé avec succès');
+      setCreditNoteDialogOpen(false);
+      setCreditNoteConfirmDialogOpen(false);
+      setCreditNoteForm({
+        invoice_id: '',
+        operation_name: '',
+        quantity: '',
+        unit_price: ''
+      });
+      setInvoicePopoverOpen(false);
+    } catch (error) {
+      console.error('Error creating credit note:', error);
+      toast.error('Erreur lors de la création de l\'avoir');
+    } finally {
+      setCreatingCreditNote(false);
     }
   };
 
@@ -2934,6 +3074,186 @@ export default function ClientDetailPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Credit Note Dialog */}
+        <Dialog open={creditNoteDialogOpen} onOpenChange={setCreditNoteDialogOpen} modal={false}>
+          <DialogPortal>
+            <DialogOverlay className="fixed inset-0 z-40 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <DialogPrimitive.Content
+              className={cn(
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg"
+              )}
+            >
+              <form onSubmit={handleCreditNoteSubmit}>
+              <DialogHeader>
+                <DialogTitle>Générer un avoir</DialogTitle>
+                <DialogDescription>
+                  Renseignez les informations pour générer un avoir
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="credit-note-invoice">Facture d'origine</Label>
+                  <Popover open={invoicePopoverOpen} onOpenChange={setInvoicePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full mt-1.5 justify-between"
+                        type="button"
+                      >
+                        {creditNoteForm.invoice_id
+                          ? globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'Facture sélectionnée'
+                          : 'Sélectionner une facture...'}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent 
+                      className="w-[400px] p-0" 
+                      align="start" 
+                      style={{ zIndex: 9999 }}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <Command>
+                        <CommandInput placeholder="Rechercher une facture..." autoFocus />
+                        <CommandList className="max-h-[300px] overflow-y-auto">
+                          <CommandEmpty>Aucune facture trouvée</CommandEmpty>
+                          <CommandGroup>
+                            {globalInvoices.map((invoice) => (
+                              <CommandItem
+                                key={invoice.id}
+                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.created_at).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
+                                onSelect={() => {
+                                  setCreditNoteForm(f => ({ ...f, invoice_id: invoice.id }));
+                                  setInvoicePopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    creditNoteForm.invoice_id === invoice.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.created_at).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-operation">Produits et prestations</Label>
+                  <Textarea
+                    id="credit-note-operation"
+                    value={creditNoteForm.operation_name}
+                    onChange={(e) => setCreditNoteForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Retour de marchandise"
+                    className="mt-1.5 min-h-[120px]"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-quantity">Quantité</Label>
+                  <Input
+                    id="credit-note-quantity"
+                    type="number"
+                    min="1"
+                    value={creditNoteForm.quantity}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, quantity: value }));
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Ex: 10"
+                    className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-unit-price">Prix à l'unité (€)</Label>
+                  <Input
+                    id="credit-note-unit-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={creditNoteForm.unit_price}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, unit_price: value }));
+                      }
+                    }}
+                    placeholder="Ex: 2.00"
+                    className="mt-1.5"
+                    required
+                  />
+                </div>
+                {creditNoteForm.unit_price && creditNoteForm.quantity && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700">
+                      Montant total HT : {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setCreditNoteDialogOpen(false);
+                  setInvoicePopoverOpen(false);
+                }}>
+                  Annuler
+                </Button>
+                <Button type="submit">Créer un avoir</Button>
+              </DialogFooter>
+              </form>
+              <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+
+        {/* Credit Note Confirmation Dialog */}
+        <Dialog open={creditNoteConfirmDialogOpen} onOpenChange={setCreditNoteConfirmDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Récapitulatif de l'avoir</DialogTitle>
+              <DialogDescription>
+                <div className="space-y-2 mt-2">
+                  <p><strong>Facture d'origine :</strong> {globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'N/A'}</p>
+                  <p><strong>Produits et prestations :</strong> {creditNoteForm.operation_name}</p>
+                  <p><strong>Quantité :</strong> {creditNoteForm.quantity}</p>
+                  <p><strong>Prix unitaire :</strong> {creditNoteForm.unit_price} €</p>
+                  <p><strong>Montant total HT :</strong> {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €</p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreditNoteConfirmDialogOpen(false);
+                  setCreditNoteDialogOpen(true);
+                }}
+                disabled={creatingCreditNote}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateCreditNote}
+                disabled={creatingCreditNote}
+              >
+                {creatingCreditNote ? 'Création en cours...' : 'Créer l\'avoir'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Mise à jour du stock</CardTitle>
@@ -2978,19 +3298,54 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0) && (
+          {/* Génération d'un avoir */}
+          <Card className="border-slate-200 shadow-md">
+            <CardHeader>
+              <CardTitle>Génération d'un avoir</CardTitle>
+              <CardDescription>
+                Générez un avoir pour ce client
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                onClick={() => {
+                  setCreditNoteForm({
+                    invoice_id: '',
+                    operation_name: '',
+                    quantity: '',
+                    unit_price: ''
+                  });
+                  setInvoicePopoverOpen(false);
+                  setCreditNoteDialogOpen(true);
+                }}
+                disabled={globalInvoices.length === 0}
+                className="bg-black text-white hover:bg-black/90"
+              >
+                Générer un avoir
+              </Button>
+              {globalInvoices.length === 0 && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Aucune facture disponible pour générer un avoir
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0) && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
                 <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length + stockUpdatesWithoutInvoice.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''}
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {/* Combine invoices and stock updates without invoice, sorted by date */}
+                  {/* Combine invoices, stock updates without invoice, and credit notes, sorted by date */}
                   {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
-                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at }))]
+                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at })),
+                    ...creditNotes.map(cn => ({ type: 'credit_note' as const, data: cn, created_at: cn.created_at }))]
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                     .map((item) => {
                       if (item.type === 'invoice') {
@@ -3060,7 +3415,7 @@ export default function ClientDetailPage() {
                             </div>
                           </div>
                         );
-                      } else {
+                      } else if (item.type === 'stock_update') {
                         // Cas des anciennes données sans facture (compatibilité)
                         // Récupérer l'invoice_id depuis les stockUpdates (ils ont tous le même invoice_id)
                         const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
@@ -3141,7 +3496,56 @@ export default function ClientDetailPage() {
                             </div>
                           </div>
                         );
+                      } else if (item.type === 'credit_note') {
+                        const creditNote = item.data as CreditNote;
+                        return (
+                          <div
+                            key={creditNote.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(creditNote.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {creditNote.operation_name}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const relatedInvoice = globalInvoices.find(inv => inv.id === creditNote.invoice_id);
+                                    if (!relatedInvoice) {
+                                      toast.error('Facture associée non trouvée');
+                                      return;
+                                    }
+                                    setSelectedCreditNote(creditNote);
+                                    setCreditNotePreviewDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Avoir
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>Quantité: {creditNote.quantity}</span>
+                              <span>•</span>
+                              <span>{creditNote.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
                       }
+                      return null;
                     })}
                 </div>
               </CardContent>
@@ -3500,6 +3904,20 @@ export default function ClientDetailPage() {
           onDiscard={handleDiscardDraft}
           draftDate={draftDate}
         />
+
+        {client && selectedCreditNote && (() => {
+          const relatedInvoice = globalInvoices.find(inv => inv.id === selectedCreditNote.invoice_id);
+          if (!relatedInvoice) return null;
+          return (
+            <CreditNoteDialog
+              open={creditNotePreviewDialogOpen}
+              onOpenChange={setCreditNotePreviewDialogOpen}
+              client={client}
+              creditNote={selectedCreditNote}
+              invoice={relatedInvoice}
+            />
+          );
+        })()}
       </div>
     </div>
   );

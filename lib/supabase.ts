@@ -180,3 +180,16 @@ export type DraftStockUpdate = {
   created_at: string;
   updated_at: string;
 };
+
+export type CreditNote = {
+  id: string;
+  invoice_id: string;
+  client_id: string;
+  unit_price: number;
+  quantity: number;
+  total_amount: number;
+  operation_name: string;
+  credit_note_number: string | null;
+  credit_note_pdf_path: string | null;
+  created_at: string;
+};
