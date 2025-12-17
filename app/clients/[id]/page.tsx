@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -48,7 +48,70 @@ import { useStockUpdateDraft } from '@/hooks/use-stock-update-draft';
 import { ClientCalendar } from '@/components/client-calendar';
 import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
-import { VacationPeriod } from '@/components/vacation-periods-editor';
+import { VacationPeriod, VacationPeriodsEditor } from '@/components/vacation-periods-editor';
+
+// Helper functions for vacation periods (from vacation-periods-editor)
+function getDateFromWeek(week: number, year: number = new Date().getFullYear()): Date {
+  const simple = new Date(year, 0, 1 + (week - 1) * 7);
+  const dow = simple.getDay();
+  const ISOweekStart = simple;
+  if (dow <= 4) {
+    ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+  } else {
+    ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+  }
+  return ISOweekStart;
+}
+
+function weekToDate(week: number, year: number): string {
+  const date = getDateFromWeek(week, year);
+  return date.toISOString().split('T')[0];
+}
+
+function getEndOfWeek(startDate: Date): Date {
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + 6);
+  return endDate;
+}
+
+function periodsOverlap(p1: VacationPeriod, p2: VacationPeriod): boolean {
+  if (!p1.startDate || !p1.endDate || !p2.startDate || !p2.endDate) {
+    return false;
+  }
+
+  let start1: Date, end1: Date, start2: Date, end2: Date;
+
+  if (p1.inputType === 'weeks' && p1.startWeek && p1.endWeek) {
+    const year1 = p1.isRecurring ? 2000 : (p1.year || new Date().getFullYear());
+    start1 = new Date(weekToDate(p1.startWeek, year1));
+    const end1Start = new Date(weekToDate(p1.endWeek, year1));
+    end1 = getEndOfWeek(end1Start);
+  } else {
+    start1 = new Date(p1.startDate);
+    end1 = new Date(p1.endDate);
+  }
+
+  if (p2.inputType === 'weeks' && p2.startWeek && p2.endWeek) {
+    const year2 = p2.isRecurring ? 2000 : (p2.year || new Date().getFullYear());
+    start2 = new Date(weekToDate(p2.startWeek, year2));
+    const end2Start = new Date(weekToDate(p2.endWeek, year2));
+    end2 = getEndOfWeek(end2Start);
+  } else {
+    start2 = new Date(p2.startDate);
+    end2 = new Date(p2.endDate);
+  }
+
+  if (p1.isRecurring) {
+    start1.setFullYear(2000);
+    end1.setFullYear(2000);
+  }
+  if (p2.isRecurring) {
+    start2.setFullYear(2000);
+    end2.setFullYear(2000);
+  }
+
+  return start1 <= end2 && start2 <= end1;
+}
 
 // Component for sortable collection row
 function SortableCollectionRow({
@@ -311,6 +374,18 @@ export default function ClientDetailPage() {
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  
+  // Vacation period dialog states
+  const [vacationPeriodDialogOpen, setVacationPeriodDialogOpen] = useState(false);
+  const [editingVacationPeriod, setEditingVacationPeriod] = useState<VacationPeriod | null>(null);
+  const [vacationPeriodType, setVacationPeriodType] = useState<'recurring' | 'specific'>('specific');
+  const [vacationPeriodInputType, setVacationPeriodInputType] = useState<'weeks' | 'dates'>('dates');
+  const [tempVacationStartWeek, setTempVacationStartWeek] = useState<number | ''>('');
+  const [tempVacationEndWeek, setTempVacationEndWeek] = useState<number | ''>('');
+  const [tempVacationStartDate, setTempVacationStartDate] = useState('');
+  const [tempVacationEndDate, setTempVacationEndDate] = useState('');
+  const [tempVacationYear, setTempVacationYear] = useState(new Date().getFullYear().toString());
+  const [savingVacationPeriod, setSavingVacationPeriod] = useState(false);
   
   // Draft recovery
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
@@ -2010,6 +2085,193 @@ export default function ClientDetailPage() {
     }
   };
 
+  // Vacation period management functions
+  const resetVacationPeriodDialog = () => {
+    setVacationPeriodType('specific');
+    setVacationPeriodInputType('dates');
+    setTempVacationStartWeek('');
+    setTempVacationEndWeek('');
+    setTempVacationStartDate('');
+    setTempVacationEndDate('');
+    setTempVacationYear(new Date().getFullYear().toString());
+    setEditingVacationPeriod(null);
+  };
+
+  const handleAddVacationPeriodClick = () => {
+    resetVacationPeriodDialog();
+    setVacationPeriodDialogOpen(true);
+  };
+
+  // Initialiser les valeurs lors de l'édition d'une période
+  useEffect(() => {
+    if (editingVacationPeriod && vacationPeriodDialogOpen) {
+      setVacationPeriodType(editingVacationPeriod.isRecurring ? 'recurring' : 'specific');
+      setVacationPeriodInputType(editingVacationPeriod.inputType);
+      
+      if (editingVacationPeriod.inputType === 'weeks') {
+        setTempVacationStartWeek(editingVacationPeriod.startWeek || '');
+        setTempVacationEndWeek(editingVacationPeriod.endWeek || '');
+        // Pour les semaines, utiliser l'année de la période si spécifique
+        if (!editingVacationPeriod.isRecurring && editingVacationPeriod.year) {
+          setTempVacationYear(editingVacationPeriod.year.toString());
+        } else {
+          setTempVacationYear(new Date().getFullYear().toString());
+        }
+      } else {
+        // Pour les dates, extraire directement les dates
+        setTempVacationStartDate(editingVacationPeriod.startDate || '');
+        setTempVacationEndDate(editingVacationPeriod.endDate || '');
+        // Extraire l'année des dates si période spécifique
+        if (!editingVacationPeriod.isRecurring && editingVacationPeriod.startDate) {
+          const yearFromDate = editingVacationPeriod.startDate.split('-')[0];
+          setTempVacationYear(yearFromDate);
+        } else {
+          setTempVacationYear(new Date().getFullYear().toString());
+        }
+      }
+    }
+  }, [editingVacationPeriod, vacationPeriodDialogOpen]);
+
+  const handleSaveVacationPeriod = async () => {
+    if (!client) return;
+
+    let newPeriod: VacationPeriod;
+
+    if (vacationPeriodInputType === 'weeks') {
+      if (!tempVacationStartWeek || !tempVacationEndWeek) {
+        toast.error('Veuillez renseigner les semaines de début et de fin');
+        return;
+      }
+
+      if (tempVacationStartWeek > tempVacationEndWeek) {
+        toast.error('La semaine de fin doit être supérieure ou égale à la semaine de début');
+        return;
+      }
+
+      const startWeek = Number(tempVacationStartWeek);
+      const endWeek = Number(tempVacationEndWeek);
+      const year = vacationPeriodType === 'specific' ? Number(tempVacationYear) : undefined;
+
+      let startDate: string;
+      let endDate: string;
+
+      if (vacationPeriodType === 'recurring') {
+        startDate = weekToDate(startWeek, 2000);
+        const endWeekStart = new Date(weekToDate(endWeek, 2000));
+        const endWeekEnd = getEndOfWeek(endWeekStart);
+        endDate = endWeekEnd.toISOString().split('T')[0];
+      } else {
+        if (!year) {
+          toast.error('Veuillez renseigner l\'année');
+          return;
+        }
+        startDate = weekToDate(startWeek, year);
+        const endWeekStart = new Date(weekToDate(endWeek, year));
+        const endWeekEnd = getEndOfWeek(endWeekStart);
+        endDate = endWeekEnd.toISOString().split('T')[0];
+      }
+
+      newPeriod = {
+        id: editingVacationPeriod?.id || `period-${Date.now()}`,
+        startDate,
+        endDate,
+        isRecurring: vacationPeriodType === 'recurring',
+        inputType: 'weeks',
+        startWeek,
+        endWeek,
+        year
+      };
+    } else {
+      if (!tempVacationStartDate || !tempVacationEndDate) {
+        toast.error('Veuillez renseigner les dates de début et de fin');
+        return;
+      }
+
+      const startParts = tempVacationStartDate.split('-');
+      const endParts = tempVacationEndDate.split('-');
+
+      let startDate: string;
+      let endDate: string;
+
+      if (vacationPeriodType === 'recurring') {
+        startDate = `2000-${startParts[1]}-${startParts[2]}`;
+        endDate = `2000-${endParts[1]}-${endParts[2]}`;
+      } else {
+        // Extraire l'année directement des dates
+        const year = Number(startParts[0]);
+        startDate = tempVacationStartDate;
+        endDate = tempVacationEndDate;
+        
+        // Vérifier que les deux dates ont la même année
+        if (startParts[0] !== endParts[0]) {
+          toast.error('Les dates de début et de fin doivent être de la même année');
+          return;
+        }
+      }
+
+      if (startDate > endDate) {
+        toast.error('La date de fin doit être postérieure à la date de début');
+        return;
+      }
+
+      newPeriod = {
+        id: editingVacationPeriod?.id || `period-${Date.now()}`,
+        startDate,
+        endDate,
+        isRecurring: vacationPeriodType === 'recurring',
+        inputType: 'dates',
+        year: vacationPeriodType === 'specific' ? Number(startParts[0]) : undefined
+      };
+    }
+
+    // Vérifier les chevauchements avec les autres périodes (sauf celle en édition)
+    const otherPeriods = editingVacationPeriod 
+      ? vacationPeriods.filter(p => p.id !== editingVacationPeriod.id)
+      : vacationPeriods;
+
+    const overlapping = otherPeriods.find(p => {
+      if (p.isRecurring !== newPeriod.isRecurring) {
+        return false;
+      }
+      return periodsOverlap(p, newPeriod);
+    });
+
+    if (overlapping) {
+      toast.error('Cette période chevauche avec une autre période existante');
+      return;
+    }
+
+    setSavingVacationPeriod(true);
+    try {
+      const updatedPeriods = editingVacationPeriod
+        ? vacationPeriods.map(p => p.id === editingVacationPeriod.id ? newPeriod : p)
+        : [...vacationPeriods, newPeriod];
+
+      // Sauvegarder dans la base de données
+      const { error } = await supabase
+        .from('clients')
+        .update({
+          vacation_periods: updatedPeriods.length > 0 ? updatedPeriods : null
+        })
+        .eq('id', clientId);
+
+      if (error) throw error;
+
+      setVacationPeriods(updatedPeriods);
+      setVacationPeriodDialogOpen(false);
+      resetVacationPeriodDialog();
+      toast.success(editingVacationPeriod ? 'Période de fermeture modifiée' : 'Période de fermeture ajoutée');
+      
+      // Recharger les données du client
+      await loadClientData();
+    } catch (error) {
+      console.error('Error saving vacation period:', error);
+      toast.error('Erreur lors de la sauvegarde de la période');
+    } finally {
+      setSavingVacationPeriod(false);
+    }
+  };
+
   const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const name = adjustmentForm.operation_name.trim();
@@ -2533,6 +2795,110 @@ export default function ClientDetailPage() {
                     </div>
                   )}
                   
+                  {/* Périodes de fermeture dans les 2 prochains mois */}
+                  {(() => {
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0);
+                    const twoMonthsLater = new Date();
+                    twoMonthsLater.setMonth(now.getMonth() + 2);
+                    twoMonthsLater.setHours(23, 59, 59, 999);
+                    
+                    // Filtrer les périodes de fermeture dans les 2 prochains mois
+                    const upcomingPeriods = vacationPeriods.filter(period => {
+                      let periodStart: Date;
+                      let periodEnd: Date;
+                      
+                      if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
+                        if (period.isRecurring) {
+                          // Pour les périodes récurrentes, utiliser l'année actuelle
+                          const currentYear = now.getFullYear();
+                          periodStart = new Date(weekToDate(period.startWeek, currentYear));
+                          const endWeekStart = new Date(weekToDate(period.endWeek, currentYear));
+                          periodEnd = getEndOfWeek(endWeekStart);
+                        } else {
+                          // Pour les périodes ponctuelles, utiliser l'année de la période
+                          const year = period.year || now.getFullYear();
+                          periodStart = new Date(weekToDate(period.startWeek, year));
+                          const endWeekStart = new Date(weekToDate(period.endWeek, year));
+                          periodEnd = getEndOfWeek(endWeekStart);
+                        }
+                      } else {
+                        periodStart = new Date(period.startDate);
+                        periodEnd = new Date(period.endDate);
+                        
+                        // Pour les périodes récurrentes, utiliser l'année actuelle
+                        if (period.isRecurring) {
+                          const currentYear = now.getFullYear();
+                          const startMonth = periodStart.getMonth();
+                          const startDay = periodStart.getDate();
+                          const endMonth = periodEnd.getMonth();
+                          const endDay = periodEnd.getDate();
+                          
+                          periodStart = new Date(currentYear, startMonth, startDay);
+                          periodEnd = new Date(currentYear, endMonth, endDay);
+                        }
+                      }
+                      
+                      // Vérifier si la période chevauche avec les 2 prochains mois
+                      return periodStart <= twoMonthsLater && periodEnd >= now;
+                    });
+                    
+                    if (upcomingPeriods.length > 0) {
+                      return (
+                        <div className="mt-3">
+                          <div className="flex items-start gap-2">
+                            <DoorClosed className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1">
+                              <div className="text-slate-900 text-base font-medium mb-1">Périodes de fermeture à venir :</div>
+                              <div className="space-y-1">
+                                {upcomingPeriods.map((period) => {
+                                  let periodDisplay: string;
+                                  
+                                  if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
+                                    const weekStr = period.startWeek === period.endWeek 
+                                      ? `S${period.startWeek}`
+                                      : `S${period.startWeek} à S${period.endWeek}`;
+                                    
+                                    if (period.isRecurring) {
+                                      periodDisplay = `${weekStr} (annuel)`;
+                                    } else {
+                                      periodDisplay = `${weekStr} - ${period.year}`;
+                                    }
+                                  } else {
+                                    const start = new Date(period.startDate);
+                                    const end = new Date(period.endDate);
+                                    
+                                    // Pour les périodes récurrentes, utiliser l'année actuelle pour l'affichage
+                                    if (period.isRecurring) {
+                                      const currentYear = now.getFullYear();
+                                      const startMonth = start.getMonth();
+                                      const startDay = start.getDate();
+                                      const endMonth = end.getMonth();
+                                      const endDay = end.getDate();
+                                      
+                                      const displayStart = new Date(currentYear, startMonth, startDay);
+                                      const displayEnd = new Date(currentYear, endMonth, endDay);
+                                      periodDisplay = `${displayStart.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} au ${displayEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} (annuel)`;
+                                    } else {
+                                      periodDisplay = `${start.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })} au ${end.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+                                    }
+                                  }
+                                  
+                                  return (
+                                    <div key={period.id} className="text-slate-700 text-sm">
+                                      • {periodDisplay}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  
                   {/* Horaires d'ouverture */}
                   {client.opening_hours && (
                     <div className="mt-3">
@@ -2555,13 +2921,17 @@ export default function ClientDetailPage() {
                   
                   {/* Calendrier */}
                   {client && (
-                    <div className="mt-4">
+                    <div className="mt-4 space-y-4">
                       <ClientCalendar
                         openingHours={openingHours}
                         vacationPeriods={vacationPeriods}
                         marketDaysSchedule={marketDaysSchedule}
                         clientName={client.name}
                       />
+                      <Button type="button" onClick={handleAddVacationPeriodClick} size="sm" variant="outline">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Ajouter une période de fermeture
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -3938,6 +4308,177 @@ export default function ClientDetailPage() {
             />
           );
         })()}
+
+        {/* Vacation Period Dialog */}
+        <Dialog open={vacationPeriodDialogOpen} onOpenChange={(open) => {
+          setVacationPeriodDialogOpen(open);
+          if (!open) resetVacationPeriodDialog();
+        }}>
+          <DialogContent className="sm:max-w-[550px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingVacationPeriod ? 'Modifier une période de fermeture' : 'Ajouter une période de fermeture'}
+              </DialogTitle>
+              <DialogDescription>
+                Choisissez le type de période et le format de saisie.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-4">
+              {/* Type de période */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Type de période</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={vacationPeriodType === 'specific' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodType('specific')}
+                    className="flex-1"
+                  >
+                    Ponctuel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={vacationPeriodType === 'recurring' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodType('recurring')}
+                    className="flex-1"
+                  >
+                    Annuel
+                  </Button>
+                </div>
+              </div>
+
+              {/* Format de saisie */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Format de saisie</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={vacationPeriodInputType === 'dates' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodInputType('dates')}
+                    className="flex-1"
+                  >
+                    Dates précises
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={vacationPeriodInputType === 'weeks' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodInputType('weeks')}
+                    className="flex-1"
+                  >
+                    Semaines (S1 à S52)
+                  </Button>
+                </div>
+              </div>
+
+              {/* Année (seulement pour période spécifique avec saisie par semaines) */}
+              {vacationPeriodType === 'specific' && vacationPeriodInputType === 'weeks' && (
+                <div>
+                  <Label htmlFor="vacation-year">Année</Label>
+                  <Input
+                    id="vacation-year"
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={tempVacationYear}
+                    onChange={(e) => setTempVacationYear(e.target.value)}
+                    className="mt-1.5 w-32"
+                    placeholder="2024"
+                  />
+                </div>
+              )}
+
+              {/* Saisie par semaines */}
+              {vacationPeriodInputType === 'weeks' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <Label className="text-xs text-slate-600">Semaine de début</Label>
+                      <Select
+                        value={tempVacationStartWeek.toString()}
+                        onValueChange={(val) => setTempVacationStartWeek(Number(val))}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span className="text-sm mt-6">à</span>
+                    <div className="flex-1">
+                      <Label className="text-xs text-slate-600">Semaine de fin</Label>
+                      <Select
+                        value={tempVacationEndWeek.toString()}
+                        onValueChange={(val) => setTempVacationEndWeek(Number(val))}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Saisie par dates */}
+              {vacationPeriodInputType === 'dates' && (
+                <div className="flex items-center gap-2">
+                  <div>
+                    <Label className="text-xs text-slate-600">Date de début</Label>
+                    <Input
+                      type="date"
+                      value={tempVacationStartDate}
+                      onChange={(e) => setTempVacationStartDate(e.target.value)}
+                      className="mt-1 w-40"
+                    />
+                  </div>
+                  <span className="text-sm mt-6">au</span>
+                  <div>
+                    <Label className="text-xs text-slate-600">Date de fin</Label>
+                    <Input
+                      type="date"
+                      value={tempVacationEndDate}
+                      onChange={(e) => setTempVacationEndDate(e.target.value)}
+                      className="mt-1 w-40"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setVacationPeriodDialogOpen(false);
+                resetVacationPeriodDialog();
+              }}>
+                Annuler
+              </Button>
+              <Button 
+                type="button" 
+                onClick={handleSaveVacationPeriod}
+                disabled={
+                  savingVacationPeriod ||
+                  (vacationPeriodInputType === 'weeks' && (!tempVacationStartWeek || !tempVacationEndWeek)) ||
+                  (vacationPeriodInputType === 'dates' && (!tempVacationStartDate || !tempVacationEndDate)) ||
+                  (vacationPeriodType === 'specific' && vacationPeriodInputType === 'weeks' && !tempVacationYear)
+                }
+              >
+                {savingVacationPeriod ? 'Enregistrement...' : (editingVacationPeriod ? 'Modifier' : 'Ajouter')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

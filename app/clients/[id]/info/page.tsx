@@ -182,7 +182,7 @@ export default function ClientInfoPage() {
         setMarketDaysSchedule(defaultMarketSchedule);
       }
 
-      // Charger les périodes de vacances avec migration des anciennes données
+      // Charger les périodes de fermeture avec migration des anciennes données
       if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
         const migratedPeriods = data.vacation_periods.map((period: any) => {
           // Migration : si inputType n'existe pas, c'est une ancienne donnée
@@ -519,10 +519,10 @@ export default function ClientInfoPage() {
         return;
       }
 
-      // Validation des périodes de vacances
+      // Validation des périodes de fermeture
       const vacationPeriodsValidation = validateVacationPeriods(vacationPeriods);
       if (!vacationPeriodsValidation.valid) {
-        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de vacances');
+        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de fermeture');
         setSubmitting(false);
         return;
       }
@@ -665,7 +665,7 @@ export default function ClientInfoPage() {
         setMarketDaysSchedule(defaultMarketSchedule);
       }
 
-      // Mettre à jour les périodes de vacances
+      // Mettre à jour les périodes de fermeture
       if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
         setVacationPeriods(data.vacation_periods as VacationPeriod[]);
       } else {
@@ -1003,7 +1003,7 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Période(s) de vacances</Label>
+                      <Label className="text-slate-500 text-sm">Période(s) de fermeture</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0
                           ? formatVacationPeriods(client.vacation_periods as VacationPeriod[])
