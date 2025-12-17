@@ -5,7 +5,7 @@
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, supabase } from '@/lib/supabase';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
@@ -29,6 +29,13 @@ interface GenerateDepositSlipPDFParams {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates: StockUpdate[];
+}
+
+interface GenerateCreditNotePDFParams {
+  creditNote: CreditNote;
+  invoice: Invoice;
+  client: Client;
+  userProfile: UserProfile | null;
 }
 
 /**
@@ -1358,6 +1365,348 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     }
   } catch (error) {
     console.error('Error generating deposit slip PDF:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate and save credit note PDF
+ * This function generates the credit note PDF and saves it to Supabase storage.
+ * It only saves if the PDF doesn't already exist (immutability).
+ */
+export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDFParams): Promise<void> {
+  const { creditNote, invoice, client, userProfile } = params;
+
+  // Check if PDF already exists
+  if (creditNote.credit_note_pdf_path) {
+    console.log('Credit note PDF already exists, skipping generation:', creditNote.credit_note_pdf_path);
+    return;
+  }
+
+  try {
+    // Load user profile if not provided
+    let profile = userProfile;
+    if (!profile) {
+      const { data: userProfileData } = await supabase
+        .from('user_profile')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+      profile = userProfileData;
+    }
+
+    // Import jsPDF dynamically
+    const jsPDF = (await import('jspdf')).default;
+    const autoTable = (await import('jspdf-autotable')).default;
+    
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    let yPosition = 20;
+
+    // Définir les marges globales pour l'alignement vertical des bordures
+    const globalLeftMargin = 15;
+    const globalRightMargin = 15;
+    
+    // 1) Encart DISTRIBUTEUR (haut gauche) - ENCADRÉ
+    const leftBoxX = globalLeftMargin;
+    const leftBoxY = yPosition;
+    const leftBoxWidth = 85;
+    let leftBoxHeight = 5;
+    
+    // En-tête DISTRIBUTEUR centré et encadré
+    doc.setFillColor(71, 85, 105);
+    doc.rect(leftBoxX, leftBoxY, leftBoxWidth, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('DISTRIBUTEUR', leftBoxX + leftBoxWidth / 2, yPosition + 5, { align: 'center' });
+    yPosition += 7;
+    
+    doc.setTextColor(0, 0, 0);
+    
+    // Sauter une ligne
+    yPosition += 4;
+    
+    // Nom du distributeur en gras et police plus grande
+    if (profile && profile.company_name) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(profile.company_name, leftBoxX + 2, yPosition);
+      yPosition += 5;
+    }
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    if (profile) {
+      // Nom/Prénom
+      if (profile.first_name || profile.last_name) {
+        const fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+        doc.text(fullName, leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      
+      yPosition += 2;
+      
+      if (profile.street_address) {
+        doc.text(profile.street_address, leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      if (profile.postal_code || profile.city) {
+        doc.text(`${profile.postal_code || ''} ${profile.city || ''}`.trim(), leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      if (profile.email) {
+        doc.text(`Email: ${profile.email}`, leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      
+      if (profile.email && profile.siret) {
+        yPosition += 2;
+      }
+      
+      if (profile.siret) {
+        doc.text(`SIRET: ${profile.siret}`, leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      if (profile.tva_number) {
+        doc.text(`TVA: ${profile.tva_number}`, leftBoxX + 2, yPosition);
+        yPosition += 4;
+      }
+      
+      if (profile.tva_number && profile.phone) {
+        yPosition += 2;
+      }
+      
+      if (profile.phone) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Tél: ${profile.phone}`, leftBoxX + 2, yPosition);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        yPosition += 3;
+      }
+    } else {
+      doc.text('Informations non renseignées', leftBoxX + 2, yPosition);
+      yPosition += 4;
+    }
+    
+    leftBoxHeight = yPosition - leftBoxY + 1;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.rect(leftBoxX, leftBoxY, leftBoxWidth, leftBoxHeight);
+
+    // 2) Encart DÉTAILLANT (haut droite) - ENCADRÉ
+    const rightBoxWidth = 80;
+    const rightBoxX = pageWidth - globalRightMargin - rightBoxWidth;
+    const rightBoxY = 20;
+    let clientYPosition = rightBoxY;
+    
+    // En-tête DÉTAILLANT centré et encadré
+    doc.setFillColor(71, 85, 105);
+    doc.rect(rightBoxX, clientYPosition, rightBoxWidth, 7, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('DÉTAILLANT', rightBoxX + rightBoxWidth / 2, clientYPosition + 5, { align: 'center' });
+    clientYPosition += 7;
+    
+    doc.setTextColor(0, 0, 0);
+    
+    // Sauter une ligne
+    clientYPosition += 4;
+    
+    // Nom de la société en gras et police plus grande
+    const clientCompanyName = client.company_name || client.name;
+    if (clientCompanyName) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(clientCompanyName, rightBoxX + 2, clientYPosition);
+      clientYPosition += 5;
+    }
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    if (client.street_address) {
+      doc.text(client.street_address, rightBoxX + 2, clientYPosition);
+      clientYPosition += 4;
+    }
+    if (client.postal_code || client.city) {
+      doc.text(`${client.postal_code || ''} ${client.city || ''}`.trim(), rightBoxX + 2, clientYPosition);
+      clientYPosition += 4;
+    }
+    
+    if (client.siret_number) {
+      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      clientYPosition += 4;
+    }
+    if (client.tva_number) {
+      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      clientYPosition += 3;
+    }
+    
+    const rightBoxHeight = clientYPosition - rightBoxY + 1;
+    doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
+
+    // Encart numéro de client et numéro d'avoir (en dessous du DÉTAILLANT)
+    clientYPosition += 6;
+    const infoBoxY = clientYPosition;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    clientYPosition += 4;
+    
+    if (client.client_number) {
+      doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
+      clientYPosition += 5;
+    }
+    
+    // Utiliser le numéro d'avoir stocké dans la base de données
+    const creditNoteNumber = creditNote.credit_note_number || 'N/A';
+    doc.text(`N° Avoir: ${creditNoteNumber}`, rightBoxX + 2, clientYPosition);
+    clientYPosition += 5;
+    
+    // Numéro de facture d'origine
+    const invoiceNumber = invoice.invoice_number || 'N/A';
+    doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
+    clientYPosition += 3;
+    
+    const infoBoxHeight = clientYPosition - infoBoxY + 1;
+    doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+
+    // Date de l'avoir
+    yPosition = Math.max(yPosition, clientYPosition) + 10;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Date: ${new Date(creditNote.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    yPosition += 10;
+
+    // Titre "Avoir N° [numero_avoir]"
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Avoir N° ${creditNoteNumber}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 8;
+
+    // Sous-titre "Avoir sur facture n° [numero_facture] du [date]"
+    const invoiceDate = new Date(invoice.created_at).toLocaleDateString('fr-FR');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(`Avoir sur facture n° ${invoiceNumber} du ${invoiceDate}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
+    // Tableau simplifié avec seulement les colonnes demandées
+    const tableData = [[
+      creditNote.operation_name,
+      creditNote.quantity.toString(),
+      creditNote.unit_price.toFixed(2) + ' €',
+      creditNote.total_amount.toFixed(2) + ' €'
+    ]];
+
+    autoTable(doc, {
+      startY: yPosition,
+      head: [['Produits et prestations', 'Qté', 'Prix à l\'unité', 'Prix Total HT']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [71, 85, 105],
+        textColor: 255,
+        fontSize: 9,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 9,
+        textColor: [0, 0, 0]
+      },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'center' },
+        2: { halign: 'right' },
+        3: { halign: 'right', fontStyle: 'bold' }
+      },
+      margin: { left: globalLeftMargin, right: globalRightMargin }
+    });
+
+    // Tableau récapitulatif des totaux
+    const finalTableY = (doc as any).lastAutoTable.finalY + 8;
+    const totalHT = creditNote.total_amount;
+    const tva = totalHT * 0.20;
+    const totalTTC = totalHT + tva;
+
+    autoTable(doc, {
+      startY: finalTableY,
+      body: [
+        ['TOTAL H.T.', totalHT.toFixed(2) + ' €'],
+        ['TVA 20%', tva.toFixed(2) + ' €'],
+        ['TOTAL T.T.C', totalTTC.toFixed(2) + ' €']
+      ],
+      theme: 'plain',
+      bodyStyles: {
+        fontSize: 10,
+        fontStyle: 'bold',
+        textColor: [0, 0, 0]
+      },
+      columnStyles: {
+        0: { halign: 'left' },
+        1: { halign: 'right' }
+      },
+      margin: { left: globalLeftMargin, right: globalRightMargin },
+      didDrawCell: (data: any) => {
+        const { cell, column, cursor } = data;
+        
+        doc.setLineWidth(0.3);
+        doc.setDrawColor(0, 0, 0);
+        
+        if (column.index === 0) {
+          doc.line(cursor.x, cursor.y, cursor.x, cursor.y + cell.height);
+        }
+        
+        if (column.index === 1) {
+          doc.line(cursor.x + cell.width, cursor.y, cursor.x + cell.width, cursor.y + cell.height);
+        }
+        
+        doc.line(cursor.x, cursor.y, cursor.x + cell.width, cursor.y);
+        doc.line(cursor.x, cursor.y + cell.height, cursor.x + cell.width, cursor.y + cell.height);
+      }
+    });
+
+    // Generate PDF blob
+    const pdfBlobData = doc.output('blob');
+
+    // Save PDF to storage in credit_notes folder
+    const filePath = `credit_notes/${creditNote.id}/credit_note_${new Date(creditNote.created_at).toISOString().split('T')[0]}.pdf`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, pdfBlobData, {
+        contentType: 'application/pdf',
+        upsert: false // Never overwrite - credit notes are immutable
+      });
+
+    if (uploadError) {
+      // Check if error is due to file already existing
+      if (uploadError.message?.includes('already exists') || 
+          uploadError.message?.includes('duplicate') ||
+          uploadError.message?.includes('409')) {
+        console.log('PDF already exists, not overwriting (credit note is immutable):', filePath);
+      } else {
+        throw uploadError;
+      }
+    } else if (uploadData) {
+      // Update credit note with PDF path ONLY if it doesn't exist yet
+      const { error: updateError } = await supabase
+        .from('credit_notes')
+        .update({ credit_note_pdf_path: filePath })
+        .eq('id', creditNote.id)
+        .is('credit_note_pdf_path', null); // Only update if credit_note_pdf_path is null
+      
+      if (updateError) {
+        console.warn('Error updating credit note with PDF path:', updateError);
+      } else {
+        console.log('Credit note PDF saved successfully:', filePath);
+      }
+    }
+  } catch (error) {
+    console.error('Error generating credit note PDF:', error);
     throw error;
   }
 }
