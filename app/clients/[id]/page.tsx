@@ -1127,6 +1127,14 @@ export default function ClientDetailPage() {
 
       const finalTotalAmount = totalAmount + adjustmentsTotal;
 
+      // Vérifier si le montant total est négatif
+      if (finalTotalAmount < 0) {
+        setSubmitting(false);
+        setConfirmationDialogOpen(false);
+        toast.error('Une facture ne peut pas avoir un montant négatif. Veuillez créer un avoir.');
+        return;
+      }
+
       // Toujours créer un enregistrement invoice si il y a des mises à jour de stock
       // Cela permet d'avoir un invoice_id unique pour regrouper les stock_updates d'un relevé
       let invoiceData: Invoice | null = null;
@@ -3350,7 +3358,7 @@ export default function ClientDetailPage() {
                     .map((item) => {
                       if (item.type === 'invoice') {
                         const invoice = item.data as Invoice;
-                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
+                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id && u.collection_id !== null);
                         return (
                           <div
                             key={invoice.id}
