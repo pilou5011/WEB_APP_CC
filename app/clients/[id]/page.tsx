@@ -205,11 +205,7 @@ function SortableCollectionRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className={cn(
-              "h-9 placeholder:text-slate-400",
-              (!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === '') && "bg-slate-100 cursor-not-allowed"
-            )}
-            disabled={!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === ''}
+            className="h-9 placeholder:text-slate-400"
           />
         )}
       </TableCell>
