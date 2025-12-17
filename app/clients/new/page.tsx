@@ -38,6 +38,10 @@ export default function NewClientPage() {
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
+  const [editingEstablishmentType, setEditingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [editEstablishmentTypeName, setEditEstablishmentTypeName] = useState('');
+  const [deletingEstablishmentType, setDeletingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [deleteEstablishmentTypeDialogOpen, setDeleteEstablishmentTypeDialogOpen] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
   const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
@@ -232,7 +236,7 @@ export default function NewClientPage() {
         return;
       }
 
-      setEstablishmentTypes([...establishmentTypes, data].sort((a, b) => a.name.localeCompare(b.name)));
+      await loadEstablishmentTypes();
       setFormData({ ...formData, establishment_type_id: data.id });
       setNewTypeName('');
       setShowNewTypeInput(false);
@@ -242,6 +246,66 @@ export default function NewClientPage() {
       toast.error('Erreur lors de l\'ajout du type');
     } finally {
       setAddingNewType(false);
+    }
+  };
+
+  const handleEditEstablishmentType = async () => {
+    if (!editingEstablishmentType || !editEstablishmentTypeName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .update({ name: editEstablishmentTypeName.trim() })
+        .eq('id', editingEstablishmentType.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadEstablishmentTypes();
+      setEditingEstablishmentType(null);
+      setEditEstablishmentTypeName('');
+      toast.success('Type modifié avec succès');
+    } catch (error) {
+      console.error('Error updating establishment type:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteEstablishmentTypeClick = (type: EstablishmentType) => {
+    setDeletingEstablishmentType(type);
+    setDeleteEstablishmentTypeDialogOpen(true);
+  };
+
+  const handleDeleteEstablishmentType = async () => {
+    if (!deletingEstablishmentType) return;
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .delete()
+        .eq('id', deletingEstablishmentType.id);
+
+      if (error) throw error;
+
+      await loadEstablishmentTypes();
+      if (formData.establishment_type_id === deletingEstablishmentType.id) {
+        setFormData({ ...formData, establishment_type_id: '' });
+      }
+      setDeleteEstablishmentTypeDialogOpen(false);
+      setDeletingEstablishmentType(null);
+      toast.success('Type supprimé avec succès');
+    } catch (error) {
+      console.error('Error deleting establishment type:', error);
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -466,42 +530,124 @@ export default function NewClientPage() {
 
                 {/* Type d'établissement */}
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <Label htmlFor="establishment_type">Type d'établissement</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setManageTypesDialogOpen(true)}
-                      className="h-7 text-xs"
-                    >
-                      <Settings className="h-3 w-3 mr-1" />
-                      Gérer les types
-                    </Button>
-                  </div>
-                  {!showNewTypeInput ? (
-                    <div className="flex gap-2">
-                      <Select
-                        value={formData.establishment_type_id}
-                        onValueChange={(value) => setFormData({ ...formData, establishment_type_id: value })}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Sélectionner un type..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {establishmentTypes.map((type) => (
-                            <SelectItem key={type.id} value={type.id}>
-                              {type.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <Label htmlFor="establishment_type">Type d'établissement (optionnel)</Label>
+                  {!showNewTypeInput && !editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="flex-1 justify-between"
+                          >
+                            {formData.establishment_type_id
+                              ? establishmentTypes.find(t => t.id === formData.establishment_type_id)?.name
+                              : 'Sélectionner un type...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Rechercher un type..." />
+                            <CommandList>
+                              {establishmentTypes.length === 0 ? (
+                                <CommandEmpty>
+                                  <div className="py-6 text-center text-sm text-slate-400">
+                                    Liste vide, veuillez ajouter un élément
+                                  </div>
+                                </CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {establishmentTypes.map((type) => (
+                                    <div key={type.id} className="flex items-center group">
+                                      <CommandItem
+                                        value={type.id}
+                                        onSelect={() => {
+                                          setFormData({ ...formData, establishment_type_id: type.id });
+                                        }}
+                                        className="flex-1"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            formData.establishment_type_id === type.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {type.name}
+                                      </CommandItem>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingEstablishmentType(type);
+                                          setEditEstablishmentTypeName(type.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteEstablishmentTypeClick(type);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setShowNewTypeInput(true)}
                       >
                         <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={editEstablishmentTypeName}
+                        onChange={(e) => setEditEstablishmentTypeName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditEstablishmentType();
+                          } else if (e.key === 'Escape') {
+                            setEditingEstablishmentType(null);
+                            setEditEstablishmentTypeName('');
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleEditEstablishmentType}
+                      >
+                        Enregistrer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingEstablishmentType(null);
+                          setEditEstablishmentTypeName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
@@ -514,8 +660,13 @@ export default function NewClientPage() {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             handleAddNewType();
+                          } else if (e.key === 'Escape') {
+                            setShowNewTypeInput(false);
+                            setNewTypeName('');
                           }
                         }}
+                        className="flex-1"
+                        autoFocus
                       />
                       <Button
                         type="button"
@@ -1044,6 +1195,28 @@ export default function NewClientPage() {
           methods={paymentMethods}
           onMethodsUpdated={loadPaymentMethods}
         />
+
+        {/* Dialog de confirmation de suppression - Type d'établissement */}
+        <AlertDialog open={deleteEstablishmentTypeDialogOpen} onOpenChange={setDeleteEstablishmentTypeDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer ce type d'établissement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer le type "{deletingEstablishmentType?.name}" ?
+                Les clients utilisant ce type ne seront pas supprimés, mais leur type sera réinitialisé.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteEstablishmentType}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Dialog de confirmation de suppression - Méthode de paiement */}
         <AlertDialog open={deletePaymentMethodDialogOpen} onOpenChange={setDeletePaymentMethodDialogOpen}>
