@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -2500,6 +2500,22 @@ export default function ClientDetailPage() {
                           {client.phone_1_info && (
                             <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
                           )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* E-mail */}
+                    {client.email && (
+                      <div className="flex items-start gap-2">
+                        <Mail className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex items-center gap-1 whitespace-nowrap min-w-0">
+                          <span className="font-medium text-slate-700 text-base">E-mail : </span>
+                          <a 
+                            href={`mailto:${client.email}`}
+                            className="text-slate-900 font-bold text-base hover:text-blue-600 hover:underline transition-colors"
+                          >
+                            {client.email}
+                          </a>
                         </div>
                       </div>
                     )}
