@@ -24,6 +24,12 @@ import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { cn } from '@/lib/utils';
 
+// Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+
+// Options de minutes - identiques aux horaires d'ouverture
+const MINUTE_OPTIONS = ['00', '15', '30', '45'];
+
 export default function ClientInfoPage() {
   const router = useRouter();
   const params = useParams();
@@ -1550,26 +1556,39 @@ export default function ClientInfoPage() {
                     <div>
                       <Label>Temps moyen</Label>
                       <div className="flex items-center gap-2 mt-1.5">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={formData.average_time_hours}
-                          onChange={(e) => setFormData({ ...formData, average_time_hours: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="0"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_hours || ''}
+                          onValueChange={(val) => {
+                            setFormData({ 
+                              ...formData, 
+                              average_time_hours: val,
+                              average_time_minutes: '00' // Réinitialiser les minutes à "00" quand une heure est sélectionnée
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {HOUR_OPTIONS.map((h) => (
+                              <SelectItem key={h} value={h}>{h}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">h</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={formData.average_time_minutes}
-                          onChange={(e) => setFormData({ ...formData, average_time_minutes: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="00"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_minutes || ''}
+                          onValueChange={(val) => setFormData({ ...formData, average_time_minutes: val })}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINUTE_OPTIONS.map((m) => (
+                              <SelectItem key={m} value={m}>{m}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">min</span>
                       </div>
                     </div>
