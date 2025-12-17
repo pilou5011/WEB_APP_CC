@@ -369,10 +369,10 @@ export default function NewClientPage() {
         return;
       }
 
-      // Validation des périodes de vacances
+      // Validation des périodes de fermeture
       const vacationPeriodsValidation = validateVacationPeriods(vacationPeriods);
       if (!vacationPeriodsValidation.valid) {
-        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de vacances');
+        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de fermeture');
         setSubmitting(false);
         return;
       }
