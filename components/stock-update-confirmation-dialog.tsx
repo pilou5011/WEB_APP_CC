@@ -1,9 +1,12 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Euro, Package, TrendingDown } from 'lucide-react';
+import { Euro, Package, TrendingDown, Percent } from 'lucide-react';
 import { Collection } from '@/lib/supabase';
 
 interface CollectionUpdate {
@@ -27,7 +30,7 @@ interface PendingAdjustment {
 interface StockUpdateConfirmationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  onConfirm: (discountPercentage?: number) => void;
   collectionUpdates: CollectionUpdate[];
   pendingAdjustments?: PendingAdjustment[];
   loading?: boolean;
@@ -41,6 +44,15 @@ export function StockUpdateConfirmationDialog({
   pendingAdjustments = [],
   loading = false
 }: StockUpdateConfirmationDialogProps) {
+  const [discountPercentage, setDiscountPercentage] = useState<string>('');
+  
+  // Réinitialiser la remise quand le dialogue s'ouvre
+  useEffect(() => {
+    if (open) {
+      setDiscountPercentage('');
+    }
+  }, [open]);
+  
   const totalCardsSold = collectionUpdates.reduce((sum, item) => sum + item.cardsSold, 0);
   const collectionsAmount = collectionUpdates.reduce((sum, item) => sum + item.amount, 0);
   
@@ -52,7 +64,20 @@ export function StockUpdateConfirmationDialog({
     return sum + (unitPrice * quantity);
   }, 0);
   
-  const totalAmount = collectionsAmount + adjustmentsTotal;
+  const totalAmountBeforeDiscount = collectionsAmount + adjustmentsTotal;
+  
+  // Calcul de la remise
+  const discountValue = discountPercentage ? parseFloat(discountPercentage) : 0;
+  const discountAmount = discountValue > 0 && discountValue <= 100 
+    ? (totalAmountBeforeDiscount * discountValue / 100) 
+    : 0;
+  
+  const totalAmount = totalAmountBeforeDiscount - discountAmount;
+  
+  const handleConfirm = () => {
+    const discount = discountPercentage ? parseFloat(discountPercentage) : undefined;
+    onConfirm(discount);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,6 +108,47 @@ export function StockUpdateConfirmationDialog({
               <p className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-900' : 'text-green-900'}`}>
                 {totalAmount.toFixed(2)} €
               </p>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Remise commerciale */}
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+            <div className="flex items-center gap-2 text-blue-600 mb-3">
+              <Percent className="h-5 w-5" />
+              <h3 className="font-semibold">Remise commerciale</h3>
+            </div>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Label htmlFor="discount" className="text-sm text-slate-600">
+                  Pourcentage de remise (%)
+                </Label>
+                <Input
+                  id="discount"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={discountPercentage}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
+                      setDiscountPercentage(value);
+                    }
+                  }}
+                  placeholder="0"
+                  className="mt-1.5"
+                />
+              </div>
+              {discountAmount > 0 && (
+                <div className="text-right">
+                  <p className="text-sm text-slate-500">Montant de la remise</p>
+                  <p className="text-xl font-bold text-blue-700">
+                    -{discountAmount.toFixed(2)} €
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -224,7 +290,19 @@ export function StockUpdateConfirmationDialog({
                   </div>
                 </>
               )}
-              <Separator />
+              {discountAmount > 0 && (
+                <>
+                  <div className="flex justify-between items-center text-slate-700">
+                    <span>Montant avant remise</span>
+                    <span className="font-medium">{totalAmountBeforeDiscount.toFixed(2)} €</span>
+                  </div>
+                  <div className="flex justify-between items-center text-blue-700">
+                    <span>Remise ({discountValue}%)</span>
+                    <span className="font-medium">-{discountAmount.toFixed(2)} €</span>
+                  </div>
+                  <Separator />
+                </>
+              )}
               <div className="flex justify-between items-center pt-2">
                 <span className="text-xl font-bold text-slate-900">Montant total à facturer</span>
                 <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-slate-900'}`}>
@@ -244,7 +322,7 @@ export function StockUpdateConfirmationDialog({
             Annuler
           </Button>
           <Button
-            onClick={onConfirm}
+            onClick={handleConfirm}
             disabled={loading}
           >
             {loading ? 'Enregistrement...' : 'Confirmer et enregistrer'}

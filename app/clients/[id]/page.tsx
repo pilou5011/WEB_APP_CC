@@ -1030,7 +1030,7 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async () => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
     if (!client) return;
 
     setSubmitting(true);
@@ -1058,7 +1058,14 @@ export default function ClientDetailPage() {
         return sum + (unitPrice * quantity);
       }, 0);
 
-      const finalTotalAmount = totalAmount + adjustmentsTotal;
+      const totalAmountBeforeDiscount = totalAmount + adjustmentsTotal;
+      
+      // Appliquer la remise commerciale si fournie
+      const discountAmount = discountPercentage && discountPercentage > 0 && discountPercentage <= 100
+        ? (totalAmountBeforeDiscount * discountPercentage / 100)
+        : 0;
+      
+      const finalTotalAmount = totalAmountBeforeDiscount - discountAmount;
 
       // Toujours créer un enregistrement invoice si il y a des mises à jour de stock
       // Cela permet d'avoir un invoice_id unique pour regrouper les stock_updates d'un relevé
@@ -1069,7 +1076,8 @@ export default function ClientDetailPage() {
           .insert([{
             client_id: clientId,
             total_cards_sold: totalCardsSold,
-            total_amount: finalTotalAmount
+            total_amount: finalTotalAmount,
+            discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
           }])
           .select()
           .single();
