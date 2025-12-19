@@ -274,7 +274,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         update.counted_stock.toString(),
         update.cards_sold.toString(),
         effectivePrice.toFixed(2) + ' €',
-        totalHTAfterDiscount.toFixed(2) + ' €'
+        totalHTBeforeDiscount.toFixed(2) + ' €' // Afficher le prix HT avant remise
       ];
     });
 
@@ -284,7 +284,8 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const amtBeforeDiscount = isNaN(amt) ? 0 : amt;
       // Appliquer la remise proportionnellement aux ajustements (conforme fiscalement)
       const amtAfterDiscount = amtBeforeDiscount * discountRatio;
-      const amtStr = amtAfterDiscount.toFixed(2) + ' €';
+      // Afficher le prix HT avant remise dans la colonne "Prix TOTAL H.T."
+      const amtStr = amtBeforeDiscount.toFixed(2) + ' €';
       const quantity = adj.quantity || '';
       const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
       return [

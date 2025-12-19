@@ -66,6 +66,8 @@ export type StockUpdate = {
   cards_added: number;
   new_stock: number;
   collection_info?: string | null;
+  unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu la collection
+  total_amount_ht?: number | null; // Montant total HT : cards_sold x unit_price_ht
   created_at: string;
 };
 

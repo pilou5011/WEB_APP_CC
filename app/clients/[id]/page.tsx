@@ -1344,6 +1344,11 @@ export default function ClientDetailPage() {
             // (totalCardsSold > 0). Si aucune carte n'est vendue, pas de ligne dans stock_updates.
             if (totalCardsSold > 0) {
               const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+              // Calculer le prix effectif de la collection
+              const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+              // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée
+              const unitPriceHt = invoiceData ? effectivePrice : null;
+              const totalAmountHt = invoiceData && unitPriceHt ? totalCardsSold * unitPriceHt : null;
               
               updatesToInsert.push({
                 client_id: clientId,
@@ -1354,7 +1359,9 @@ export default function ClientDetailPage() {
                 cards_sold: totalCardsSold,
                 cards_added: totalCardsAdded,
                 new_stock: totalNewStock,
-                collection_info: collectionInfo
+                collection_info: collectionInfo,
+                unit_price_ht: unitPriceHt,
+                total_amount_ht: totalAmountHt
               });
             }
 
@@ -1374,6 +1381,11 @@ export default function ClientDetailPage() {
             const newStock = newDeposit;
             const cardsAdded = Math.max(0, newStock - countedStock);
             const collectionInfo = form.collection_info || '';
+            // Calculer le prix effectif de la collection
+            const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+            // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et des cartes sont vendues
+            const unitPriceHt = invoiceData && cardsSold > 0 ? effectivePrice : null;
+            const totalAmountHt = invoiceData && cardsSold > 0 && unitPriceHt ? cardsSold * unitPriceHt : null;
 
             updatesToInsert.push({
               client_id: clientId,
@@ -1384,7 +1396,9 @@ export default function ClientDetailPage() {
               cards_sold: cardsSold,
               cards_added: cardsAdded,
               new_stock: newStock,
-              collection_info: collectionInfo
+              collection_info: collectionInfo,
+              unit_price_ht: unitPriceHt,
+              total_amount_ht: totalAmountHt
             });
             ccUpdates.push({ id: cc.id, new_stock: newStock });
           }
