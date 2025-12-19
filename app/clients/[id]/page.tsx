@@ -2797,6 +2797,7 @@ export default function ClientDetailPage() {
                           total_cards_sold: stockUpdate.total_cards_sold,
                           total_amount: stockUpdate.total_amount,
                           invoice_number: null,
+                          discount_percentage: null,
                           invoice_pdf_path: null,
                           stock_report_pdf_path: null,
                           deposit_slip_pdf_path: null,
