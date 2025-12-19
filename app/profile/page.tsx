@@ -352,6 +352,7 @@ export default function ProfilePage() {
               if (profile) {
                 setFormData({
                   company_name: profile.company_name || '',
+                  company_name_short: profile.company_name_short || '',
                   first_name: profile.first_name || '',
                   last_name: profile.last_name || '',
                   street_address: profile.street_address || '',
