@@ -110,7 +110,7 @@ function periodsOverlap(p1: VacationPeriod, p2: VacationPeriod): boolean {
 export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditorProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState<VacationPeriod | null>(null);
-  const [periodType, setPeriodType] = useState<'recurring' | 'specific'>('recurring');
+  const [periodType, setPeriodType] = useState<'recurring' | 'specific'>('specific');
   const [inputType, setInputType] = useState<'weeks' | 'dates'>('dates');
   const [tempStartWeek, setTempStartWeek] = useState<number | ''>('');
   const [tempEndWeek, setTempEndWeek] = useState<number | ''>('');
@@ -119,7 +119,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
   const [tempYear, setTempYear] = useState(new Date().getFullYear().toString());
 
   const resetDialog = () => {
-    setPeriodType('recurring');
+    setPeriodType('specific');
     setInputType('dates');
     setTempStartWeek('');
     setTempEndWeek('');
@@ -142,13 +142,23 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
     if (period.inputType === 'weeks') {
       setTempStartWeek(period.startWeek || '');
       setTempEndWeek(period.endWeek || '');
+      // Pour les semaines, utiliser l'année de la période si spécifique
+      if (!period.isRecurring && period.year) {
+        setTempYear(period.year.toString());
+      } else {
+        setTempYear(new Date().getFullYear().toString());
+      }
     } else {
+      // Pour les dates, extraire directement les dates
       setTempStartDate(period.startDate || '');
       setTempEndDate(period.endDate || '');
-    }
-    
-    if (!period.isRecurring && period.year) {
-      setTempYear(period.year.toString());
+      // Extraire l'année des dates si période spécifique
+      if (!period.isRecurring && period.startDate) {
+        const yearFromDate = period.startDate.split('-')[0];
+        setTempYear(yearFromDate);
+      } else {
+        setTempYear(new Date().getFullYear().toString());
+      }
     }
     
     setIsDialogOpen(true);
@@ -217,12 +227,16 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
         startDate = `2000-${startParts[1]}-${startParts[2]}`;
         endDate = `2000-${endParts[1]}-${endParts[2]}`;
       } else {
-        if (!tempYear) {
-          toast.error('Veuillez renseigner l\'année');
+        // Extraire l'année directement des dates
+        const year = Number(startParts[0]);
+        startDate = tempStartDate;
+        endDate = tempEndDate;
+        
+        // Vérifier que les deux dates ont la même année
+        if (startParts[0] !== endParts[0]) {
+          toast.error('Les dates de début et de fin doivent être de la même année');
           return;
         }
-        startDate = `${tempYear}-${startParts[1]}-${startParts[2]}`;
-        endDate = `${tempYear}-${endParts[1]}-${endParts[2]}`;
       }
 
       if (startDate > endDate) {
@@ -236,7 +250,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
         endDate,
         isRecurring: periodType === 'recurring',
         inputType: 'dates',
-        year: periodType === 'specific' ? Number(tempYear) : undefined
+        year: periodType === 'specific' ? Number(startParts[0]) : undefined
       };
     }
 
@@ -260,10 +274,10 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
 
     if (editingPeriod) {
       onChange(value.map(p => p.id === editingPeriod.id ? newPeriod : p));
-      toast.success('Période modifiée');
+      toast.success('Période de fermeture modifiée');
     } else {
       onChange([...value, newPeriod]);
-      toast.success('Période ajoutée');
+      toast.success('Période de fermeture ajoutée');
     }
 
     setIsDialogOpen(false);
@@ -272,7 +286,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
 
   const handleRemovePeriod = (id: string) => {
     onChange(value.filter(period => period.id !== id));
-    toast.success('Période supprimée');
+    toast.success('Période de fermeture supprimée');
   };
 
   // Générer les options de semaines (S1 à S52)
@@ -281,7 +295,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <Label className="text-base font-medium">Périodes de vacances</Label>
+        <Label className="text-base font-semibold">Périodes de fermeture</Label>
         <Button
           type="button"
           variant="outline"
@@ -289,7 +303,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
           onClick={handleAddPeriodClick}
         >
           <Plus className="h-4 w-4 mr-2" />
-          Ajouter une période
+          Ajouter une période de fermeture
         </Button>
       </div>
 
@@ -301,7 +315,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
         <DialogContent className="sm:max-w-[550px]">
           <DialogHeader>
             <DialogTitle>
-              {editingPeriod ? 'Modifier une période de vacances' : 'Ajouter une période de vacances'}
+              {editingPeriod ? 'Modifier une période de fermeture' : 'Ajouter une période de fermeture'}
             </DialogTitle>
             <DialogDescription>
               Choisissez le type de période et le format de saisie.
@@ -311,43 +325,51 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
             {/* Type de période */}
             <div>
               <Label className="text-sm font-medium mb-3 block">Type de période</Label>
-              <RadioGroup value={periodType} onValueChange={(val) => setPeriodType(val as 'recurring' | 'specific')}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="recurring" id="recurring" />
-                  <Label htmlFor="recurring" className="cursor-pointer">
-                    Récurrent (se répète chaque année)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="specific" id="specific" />
-                  <Label htmlFor="specific" className="cursor-pointer">
-                    Spécifique (pour une année donnée)
-                  </Label>
-                </div>
-              </RadioGroup>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={periodType === 'specific' ? 'default' : 'outline'}
+                  onClick={() => setPeriodType('specific')}
+                  className="flex-1"
+                >
+                  Ponctuel
+                </Button>
+                <Button
+                  type="button"
+                  variant={periodType === 'recurring' ? 'default' : 'outline'}
+                  onClick={() => setPeriodType('recurring')}
+                  className="flex-1"
+                >
+                  Annuel
+                </Button>
+              </div>
             </div>
 
             {/* Format de saisie */}
             <div>
               <Label className="text-sm font-medium mb-3 block">Format de saisie</Label>
-              <RadioGroup value={inputType} onValueChange={(val) => setInputType(val as 'weeks' | 'dates')}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="weeks" id="weeks" />
-                  <Label htmlFor="weeks" className="cursor-pointer">
-                    Par semaines (S1 à S52)
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="dates" id="dates" />
-                  <Label htmlFor="dates" className="cursor-pointer">
-                    Par dates précises
-                  </Label>
-                </div>
-              </RadioGroup>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={inputType === 'dates' ? 'default' : 'outline'}
+                  onClick={() => setInputType('dates')}
+                  className="flex-1"
+                >
+                  Dates précises
+                </Button>
+                <Button
+                  type="button"
+                  variant={inputType === 'weeks' ? 'default' : 'outline'}
+                  onClick={() => setInputType('weeks')}
+                  className="flex-1"
+                >
+                  Semaines (S1 à S52)
+                </Button>
+              </div>
             </div>
 
-            {/* Année (seulement pour période spécifique) */}
-            {periodType === 'specific' && (
+            {/* Année (seulement pour période spécifique avec saisie par semaines) */}
+            {periodType === 'specific' && inputType === 'weeks' && (
               <div>
                 <Label htmlFor="year">Année</Label>
                 <Input
@@ -443,7 +465,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
               disabled={
                 (inputType === 'weeks' && (!tempStartWeek || !tempEndWeek)) ||
                 (inputType === 'dates' && (!tempStartDate || !tempEndDate)) ||
-                (periodType === 'specific' && !tempYear)
+                (periodType === 'specific' && inputType === 'weeks' && !tempYear)
               }
             >
               {editingPeriod ? 'Modifier' : 'Ajouter'}
@@ -454,7 +476,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
 
       {/* Liste des périodes */}
       {value.length === 0 ? (
-        <p className="text-sm text-slate-500 italic">Aucune période de vacances ajoutée</p>
+        <p className="text-sm text-slate-500 italic">Aucune période de fermeture ajoutée</p>
       ) : (
         <div className="border rounded-lg overflow-hidden">
           <Table>
@@ -495,7 +517,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
                     <TableCell>
                       <div className="px-2 py-1 rounded bg-blue-50 border border-blue-200 inline-block">
                         <span className="text-xs font-medium text-blue-700">
-                          {period.isRecurring ? 'Récurrent' : 'Spécifique'}
+                          {period.isRecurring ? 'Annuel' : 'Ponctuel'}
                         </span>
                       </div>
                     </TableCell>
@@ -545,7 +567,7 @@ export function validateVacationPeriods(periods: VacationPeriod[]): { valid: boo
         return { valid: false, message: `La semaine de fin doit être supérieure ou égale à la semaine de début pour la période ${i + 1}` };
       }
       if (!period.isRecurring && !period.year) {
-        return { valid: false, message: `Année manquante pour la période spécifique ${i + 1}` };
+        return { valid: false, message: `Année manquante pour la période ponctuelle ${i + 1}` };
       }
     } else {
       if (!period.startDate || !period.endDate) {
@@ -555,7 +577,7 @@ export function validateVacationPeriods(periods: VacationPeriod[]): { valid: boo
         return { valid: false, message: `La date de fin doit être postérieure à la date de début pour la période ${i + 1}` };
       }
       if (!period.isRecurring && !period.year) {
-        return { valid: false, message: `Année manquante pour la période spécifique ${i + 1}` };
+        return { valid: false, message: `Année manquante pour la période ponctuelle ${i + 1}` };
       }
     }
 

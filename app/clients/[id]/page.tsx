@@ -2,14 +2,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -29,16 +30,17 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { InvoiceDialog } from '@/components/invoice-dialog';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { StockReportDialog } from '@/components/stock-report-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { CreditNoteDialog } from '@/components/credit-note-dialog';
 import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogPortal, DialogOverlay } from '@/components/ui/dialog';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -46,7 +48,70 @@ import { useStockUpdateDraft } from '@/hooks/use-stock-update-draft';
 import { ClientCalendar } from '@/components/client-calendar';
 import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
-import { VacationPeriod } from '@/components/vacation-periods-editor';
+import { VacationPeriod, VacationPeriodsEditor } from '@/components/vacation-periods-editor';
+
+// Helper functions for vacation periods (from vacation-periods-editor)
+function getDateFromWeek(week: number, year: number = new Date().getFullYear()): Date {
+  const simple = new Date(year, 0, 1 + (week - 1) * 7);
+  const dow = simple.getDay();
+  const ISOweekStart = simple;
+  if (dow <= 4) {
+    ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+  } else {
+    ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+  }
+  return ISOweekStart;
+}
+
+function weekToDate(week: number, year: number): string {
+  const date = getDateFromWeek(week, year);
+  return date.toISOString().split('T')[0];
+}
+
+function getEndOfWeek(startDate: Date): Date {
+  const endDate = new Date(startDate);
+  endDate.setDate(startDate.getDate() + 6);
+  return endDate;
+}
+
+function periodsOverlap(p1: VacationPeriod, p2: VacationPeriod): boolean {
+  if (!p1.startDate || !p1.endDate || !p2.startDate || !p2.endDate) {
+    return false;
+  }
+
+  let start1: Date, end1: Date, start2: Date, end2: Date;
+
+  if (p1.inputType === 'weeks' && p1.startWeek && p1.endWeek) {
+    const year1 = p1.isRecurring ? 2000 : (p1.year || new Date().getFullYear());
+    start1 = new Date(weekToDate(p1.startWeek, year1));
+    const end1Start = new Date(weekToDate(p1.endWeek, year1));
+    end1 = getEndOfWeek(end1Start);
+  } else {
+    start1 = new Date(p1.startDate);
+    end1 = new Date(p1.endDate);
+  }
+
+  if (p2.inputType === 'weeks' && p2.startWeek && p2.endWeek) {
+    const year2 = p2.isRecurring ? 2000 : (p2.year || new Date().getFullYear());
+    start2 = new Date(weekToDate(p2.startWeek, year2));
+    const end2Start = new Date(weekToDate(p2.endWeek, year2));
+    end2 = getEndOfWeek(end2Start);
+  } else {
+    start2 = new Date(p2.startDate);
+    end2 = new Date(p2.endDate);
+  }
+
+  if (p1.isRecurring) {
+    start1.setFullYear(2000);
+    end1.setFullYear(2000);
+  }
+  if (p2.isRecurring) {
+    start2.setFullYear(2000);
+    end2.setFullYear(2000);
+  }
+
+  return start1 <= end2 && start2 <= end1;
+}
 
 // Component for sortable collection row
 function SortableCollectionRow({
@@ -67,7 +132,9 @@ function SortableCollectionRow({
   setPerSubProductForm,
   onEditPrice,
   onDelete,
-  subProducts
+  subProducts,
+  onAdjustStock,
+  clientId
 }: {
   cc: ClientCollection & { collection?: Collection };
   effectivePrice: number;
@@ -87,6 +154,8 @@ function SortableCollectionRow({
   onEditPrice: () => void;
   onDelete: () => void;
   subProducts: Record<string, SubProduct[]>;
+  onAdjustStock: () => void;
+  clientId: string;
 }) {
   const {
     attributes,
@@ -122,6 +191,19 @@ function SortableCollectionRow({
             {cc.collection?.name || 'Collection'}
           </p>
         </div>
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center w-[5%]">
+        {!hasSubProducts && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAdjustStock}
+            className="h-8 w-8 p-0"
+            title="Ajuster le stock"
+          >
+            <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+          </Button>
+        )}
       </TableCell>
       <TableCell className="align-middle py-3 text-center">
         {hasSubProducts ? (
@@ -186,11 +268,7 @@ function SortableCollectionRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className={cn(
-              "h-9 placeholder:text-slate-400",
-              (!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === '') && "bg-slate-100 cursor-not-allowed"
-            )}
-            disabled={!perCollectionForm[cc.id]?.counted_stock || perCollectionForm[cc.id]?.counted_stock === ''}
+            className="h-9 placeholder:text-slate-400"
           />
         )}
       </TableCell>
@@ -271,8 +349,6 @@ export default function ClientDetailPage() {
   const [clientSubProducts, setClientSubProducts] = useState<Record<string, ClientSubProduct>>({}); // sub_product_id -> ClientSubProduct
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<StockUpdate | null>(null);
-  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
@@ -299,6 +375,18 @@ export default function ClientDetailPage() {
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   
+  // Vacation period dialog states
+  const [vacationPeriodDialogOpen, setVacationPeriodDialogOpen] = useState(false);
+  const [editingVacationPeriod, setEditingVacationPeriod] = useState<VacationPeriod | null>(null);
+  const [vacationPeriodType, setVacationPeriodType] = useState<'recurring' | 'specific'>('specific');
+  const [vacationPeriodInputType, setVacationPeriodInputType] = useState<'weeks' | 'dates'>('dates');
+  const [tempVacationStartWeek, setTempVacationStartWeek] = useState<number | ''>('');
+  const [tempVacationEndWeek, setTempVacationEndWeek] = useState<number | ''>('');
+  const [tempVacationStartDate, setTempVacationStartDate] = useState('');
+  const [tempVacationEndDate, setTempVacationEndDate] = useState('');
+  const [tempVacationYear, setTempVacationYear] = useState(new Date().getFullYear().toString());
+  const [savingVacationPeriod, setSavingVacationPeriod] = useState(false);
+  
   // Draft recovery
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
@@ -321,6 +409,43 @@ export default function ClientDetailPage() {
     custom_price: ''
   });
   const [updatingPrice, setUpdatingPrice] = useState(false);
+
+  // Adjust stock dialog
+  const [adjustStockDialogOpen, setAdjustStockDialogOpen] = useState(false);
+  const [itemToAdjust, setItemToAdjust] = useState<{
+    type: 'collection' | 'sub-product';
+    id: string;
+    name: string;
+    currentStock: number;
+    collectionId: string | null;
+  } | null>(null);
+  const [adjustStockForm, setAdjustStockForm] = useState<{
+    newStock: string;
+  }>({
+    newStock: ''
+  });
+  const [adjustingStock, setAdjustingStock] = useState(false);
+  const [confirmAdjustDialogOpen, setConfirmAdjustDialogOpen] = useState(false);
+
+  // Credit note dialog
+  const [creditNoteDialogOpen, setCreditNoteDialogOpen] = useState(false);
+  const [creditNoteForm, setCreditNoteForm] = useState<{
+    invoice_id: string;
+    operation_name: string;
+    quantity: string;
+    unit_price: string;
+  }>({
+    invoice_id: '',
+    operation_name: '',
+    quantity: '',
+    unit_price: ''
+  });
+  const [creditNoteConfirmDialogOpen, setCreditNoteConfirmDialogOpen] = useState(false);
+  const [creatingCreditNote, setCreatingCreditNote] = useState(false);
+  const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
+  const [invoicePopoverOpen, setInvoicePopoverOpen] = useState(false);
+  const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
+  const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
   // Form per collection: { [clientCollectionId]: { counted_stock, cards_added, collection_info } }
   const [perCollectionForm, setPerCollectionForm] = useState<Record<string, { counted_stock: string; cards_added: string; reassort: string; collection_info: string }>>({});
@@ -764,6 +889,16 @@ export default function ClientDetailPage() {
 
       if (invoicesError) throw invoicesError;
       setGlobalInvoices(invoicesData || []);
+
+      // Load credit notes
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (creditNotesError) throw creditNotesError;
+      setCreditNotes(creditNotesData || []);
       
       // Calculate last visit date (date of last invoice)
       if (invoicesData && invoicesData.length > 0) {
@@ -1033,7 +1168,7 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async () => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
     if (!client) return;
 
     setSubmitting(true);
@@ -1061,7 +1196,22 @@ export default function ClientDetailPage() {
         return sum + (unitPrice * quantity);
       }, 0);
 
-      const finalTotalAmount = totalAmount + adjustmentsTotal;
+      const totalAmountBeforeDiscount = totalAmount + adjustmentsTotal;
+      
+      // Appliquer la remise commerciale si fournie
+      const discountAmount = discountPercentage && discountPercentage > 0 && discountPercentage <= 100
+        ? (totalAmountBeforeDiscount * discountPercentage / 100)
+        : 0;
+      
+      const finalTotalAmount = totalAmountBeforeDiscount - discountAmount;
+
+      // Vérifier si le montant total est négatif
+      if (finalTotalAmount < 0) {
+        setSubmitting(false);
+        setConfirmationDialogOpen(false);
+        toast.error('Une facture ne peut pas avoir un montant négatif. Veuillez créer un avoir.');
+        return;
+      }
 
       // Toujours créer un enregistrement invoice si il y a des mises à jour de stock
       // Cela permet d'avoir un invoice_id unique pour regrouper les stock_updates d'un relevé
@@ -1072,7 +1222,8 @@ export default function ClientDetailPage() {
           .insert([{
             client_id: clientId,
             total_cards_sold: totalCardsSold,
-            total_amount: finalTotalAmount
+            total_amount: finalTotalAmount,
+            discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
           }])
           .select()
           .single();
@@ -1189,21 +1340,30 @@ export default function ClientDetailPage() {
             }
 
             // Create stock update for the parent collection (for invoice)
-            // Toujours créer le stock_update pour la collection parent si elle a des sous-produits
-            // (même si aucun sous-produit n'a été mis à jour, pour avoir l'historique)
-            const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
-            
-            updatesToInsert.push({
-              client_id: clientId,
-              collection_id: cc.collection_id, // Parent collection ID for invoice
-              invoice_id: invoiceData?.id || null,
-              previous_stock: totalPreviousStock,
-              counted_stock: totalCountedStock,
-              cards_sold: totalCardsSold,
-              cards_added: totalCardsAdded,
-              new_stock: totalNewStock,
-              collection_info: collectionInfo
-            });
+            // IMPORTANT: Ne créer le stock_update pour la collection parent QUE si des cartes ont été vendues
+            // (totalCardsSold > 0). Si aucune carte n'est vendue, pas de ligne dans stock_updates.
+            if (totalCardsSold > 0) {
+              const collectionInfo = perCollectionForm[cc.id]?.collection_info || '';
+              // Calculer le prix effectif de la collection
+              const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+              // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée
+              const unitPriceHt = invoiceData ? effectivePrice : null;
+              const totalAmountHt = invoiceData && unitPriceHt ? totalCardsSold * unitPriceHt : null;
+              
+              updatesToInsert.push({
+                client_id: clientId,
+                collection_id: cc.collection_id, // Parent collection ID for invoice
+                invoice_id: invoiceData?.id || null,
+                previous_stock: totalPreviousStock,
+                counted_stock: totalCountedStock,
+                cards_sold: totalCardsSold,
+                cards_added: totalCardsAdded,
+                new_stock: totalNewStock,
+                collection_info: collectionInfo,
+                unit_price_ht: unitPriceHt,
+                total_amount_ht: totalAmountHt
+              });
+            }
 
             // Update parent collection stock (sum of ALL sub-products)
             ccUpdates.push({ id: cc.id, new_stock: totalNewStock });
@@ -1221,6 +1381,11 @@ export default function ClientDetailPage() {
             const newStock = newDeposit;
             const cardsAdded = Math.max(0, newStock - countedStock);
             const collectionInfo = form.collection_info || '';
+            // Calculer le prix effectif de la collection
+            const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+            // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et des cartes sont vendues
+            const unitPriceHt = invoiceData && cardsSold > 0 ? effectivePrice : null;
+            const totalAmountHt = invoiceData && cardsSold > 0 && unitPriceHt ? cardsSold * unitPriceHt : null;
 
             updatesToInsert.push({
               client_id: clientId,
@@ -1231,7 +1396,9 @@ export default function ClientDetailPage() {
               cards_sold: cardsSold,
               cards_added: cardsAdded,
               new_stock: newStock,
-              collection_info: collectionInfo
+              collection_info: collectionInfo,
+              unit_price_ht: unitPriceHt,
+              total_amount_ht: totalAmountHt
             });
             ccUpdates.push({ id: cc.id, new_stock: newStock });
           }
@@ -1276,6 +1443,59 @@ export default function ClientDetailPage() {
         }
       }
 
+      // Générer et sauvegarder les 3 PDFs (facture, relevé de stock, bon de dépôt)
+      // après que tous les stock_updates et adjustments ont été insérés
+      if (invoiceData) {
+        try {
+          // Import dynamique pour éviter de charger les dépendances lourdes si pas nécessaire
+          const pdfGenerators = await import('@/lib/pdf-generators');
+          const { generateAndSaveInvoicePDF, generateAndSaveStockReportPDF, generateAndSaveDepositSlipPDF } = pdfGenerators;
+          
+          // Charger les données nécessaires pour la génération des PDFs
+          const { data: userProfile } = await supabase
+            .from('user_profile')
+            .select('*')
+            .limit(1)
+            .maybeSingle();
+
+          const { data: invoiceAdjustments } = await supabase
+            .from('invoice_adjustments')
+            .select('*')
+            .eq('invoice_id', invoiceData.id);
+
+          // Générer les 3 PDFs en parallèle
+          await Promise.all([
+            generateAndSaveInvoicePDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              collections: allCollections,
+              stockUpdates: insertedStockUpdates,
+              adjustments: invoiceAdjustments || [],
+              userProfile: userProfile || null
+            }),
+            generateAndSaveStockReportPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            }),
+            generateAndSaveDepositSlipPDF({
+              invoice: invoiceData,
+              client,
+              clientCollections,
+              stockUpdates: insertedStockUpdates
+            })
+          ]);
+
+          console.log('All PDFs generated and saved successfully');
+        } catch (pdfError) {
+          console.error('Error generating PDFs:', pdfError);
+          // Ne pas bloquer le processus si la génération des PDFs échoue
+          toast.warning('Les documents PDF n\'ont pas pu être générés automatiquement. Vous pourrez les générer manuellement depuis l\'historique.');
+        }
+      }
+
       // Apply per-sub-product stock updates first
       for (const upd of cspUpdates) {
         const { error: cspUpdateError } = await supabase
@@ -1294,21 +1514,9 @@ export default function ClientDetailPage() {
         if (ccUpdateError) throw ccUpdateError;
       }
 
-      // Recompute client's total stock as sum of client_collections (only if stock was updated)
-      if (hasStockUpdates) {
-        const { data: sumRows, error: sumError } = await supabase
-          .from('client_collections')
-          .select('current_stock')
-          .eq('client_id', clientId);
-        if (sumError) throw sumError;
-        const total = (sumRows || []).reduce((acc: number, row: any) => acc + (row.current_stock || 0), 0);
-
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
-      }
+      // Stock is now managed at client_collections and client_sub_products level
+      // No need to update client.current_stock as it no longer exists
+      // The total stock can be computed by summing client_collections.current_stock when needed
 
       // ✅ Débloquer l'interface IMMÉDIATEMENT
       setConfirmationDialogOpen(false);
@@ -1483,13 +1691,8 @@ export default function ClientDetailPage() {
       
       if (error) throw error;
 
-      // Update client's total stock
-      const newTotal = client!.current_stock - collectionToDelete.current_stock;
-      const { error: clientUpdateError } = await supabase
-        .from('clients')
-        .update({ current_stock: Math.max(0, newTotal), updated_at: new Date().toISOString() })
-        .eq('id', clientId);
-      if (clientUpdateError) throw clientUpdateError;
+      // Stock is now managed at client_collections level
+      // No need to update client.current_stock as it no longer exists
 
       toast.success('Collection dissociée avec succès');
       setDeleteCollectionDialogOpen(false);
@@ -1560,6 +1763,537 @@ export default function ClientDetailPage() {
     }
   };
 
+  const handleAdjustStockClick = async (type: 'collection' | 'sub-product', id: string) => {
+    try {
+      if (type === 'collection') {
+        const cc = clientCollections.find(c => c.id === id);
+        if (!cc) {
+          toast.error('Collection non trouvée');
+          return;
+        }
+        setItemToAdjust({
+          type: 'collection',
+          id: cc.id,
+          name: cc.collection?.name || 'Collection',
+          currentStock: cc.current_stock || 0,
+          collectionId: cc.collection_id
+        });
+      } else if (type === 'sub-product') {
+        const sp = Object.values(subProducts).flat().find(s => s.id === id);
+        if (!sp) {
+          toast.error('Sous-produit non trouvé');
+          return;
+        }
+        const csp = clientSubProducts[sp.id];
+        const currentStock = csp ? (csp.current_stock || 0) : 0;
+        setItemToAdjust({
+          type: 'sub-product',
+          id: sp.id,
+          name: sp.name,
+          currentStock,
+          collectionId: sp.collection_id
+        });
+      }
+      setAdjustStockForm({ newStock: '' });
+      setAdjustStockDialogOpen(true);
+    } catch (error) {
+      console.error('Error loading item for adjustment:', error);
+      toast.error('Erreur lors du chargement des données');
+    }
+  };
+
+  const handleAdjustStockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemToAdjust || !adjustStockForm.newStock || adjustStockForm.newStock === '') {
+      toast.error('Veuillez saisir un nouveau stock');
+      return;
+    }
+
+    const newStockValue = parseInt(adjustStockForm.newStock);
+    if (isNaN(newStockValue) || newStockValue < 0) {
+      toast.error('Le nouveau stock doit être un nombre positif');
+      return;
+    }
+
+    if (newStockValue === itemToAdjust.currentStock) {
+      toast.error('Le nouveau stock est identique au stock actuel');
+      return;
+    }
+
+    setConfirmAdjustDialogOpen(true);
+  };
+
+  const handleConfirmAdjustStock = async () => {
+    if (!itemToAdjust || !adjustStockForm.newStock || adjustStockForm.newStock === '') {
+      return;
+    }
+
+    const newStockValue = parseInt(adjustStockForm.newStock);
+    if (isNaN(newStockValue) || newStockValue < 0) {
+      return;
+    }
+
+    setAdjustingStock(true);
+    setConfirmAdjustDialogOpen(false);
+
+    try {
+      if (itemToAdjust.type === 'collection') {
+        // Update client collection stock
+        const { error: updateError } = await supabase
+          .from('client_collections')
+          .update({ current_stock: newStockValue })
+          .eq('id', itemToAdjust.id)
+          .eq('client_id', clientId);
+
+        if (updateError) throw updateError;
+
+        // Create stock_update record with null invoice_id
+        const { error: stockUpdateError } = await supabase
+          .from('stock_updates')
+          .insert({
+            client_id: clientId,
+            collection_id: itemToAdjust.collectionId,
+            sub_product_id: null,
+            invoice_id: null,
+            previous_stock: itemToAdjust.currentStock,
+            counted_stock: newStockValue,
+            cards_sold: 0,
+            cards_added: newStockValue - itemToAdjust.currentStock,
+            new_stock: newStockValue
+          });
+
+        if (stockUpdateError) throw stockUpdateError;
+      } else if (itemToAdjust.type === 'sub-product') {
+        // Update or create client sub-product stock
+        const { data: existingCSP, error: checkError } = await supabase
+          .from('client_sub_products')
+          .select('*')
+          .eq('sub_product_id', itemToAdjust.id)
+          .eq('client_id', clientId)
+          .maybeSingle();
+
+        if (checkError) throw checkError;
+
+        if (existingCSP) {
+          const { error: updateError } = await supabase
+            .from('client_sub_products')
+            .update({ current_stock: newStockValue })
+            .eq('id', existingCSP.id);
+
+          if (updateError) throw updateError;
+        } else {
+          // Create new client_sub_product
+          const { error: createError } = await supabase
+            .from('client_sub_products')
+            .insert({
+              client_id: clientId,
+              sub_product_id: itemToAdjust.id,
+              initial_stock: newStockValue,
+              current_stock: newStockValue
+            });
+
+          if (createError) throw createError;
+        }
+
+        // Create stock_update record for sub-product with null invoice_id
+        const { error: stockUpdateError } = await supabase
+          .from('stock_updates')
+          .insert({
+            client_id: clientId,
+            collection_id: null,
+            sub_product_id: itemToAdjust.id,
+            invoice_id: null,
+            previous_stock: itemToAdjust.currentStock,
+            counted_stock: newStockValue,
+            cards_sold: 0,
+            cards_added: newStockValue - itemToAdjust.currentStock,
+            new_stock: newStockValue
+          });
+
+        if (stockUpdateError) throw stockUpdateError;
+
+        // Update parent collection stock
+        if (itemToAdjust.collectionId) {
+          // Get all sub-products for this collection
+          const { data: allSubProducts, error: spError } = await supabase
+            .from('sub_products')
+            .select('id')
+            .eq('collection_id', itemToAdjust.collectionId);
+
+          if (spError) throw spError;
+
+          if (allSubProducts && allSubProducts.length > 0) {
+            const subProductIds = allSubProducts.map(sp => sp.id);
+
+            // Get all client_sub_products for these sub-products
+            const { data: allClientSubProducts, error: cspError } = await supabase
+              .from('client_sub_products')
+              .select('sub_product_id, current_stock')
+              .eq('client_id', clientId)
+              .in('sub_product_id', subProductIds);
+
+            if (cspError) throw cspError;
+
+            // Calculate total stock for parent collection
+            let parentStock = 0;
+            (allClientSubProducts || []).forEach(csp => {
+              if (csp.sub_product_id === itemToAdjust.id) {
+                parentStock += newStockValue;
+              } else {
+                parentStock += csp.current_stock || 0;
+              }
+            });
+
+            // Get current client collection
+            const { data: clientCollection, error: ccError } = await supabase
+              .from('client_collections')
+              .select('*')
+              .eq('client_id', clientId)
+              .eq('collection_id', itemToAdjust.collectionId)
+              .maybeSingle();
+
+            if (ccError) throw ccError;
+
+            if (clientCollection) {
+              const previousParentStock = clientCollection.current_stock || 0;
+
+              // Update parent collection stock
+              const { error: updateParentError } = await supabase
+                .from('client_collections')
+                .update({ current_stock: parentStock })
+                .eq('id', clientCollection.id);
+
+              if (updateParentError) throw updateParentError;
+
+              // Create stock_update record for parent collection with null invoice_id
+              const { error: parentStockUpdateError } = await supabase
+                .from('stock_updates')
+                .insert({
+                  client_id: clientId,
+                  collection_id: itemToAdjust.collectionId,
+                  sub_product_id: null,
+                  invoice_id: null,
+                  previous_stock: previousParentStock,
+                  counted_stock: parentStock,
+                  cards_sold: 0,
+                  cards_added: parentStock - previousParentStock,
+                  new_stock: parentStock
+                });
+
+              if (parentStockUpdateError) throw parentStockUpdateError;
+            }
+          }
+        }
+      }
+
+      toast.success('Stock ajusté avec succès');
+      setAdjustStockDialogOpen(false);
+      setItemToAdjust(null);
+      setAdjustStockForm({ newStock: '' });
+      await loadClientData();
+    } catch (error) {
+      console.error('Error adjusting stock:', error);
+      toast.error('Erreur lors de l\'ajustement du stock');
+    } finally {
+      setAdjustingStock(false);
+    }
+  };
+
+  const handleCreditNoteSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!creditNoteForm.invoice_id || !creditNoteForm.operation_name || !creditNoteForm.quantity || !creditNoteForm.unit_price) {
+      toast.error('Veuillez remplir tous les champs');
+      return;
+    }
+
+    const quantity = parseInt(creditNoteForm.quantity);
+    const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
+
+    if (isNaN(quantity) || quantity <= 0) {
+      toast.error('La quantité doit être un nombre entier positif');
+      return;
+    }
+
+    if (isNaN(unitPrice) || unitPrice <= 0) {
+      toast.error('Le prix unitaire doit être un nombre positif');
+      return;
+    }
+
+    setCreditNoteConfirmDialogOpen(true);
+  };
+
+  const handleCreateCreditNote = async () => {
+    if (!creditNoteForm.invoice_id || !creditNoteForm.operation_name || !creditNoteForm.quantity || !creditNoteForm.unit_price) {
+      return;
+    }
+
+    setCreatingCreditNote(true);
+    try {
+      const quantity = parseInt(creditNoteForm.quantity);
+      const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
+      const totalAmount = quantity * unitPrice;
+
+      // Create credit note
+      const { data: creditNote, error: creditNoteError } = await supabase
+        .from('credit_notes')
+        .insert({
+          invoice_id: creditNoteForm.invoice_id,
+          client_id: clientId,
+          unit_price: unitPrice,
+          quantity: quantity,
+          total_amount: totalAmount,
+          operation_name: creditNoteForm.operation_name
+        })
+        .select()
+        .single();
+
+      if (creditNoteError) throw creditNoteError;
+
+      if (!creditNote) {
+        throw new Error('Erreur lors de la création de l\'avoir');
+      }
+
+      // Generate PDF
+      const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
+      
+      const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
+      if (!invoice) {
+        throw new Error('Facture non trouvée');
+      }
+
+      if (!client) {
+        throw new Error('Client non trouvé');
+      }
+
+      // Load user profile
+      const { data: userProfileData } = await supabase
+        .from('user_profile')
+        .select('*')
+        .limit(1)
+        .maybeSingle();
+
+      await generateAndSaveCreditNotePDF({
+        creditNote: creditNote as CreditNote,
+        invoice,
+        client,
+        userProfile: userProfileData
+      });
+
+      // Reload credit notes
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('client_id', clientId)
+        .order('created_at', { ascending: false });
+
+      if (creditNotesError) throw creditNotesError;
+      setCreditNotes(creditNotesData || []);
+
+      toast.success('Avoir créé avec succès');
+      setCreditNoteDialogOpen(false);
+      setCreditNoteConfirmDialogOpen(false);
+      setCreditNoteForm({
+        invoice_id: '',
+        operation_name: '',
+        quantity: '',
+        unit_price: ''
+      });
+      setInvoicePopoverOpen(false);
+    } catch (error) {
+      console.error('Error creating credit note:', error);
+      toast.error('Erreur lors de la création de l\'avoir');
+    } finally {
+      setCreatingCreditNote(false);
+    }
+  };
+
+  // Vacation period management functions
+  const resetVacationPeriodDialog = () => {
+    setVacationPeriodType('specific');
+    setVacationPeriodInputType('dates');
+    setTempVacationStartWeek('');
+    setTempVacationEndWeek('');
+    setTempVacationStartDate('');
+    setTempVacationEndDate('');
+    setTempVacationYear(new Date().getFullYear().toString());
+    setEditingVacationPeriod(null);
+  };
+
+  const handleAddVacationPeriodClick = () => {
+    resetVacationPeriodDialog();
+    setVacationPeriodDialogOpen(true);
+  };
+
+  // Initialiser les valeurs lors de l'édition d'une période
+  useEffect(() => {
+    if (editingVacationPeriod && vacationPeriodDialogOpen) {
+      setVacationPeriodType(editingVacationPeriod.isRecurring ? 'recurring' : 'specific');
+      setVacationPeriodInputType(editingVacationPeriod.inputType);
+      
+      if (editingVacationPeriod.inputType === 'weeks') {
+        setTempVacationStartWeek(editingVacationPeriod.startWeek || '');
+        setTempVacationEndWeek(editingVacationPeriod.endWeek || '');
+        // Pour les semaines, utiliser l'année de la période si spécifique
+        if (!editingVacationPeriod.isRecurring && editingVacationPeriod.year) {
+          setTempVacationYear(editingVacationPeriod.year.toString());
+        } else {
+          setTempVacationYear(new Date().getFullYear().toString());
+        }
+      } else {
+        // Pour les dates, extraire directement les dates
+        setTempVacationStartDate(editingVacationPeriod.startDate || '');
+        setTempVacationEndDate(editingVacationPeriod.endDate || '');
+        // Extraire l'année des dates si période spécifique
+        if (!editingVacationPeriod.isRecurring && editingVacationPeriod.startDate) {
+          const yearFromDate = editingVacationPeriod.startDate.split('-')[0];
+          setTempVacationYear(yearFromDate);
+        } else {
+          setTempVacationYear(new Date().getFullYear().toString());
+        }
+      }
+    }
+  }, [editingVacationPeriod, vacationPeriodDialogOpen]);
+
+  const handleSaveVacationPeriod = async () => {
+    if (!client) return;
+
+    let newPeriod: VacationPeriod;
+
+    if (vacationPeriodInputType === 'weeks') {
+      if (!tempVacationStartWeek || !tempVacationEndWeek) {
+        toast.error('Veuillez renseigner les semaines de début et de fin');
+        return;
+      }
+
+      if (tempVacationStartWeek > tempVacationEndWeek) {
+        toast.error('La semaine de fin doit être supérieure ou égale à la semaine de début');
+        return;
+      }
+
+      const startWeek = Number(tempVacationStartWeek);
+      const endWeek = Number(tempVacationEndWeek);
+      const year = vacationPeriodType === 'specific' ? Number(tempVacationYear) : undefined;
+
+      let startDate: string;
+      let endDate: string;
+
+      if (vacationPeriodType === 'recurring') {
+        startDate = weekToDate(startWeek, 2000);
+        const endWeekStart = new Date(weekToDate(endWeek, 2000));
+        const endWeekEnd = getEndOfWeek(endWeekStart);
+        endDate = endWeekEnd.toISOString().split('T')[0];
+      } else {
+        if (!year) {
+          toast.error('Veuillez renseigner l\'année');
+          return;
+        }
+        startDate = weekToDate(startWeek, year);
+        const endWeekStart = new Date(weekToDate(endWeek, year));
+        const endWeekEnd = getEndOfWeek(endWeekStart);
+        endDate = endWeekEnd.toISOString().split('T')[0];
+      }
+
+      newPeriod = {
+        id: editingVacationPeriod?.id || `period-${Date.now()}`,
+        startDate,
+        endDate,
+        isRecurring: vacationPeriodType === 'recurring',
+        inputType: 'weeks',
+        startWeek,
+        endWeek,
+        year
+      };
+    } else {
+      if (!tempVacationStartDate || !tempVacationEndDate) {
+        toast.error('Veuillez renseigner les dates de début et de fin');
+        return;
+      }
+
+      const startParts = tempVacationStartDate.split('-');
+      const endParts = tempVacationEndDate.split('-');
+
+      let startDate: string;
+      let endDate: string;
+
+      if (vacationPeriodType === 'recurring') {
+        startDate = `2000-${startParts[1]}-${startParts[2]}`;
+        endDate = `2000-${endParts[1]}-${endParts[2]}`;
+      } else {
+        // Extraire l'année directement des dates
+        const year = Number(startParts[0]);
+        startDate = tempVacationStartDate;
+        endDate = tempVacationEndDate;
+        
+        // Vérifier que les deux dates ont la même année
+        if (startParts[0] !== endParts[0]) {
+          toast.error('Les dates de début et de fin doivent être de la même année');
+          return;
+        }
+      }
+
+      if (startDate > endDate) {
+        toast.error('La date de fin doit être postérieure à la date de début');
+        return;
+      }
+
+      newPeriod = {
+        id: editingVacationPeriod?.id || `period-${Date.now()}`,
+        startDate,
+        endDate,
+        isRecurring: vacationPeriodType === 'recurring',
+        inputType: 'dates',
+        year: vacationPeriodType === 'specific' ? Number(startParts[0]) : undefined
+      };
+    }
+
+    // Vérifier les chevauchements avec les autres périodes (sauf celle en édition)
+    const otherPeriods = editingVacationPeriod 
+      ? vacationPeriods.filter(p => p.id !== editingVacationPeriod.id)
+      : vacationPeriods;
+
+    const overlapping = otherPeriods.find(p => {
+      if (p.isRecurring !== newPeriod.isRecurring) {
+        return false;
+      }
+      return periodsOverlap(p, newPeriod);
+    });
+
+    if (overlapping) {
+      toast.error('Cette période chevauche avec une autre période existante');
+      return;
+    }
+
+    setSavingVacationPeriod(true);
+    try {
+      const updatedPeriods = editingVacationPeriod
+        ? vacationPeriods.map(p => p.id === editingVacationPeriod.id ? newPeriod : p)
+        : [...vacationPeriods, newPeriod];
+
+      // Sauvegarder dans la base de données
+      const { error } = await supabase
+        .from('clients')
+        .update({
+          vacation_periods: updatedPeriods.length > 0 ? updatedPeriods : null
+        })
+        .eq('id', clientId);
+
+      if (error) throw error;
+
+      setVacationPeriods(updatedPeriods);
+      setVacationPeriodDialogOpen(false);
+      resetVacationPeriodDialog();
+      toast.success(editingVacationPeriod ? 'Période de fermeture modifiée' : 'Période de fermeture ajoutée');
+      
+      // Recharger les données du client
+      await loadClientData();
+    } catch (error) {
+      console.error('Error saving vacation period:', error);
+      toast.error('Erreur lors de la sauvegarde de la période');
+    } finally {
+      setSavingVacationPeriod(false);
+    }
+  };
+
   const handleAddAdjustmentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const name = adjustmentForm.operation_name.trim();
@@ -1576,8 +2310,10 @@ export default function ClientDetailPage() {
       toast.error('Le prix unitaire doit être un nombre');
       return;
     }
-    if (unitPrice >= 0) {
-      toast.error('Le prix unitaire doit être négatif');
+
+    // Accepter uniquement des valeurs positives
+    if (unitPrice <= 0) {
+      toast.error('Le prix unitaire doit être positif');
       return;
     }
     
@@ -1591,9 +2327,13 @@ export default function ClientDetailPage() {
       return;
     }
     
+     // Convertir le prix positif en négatif pour le stockage (la facture affichera un montant négatif)
+    const negativeUnitPrice = -Math.abs(unitPrice);
+
+
     setPendingAdjustments((list) => [
       ...list,
-      { operation_name: name, unit_price: unitPrice.toFixed(2), quantity: quantity.toString() }
+      { operation_name: name, unit_price: negativeUnitPrice.toFixed(2), quantity: quantity.toString() }
     ]);
     setAdjustmentForm({ operation_name: '', unit_price: '', quantity: '' });
     setAddAdjustmentOpen(false);
@@ -1658,19 +2398,17 @@ export default function ClientDetailPage() {
     }
 
     // No sub-products: proceed with normal association
-    if (!selectedCollectionHasSubProducts) {
-      // Stock initial is required (can be 0)
-      if (!associateForm.initial_stock || associateForm.initial_stock.trim() === '') {
-        toast.error('Le stock initial est obligatoire');
-        return;
-      }
-      const initialStock = parseInt(associateForm.initial_stock);
-      if (isNaN(initialStock) || initialStock < 0) {
-        toast.error('Le stock initial doit être un nombre positif ou zéro');
-        return;
-      }
-      await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
+    // Stock initial is required (can be 0)
+    if (!associateForm.initial_stock || associateForm.initial_stock.trim() === '') {
+      toast.error('Le stock initial est obligatoire');
+      return;
     }
+    const initialStock = parseInt(associateForm.initial_stock);
+    if (isNaN(initialStock) || initialStock < 0) {
+      toast.error('Le stock initial doit être un nombre positif ou zéro');
+      return;
+    }
+    await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
   };
 
   const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
@@ -1719,6 +2457,25 @@ export default function ClientDetailPage() {
     subProductsStocks: Record<string, number> | null
   ) => {
     try {
+      // Validate required fields
+      if (!clientId) {
+        toast.error('ID client manquant');
+        return;
+      }
+      if (!associateForm.collection_id) {
+        toast.error('ID collection manquant');
+        return;
+      }
+
+      console.log('performAssociation called with:', {
+        initialStock,
+        customPrice,
+        customRecommendedSalePrice,
+        subProductsStocks,
+        clientId,
+        collectionId: associateForm.collection_id
+      });
+
       // Calculate display_order: max + 1 to add at the bottom
       const maxOrder = clientCollections.length > 0 
         ? Math.max(...clientCollections.map(cc => cc.display_order || 0))
@@ -1727,7 +2484,7 @@ export default function ClientDetailPage() {
 
       const insertData: any = {
         client_id: clientId,
-        collection_id: associateForm.collection_id!,
+        collection_id: associateForm.collection_id,
         initial_stock: subProductsStocks ? 0 : initialStock,
         current_stock: subProductsStocks ? 0 : initialStock,
         display_order: newDisplayOrder
@@ -1743,12 +2500,41 @@ export default function ClientDetailPage() {
         insertData.custom_recommended_sale_price = customRecommendedSalePrice;
       }
 
+      console.log('Inserting client_collection with data:', insertData);
+
       const { data, error } = await supabase
         .from('client_collections')
         .insert([insertData])
-        .select('*, collection:collections(*)')
+        .select()
         .single();
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Error inserting client_collection:', error);
+        console.error('Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
+
+      console.log('Successfully inserted client_collection:', data);
+
+      // Load the collection data separately if needed
+      if (data) {
+        const { data: collectionData, error: collectionError } = await supabase
+          .from('collections')
+          .select('*')
+          .eq('id', associateForm.collection_id)
+          .single();
+        
+        if (collectionError) {
+          console.error('Error loading collection:', collectionError);
+        } else {
+          console.log('Collection data loaded:', collectionData);
+        }
+      }
 
       // Créer un stock_update pour la collection lors de l'association
       const stockUpdateForCollection = {
@@ -1851,22 +2637,12 @@ export default function ClientDetailPage() {
           }
         }
 
-        // Update client's total stock
-        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + totalStock;
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
+        // Stock is now managed at client_collections and client_sub_products level
+        // No need to update client.current_stock as it no longer exists
       } else {
         // No sub-products: use the normal stock
-        // Update client's total stock
-        const total = (clientCollections || []).reduce((acc, cc) => acc + (cc.current_stock || 0), 0) + initialStock;
-        const { error: clientUpdateError } = await supabase
-          .from('clients')
-          .update({ current_stock: total, updated_at: new Date().toISOString() })
-          .eq('id', clientId);
-        if (clientUpdateError) throw clientUpdateError;
+        // Stock is now managed at client_collections level
+        // No need to update client.current_stock as it no longer exists
       }
 
       toast.success('Collection associée au client');
@@ -1883,9 +2659,23 @@ export default function ClientDetailPage() {
       setSubProductsInitialStocks({});
       setPendingAssociationData(null);
       await loadClientData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error associating collection:', err);
-      toast.error('Erreur lors de l\'association de la collection');
+      console.error('Error details:', {
+        code: err.code,
+        message: err.message,
+        details: err.details,
+        hint: err.hint
+      });
+      if (err.code === '23505') {
+        toast.error('Cette collection est déjà associée à ce client');
+      } else if (err.code === '23503') {
+        toast.error('Erreur de référence : la collection ou le client n\'existe pas');
+      } else if (err.code === '23502') {
+        toast.error('Un champ obligatoire est manquant');
+      } else {
+        toast.error(`Erreur lors de l'association : ${err.message || JSON.stringify(err)}`);
+      }
     }
   };
 
@@ -1907,7 +2697,11 @@ export default function ClientDetailPage() {
     return null;
   }
 
-  const cardsSold = client.initial_stock - client.current_stock;
+  // Calculate total cards sold from client_collections
+  const cardsSold = clientCollections.reduce((sum, cc) => {
+    const sold = (cc.initial_stock || 0) - (cc.current_stock || 0);
+    return sum + Math.max(0, sold);
+  }, 0);
   const amountDue = cardsSold * 2;
 
   return (
@@ -1994,16 +2788,23 @@ export default function ClientDetailPage() {
                       </div>
                     )}
                     
-                    {/* Jour de fermeture */}
-                    {client.closing_day && (
+                    {/* E-mail */}
+                    {client.email && (
                       <div className="flex items-start gap-2">
-                        <XCircle className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-sm">Fermeture : </span>
-                          <span className="text-slate-600 text-sm">{client.closing_day}</span>
+                        <Mail className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex items-center gap-1 whitespace-nowrap min-w-0">
+                          <span className="font-medium text-slate-700 text-base">E-mail : </span>
+                          <a 
+                            href={`mailto:${client.email}`}
+                            className="text-slate-900 font-bold text-base hover:text-blue-600 hover:underline transition-colors"
+                          >
+                            {client.email}
+                          </a>
                         </div>
                       </div>
                     )}
+                    
+                    {/* Jour de fermeture - removed as closing_day no longer exists */}
                   </div>
                   
                   {/* Commentaire */}
@@ -2015,6 +2816,110 @@ export default function ClientDetailPage() {
                       </div>
                     </div>
                   )}
+                  
+                  {/* Périodes de fermeture dans les 2 prochains mois */}
+                  {(() => {
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0);
+                    const twoMonthsLater = new Date();
+                    twoMonthsLater.setMonth(now.getMonth() + 2);
+                    twoMonthsLater.setHours(23, 59, 59, 999);
+                    
+                    // Filtrer les périodes de fermeture dans les 2 prochains mois
+                    const upcomingPeriods = vacationPeriods.filter(period => {
+                      let periodStart: Date;
+                      let periodEnd: Date;
+                      
+                      if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
+                        if (period.isRecurring) {
+                          // Pour les périodes récurrentes, utiliser l'année actuelle
+                          const currentYear = now.getFullYear();
+                          periodStart = new Date(weekToDate(period.startWeek, currentYear));
+                          const endWeekStart = new Date(weekToDate(period.endWeek, currentYear));
+                          periodEnd = getEndOfWeek(endWeekStart);
+                        } else {
+                          // Pour les périodes ponctuelles, utiliser l'année de la période
+                          const year = period.year || now.getFullYear();
+                          periodStart = new Date(weekToDate(period.startWeek, year));
+                          const endWeekStart = new Date(weekToDate(period.endWeek, year));
+                          periodEnd = getEndOfWeek(endWeekStart);
+                        }
+                      } else {
+                        periodStart = new Date(period.startDate);
+                        periodEnd = new Date(period.endDate);
+                        
+                        // Pour les périodes récurrentes, utiliser l'année actuelle
+                        if (period.isRecurring) {
+                          const currentYear = now.getFullYear();
+                          const startMonth = periodStart.getMonth();
+                          const startDay = periodStart.getDate();
+                          const endMonth = periodEnd.getMonth();
+                          const endDay = periodEnd.getDate();
+                          
+                          periodStart = new Date(currentYear, startMonth, startDay);
+                          periodEnd = new Date(currentYear, endMonth, endDay);
+                        }
+                      }
+                      
+                      // Vérifier si la période chevauche avec les 2 prochains mois
+                      return periodStart <= twoMonthsLater && periodEnd >= now;
+                    });
+                    
+                    if (upcomingPeriods.length > 0) {
+                      return (
+                        <div className="mt-3">
+                          <div className="flex items-start gap-2">
+                            <DoorClosed className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1">
+                              <div className="text-slate-900 text-base font-medium mb-1">Périodes de fermeture à venir :</div>
+                              <div className="space-y-1">
+                                {upcomingPeriods.map((period) => {
+                                  let periodDisplay: string;
+                                  
+                                  if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
+                                    const weekStr = period.startWeek === period.endWeek 
+                                      ? `S${period.startWeek}`
+                                      : `S${period.startWeek} à S${period.endWeek}`;
+                                    
+                                    if (period.isRecurring) {
+                                      periodDisplay = `${weekStr} (annuel)`;
+                                    } else {
+                                      periodDisplay = `${weekStr} - ${period.year}`;
+                                    }
+                                  } else {
+                                    const start = new Date(period.startDate);
+                                    const end = new Date(period.endDate);
+                                    
+                                    // Pour les périodes récurrentes, utiliser l'année actuelle pour l'affichage
+                                    if (period.isRecurring) {
+                                      const currentYear = now.getFullYear();
+                                      const startMonth = start.getMonth();
+                                      const startDay = start.getDate();
+                                      const endMonth = end.getMonth();
+                                      const endDay = end.getDate();
+                                      
+                                      const displayStart = new Date(currentYear, startMonth, startDay);
+                                      const displayEnd = new Date(currentYear, endMonth, endDay);
+                                      periodDisplay = `${displayStart.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} au ${displayEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} (annuel)`;
+                                    } else {
+                                      periodDisplay = `${start.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })} au ${end.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
+                                    }
+                                  }
+                                  
+                                  return (
+                                    <div key={period.id} className="text-slate-700 text-sm">
+                                      • {periodDisplay}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                   
                   {/* Horaires d'ouverture */}
                   {client.opening_hours && (
@@ -2038,13 +2943,17 @@ export default function ClientDetailPage() {
                   
                   {/* Calendrier */}
                   {client && (
-                    <div className="mt-4">
+                    <div className="mt-4 space-y-4">
                       <ClientCalendar
                         openingHours={openingHours}
                         vacationPeriods={vacationPeriods}
                         marketDaysSchedule={marketDaysSchedule}
                         clientName={client.name}
                       />
+                      <Button type="button" onClick={handleAddVacationPeriodClick} size="sm" variant="outline">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Ajouter une période de fermeture
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -2281,29 +3190,30 @@ export default function ClientDetailPage() {
                 <p className="text-sm text-slate-600">Aucune collection associée.</p>
               ) : (
                 <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
-                  <Table noWrapper>
-                    <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                      <TableRow className="bg-slate-50">
-                        <TableHead className="w-[15%] font-semibold">Collection</TableHead>
-                        <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
-                        <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
-                        <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
-                        <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
-                        <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
-                        <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <DndContext
-                      sensors={sensors}
-                      collisionDetection={closestCenter}
-                      onDragEnd={handleDragEnd}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={clientCollections.map(cc => cc.id)}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <SortableContext
-                        items={clientCollections.map(cc => cc.id)}
-                        strategy={verticalListSortingStrategy}
-                      >
+                      <Table noWrapper>
+                        <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-[15%] font-semibold">Collection</TableHead>
+                            <TableHead className="w-[5%] font-semibold"></TableHead>
+                            <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                            <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
                         <TableBody>
                           {clientCollections.map((cc) => {
                         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
@@ -2354,6 +3264,8 @@ export default function ClientDetailPage() {
                               onEditPrice={() => handleEditPriceClick(cc)}
                               onDelete={() => handleDeleteCollectionClick(cc)}
                               subProducts={subProducts}
+                              onAdjustStock={() => handleAdjustStockClick('collection', cc.id)}
+                              clientId={clientId}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && collectionSubProducts.map((sp) => {
@@ -2366,6 +3278,17 @@ export default function ClientDetailPage() {
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
                                   <TableCell className="align-middle py-2 pl-8">
                                     <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center w-[5%]">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleAdjustStockClick('sub-product', sp.id)}
+                                      className="h-8 w-8 p-0"
+                                      title="Ajuster le stock"
+                                    >
+                                      <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+                                    </Button>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center">
                                     <p className="text-xs text-slate-500">{currentStock}</p>
@@ -2436,14 +3359,13 @@ export default function ClientDetailPage() {
                         );
                       })}
                         </TableBody>
-                      </SortableContext>
-                    </DndContext>
-                  </Table>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
                 </div>
               )}
             </CardContent>
           </Card>
-
         {/* Reprise de stock */}
         <Card className="border-slate-200 shadow-md">
           <CardHeader>
@@ -2463,13 +3385,15 @@ export default function ClientDetailPage() {
               {pendingAdjustments.length > 0 && (
                 <div className="border border-slate-200 rounded-lg divide-y bg-white">
                   {pendingAdjustments.map((a, idx) => {
+                    // Afficher le prix positif pour l'utilisateur (mais stocké négatif)
+                    const displayPrice = Math.abs(parseFloat(a.unit_price));
                     const totalAmount = (parseFloat(a.unit_price) * parseInt(a.quantity)).toFixed(2);
                     return (
                       <div key={idx} className="flex items-center justify-between p-3">
                         <div>
                           <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
-                          <p className="text-xs text-slate-500">
-                            {a.quantity} carte(s) × {a.unit_price} € = {totalAmount} €
+                          <p className="text-xs text-slate-500">      
+                            {a.quantity} carte(s) × {displayPrice.toFixed(2)} € = {totalAmount} €
                           </p>
                         </div>
                         <Button
@@ -2497,7 +3421,7 @@ export default function ClientDetailPage() {
               <DialogHeader>
                 <DialogTitle>Ajouter une reprise de stock</DialogTitle>
                 <DialogDescription>
-                  Saisissez le nom de l'opération, le prix unitaire (négatif) et le nombre de cartes reprises
+                  Saisissez le nom de l'opération, le prix unitaire par carte et le nombre de cartes reprises
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -2521,14 +3445,15 @@ export default function ClientDetailPage() {
                     value={adjustmentForm.unit_price}
                     onChange={(e) => {
                       const value = e.target.value.replace(',', '.');
-                      if (value === '' || /^-?\d*\.?\d*$/.test(value)) {
+                      // Accepter uniquement des valeurs positives
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
                         setAdjustmentForm(f => ({ ...f, unit_price: value }));
                       }
                     }}
-                    placeholder="Ex: -2.00"
+                    placeholder="Ex: 2.00"
                     className="mt-1.5"
                   />
-                  <p className="text-xs text-slate-500 mt-1">Le prix doit être négatif (reprise)</p>
+                  <p className="text-xs text-slate-500 mt-1">Saisissez un prix positif (le montant sera négatif dans la facture)</p>
                 </div>
                 <div>
                   <Label htmlFor="adj-quantity">Nombre de cartes reprises</Label>
@@ -2561,6 +3486,186 @@ export default function ClientDetailPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Credit Note Dialog */}
+        <Dialog open={creditNoteDialogOpen} onOpenChange={setCreditNoteDialogOpen} modal={false}>
+          <DialogPortal>
+            <DialogOverlay className="fixed inset-0 z-40 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <DialogPrimitive.Content
+              className={cn(
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg"
+              )}
+            >
+              <form onSubmit={handleCreditNoteSubmit}>
+              <DialogHeader>
+                <DialogTitle>Générer un avoir</DialogTitle>
+                <DialogDescription>
+                  Renseignez les informations pour générer un avoir
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="credit-note-invoice">Facture d'origine</Label>
+                  <Popover open={invoicePopoverOpen} onOpenChange={setInvoicePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full mt-1.5 justify-between"
+                        type="button"
+                      >
+                        {creditNoteForm.invoice_id
+                          ? globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'Facture sélectionnée'
+                          : 'Sélectionner une facture...'}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent 
+                      className="w-[400px] p-0" 
+                      align="start" 
+                      style={{ zIndex: 9999 }}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <Command>
+                        <CommandInput placeholder="Rechercher une facture..." autoFocus />
+                        <CommandList className="max-h-[300px] overflow-y-auto">
+                          <CommandEmpty>Aucune facture trouvée</CommandEmpty>
+                          <CommandGroup>
+                            {globalInvoices.map((invoice) => (
+                              <CommandItem
+                                key={invoice.id}
+                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.created_at).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
+                                onSelect={() => {
+                                  setCreditNoteForm(f => ({ ...f, invoice_id: invoice.id }));
+                                  setInvoicePopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    creditNoteForm.invoice_id === invoice.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.created_at).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-operation">Produits et prestations</Label>
+                  <Textarea
+                    id="credit-note-operation"
+                    value={creditNoteForm.operation_name}
+                    onChange={(e) => setCreditNoteForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Retour de marchandise"
+                    className="mt-1.5 min-h-[120px]"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-quantity">Quantité</Label>
+                  <Input
+                    id="credit-note-quantity"
+                    type="number"
+                    min="1"
+                    value={creditNoteForm.quantity}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, quantity: value }));
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Ex: 10"
+                    className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-unit-price">Prix à l'unité (€)</Label>
+                  <Input
+                    id="credit-note-unit-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={creditNoteForm.unit_price}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, unit_price: value }));
+                      }
+                    }}
+                    placeholder="Ex: 2.00"
+                    className="mt-1.5"
+                    required
+                  />
+                </div>
+                {creditNoteForm.unit_price && creditNoteForm.quantity && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700">
+                      Montant total HT : {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setCreditNoteDialogOpen(false);
+                  setInvoicePopoverOpen(false);
+                }}>
+                  Annuler
+                </Button>
+                <Button type="submit">Créer un avoir</Button>
+              </DialogFooter>
+              </form>
+              <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+
+        {/* Credit Note Confirmation Dialog */}
+        <Dialog open={creditNoteConfirmDialogOpen} onOpenChange={setCreditNoteConfirmDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Récapitulatif de l'avoir</DialogTitle>
+              <DialogDescription>
+                <div className="space-y-2 mt-2">
+                  <p><strong>Facture d'origine :</strong> {globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'N/A'}</p>
+                  <p><strong>Produits et prestations :</strong> {creditNoteForm.operation_name}</p>
+                  <p><strong>Quantité :</strong> {creditNoteForm.quantity}</p>
+                  <p><strong>Prix unitaire :</strong> {creditNoteForm.unit_price} €</p>
+                  <p><strong>Montant total HT :</strong> {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €</p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreditNoteConfirmDialogOpen(false);
+                  setCreditNoteDialogOpen(true);
+                }}
+                disabled={creatingCreditNote}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateCreditNote}
+                disabled={creatingCreditNote}
+              >
+                {creatingCreditNote ? 'Création en cours...' : 'Créer l\'avoir'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <CardTitle>Mise à jour du stock</CardTitle>
@@ -2588,7 +3693,10 @@ export default function ClientDetailPage() {
             <CardContent>
               <Button
                 variant="outline"
-                onClick={() => setDepositSlipDialogOpen(true)}
+                onClick={() => {
+                  setSelectedInvoiceForDepositSlip(null);
+                  setDepositSlipDialogOpen(true);
+                }}
                 disabled={clientCollections.length === 0}
               >
                 <Download className="mr-2 h-4 w-4" />
@@ -2602,24 +3710,59 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
 
-          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0) && (
+          {/* Génération d'un avoir */}
+          <Card className="border-slate-200 shadow-md">
+            <CardHeader>
+              <CardTitle>Génération d'un avoir</CardTitle>
+              <CardDescription>
+                Générez un avoir pour ce client
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                onClick={() => {
+                  setCreditNoteForm({
+                    invoice_id: '',
+                    operation_name: '',
+                    quantity: '',
+                    unit_price: ''
+                  });
+                  setInvoicePopoverOpen(false);
+                  setCreditNoteDialogOpen(true);
+                }}
+                disabled={globalInvoices.length === 0}
+                className="bg-black text-white hover:bg-black/90"
+              >
+                Générer un avoir
+              </Button>
+              {globalInvoices.length === 0 && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Aucune facture disponible pour générer un avoir
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0) && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
                 <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length + stockUpdatesWithoutInvoice.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length) > 1 ? 's' : ''}
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {/* Combine invoices and stock updates without invoice, sorted by date */}
+                  {/* Combine invoices, stock updates without invoice, and credit notes, sorted by date */}
                   {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
-                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at }))]
+                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at })),
+                    ...creditNotes.map(cn => ({ type: 'credit_note' as const, data: cn, created_at: cn.created_at }))]
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                     .map((item) => {
                       if (item.type === 'invoice') {
                         const invoice = item.data as Invoice;
-                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id);
+                        const invoiceUpdates = stockUpdates.filter(u => u.invoice_id === invoice.id && u.collection_id !== null);
                         return (
                           <div
                             key={invoice.id}
@@ -2684,7 +3827,7 @@ export default function ClientDetailPage() {
                             </div>
                           </div>
                         );
-                      } else {
+                      } else if (item.type === 'stock_update') {
                         // Cas des anciennes données sans facture (compatibilité)
                         // Récupérer l'invoice_id depuis les stockUpdates (ils ont tous le même invoice_id)
                         const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
@@ -2698,6 +3841,10 @@ export default function ClientDetailPage() {
                           total_cards_sold: stockUpdate.total_cards_sold,
                           total_amount: stockUpdate.total_amount,
                           invoice_number: null,
+                          discount_percentage: null,
+                          invoice_pdf_path: null,
+                          stock_report_pdf_path: null,
+                          deposit_slip_pdf_path: null,
                           created_at: stockUpdate.created_at
                         };
                         // Count unique collections from stock updates
@@ -2762,22 +3909,62 @@ export default function ClientDetailPage() {
                             </div>
                           </div>
                         );
+                      } else if (item.type === 'credit_note') {
+                        const creditNote = item.data as CreditNote;
+                        return (
+                          <div
+                            key={creditNote.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(creditNote.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {creditNote.operation_name}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const relatedInvoice = globalInvoices.find(inv => inv.id === creditNote.invoice_id);
+                                    if (!relatedInvoice) {
+                                      toast.error('Facture associée non trouvée');
+                                      return;
+                                    }
+                                    setSelectedCreditNote(creditNote);
+                                    setCreditNotePreviewDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Avoir
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>Quantité: {creditNote.quantity}</span>
+                              <span>•</span>
+                              <span>{creditNote.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
                       }
+                      return null;
                     })}
                 </div>
               </CardContent>
             </Card>
           )}
         </div>
-
-        {client && selectedInvoice && (
-          <InvoiceDialog
-            open={invoiceDialogOpen}
-            onOpenChange={setInvoiceDialogOpen}
-            client={client}
-            stockUpdate={selectedInvoice}
-          />
-        )}
 
         {client && (
           <StockUpdateConfirmationDialog
@@ -2915,6 +4102,102 @@ export default function ClientDetailPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Adjust Stock Dialog */}
+        <Dialog open={adjustStockDialogOpen} onOpenChange={setAdjustStockDialogOpen}>
+          <DialogContent>
+            <form onSubmit={handleAdjustStockSubmit}>
+              <DialogHeader>
+                <DialogTitle>Ajuster le stock</DialogTitle>
+                <DialogDescription>
+                  Ajustez le stock de "{itemToAdjust?.name}" pour ce client
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="space-y-4 py-4">
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <p className="text-sm text-slate-600">
+                    Stock actuel : 
+                    <span className="font-semibold text-slate-900 ml-2">
+                      {itemToAdjust?.currentStock}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label htmlFor="adjust-new-stock">Nouveau stock</Label>
+                  <Input
+                    id="adjust-new-stock"
+                    type="number"
+                    min="0"
+                    value={adjustStockForm.newStock}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setAdjustStockForm({ newStock: value });
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Entrez le nouveau stock"
+                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    required
+                  />
+                  
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAdjustStockDialogOpen(false)}
+                  disabled={adjustingStock}
+                >
+                  Annuler
+                </Button>
+                <Button type="submit" disabled={adjustingStock || !adjustStockForm.newStock || adjustStockForm.newStock === '' || parseInt(adjustStockForm.newStock) === itemToAdjust?.currentStock}>
+                  {adjustingStock ? 'Ajustement...' : 'Ajuster le stock'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirm Adjust Stock Dialog */}
+        <Dialog open={confirmAdjustDialogOpen} onOpenChange={setConfirmAdjustDialogOpen}>
+          <DialogPortal>
+            <DialogOverlay className="fixed inset-0 z-50 bg-slate-500/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <DialogPrimitive.Content
+              className={cn(
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg"
+              )}
+            >
+              <DialogHeader>
+                <DialogTitle>Êtes-vous sûr ?</DialogTitle>
+                <DialogDescription>
+                  Cette action ne peut pas être annulée. Cela ajustera le stock de <strong>"{itemToAdjust?.name}"</strong> de <strong>{itemToAdjust?.currentStock}</strong> à <strong>{adjustStockForm.newStock}</strong>.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setConfirmAdjustDialogOpen(false)}
+                  disabled={adjustingStock}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmAdjustStock}
+                  disabled={adjustingStock}
+                >
+                  {adjustingStock ? 'Ajustement en cours...' : 'Ajuster'}
+                </Button>
+              </DialogFooter>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+
         {/* Sub-Products Initial Stocks Dialog */}
         <Dialog open={subProductsInitialStocksDialogOpen} onOpenChange={setSubProductsInitialStocksDialogOpen}>
           <DialogContent className="max-w-md max-h-[85vh] flex flex-col">
@@ -2966,17 +4249,27 @@ export default function ClientDetailPage() {
         </Dialog>
 
         {/* Deposit Slip Dialog */}
-        {client && selectedInvoiceForDepositSlip && (
+        {client && (
           <DepositSlipDialog
             open={depositSlipDialogOpen}
-            onOpenChange={setDepositSlipDialogOpen}
+            onOpenChange={(open) => {
+              setDepositSlipDialogOpen(open);
+              if (!open) {
+                // Reset selected invoice when dialog closes
+                setSelectedInvoiceForDepositSlip(null);
+              }
+            }}
             client={client}
             clientCollections={clientCollections}
             stockUpdates={
-              selectedInvoiceForDepositSlip.id 
+              selectedInvoiceForDepositSlip?.id 
                 ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
-                : recentStockUpdatesWithoutInvoice
+                : recentStockUpdatesWithoutInvoice.length > 0
+                ? recentStockUpdatesWithoutInvoice
+                : []
             }
+            invoice={selectedInvoiceForDepositSlip}
+            generateMode={!selectedInvoiceForDepositSlip} // Mode génération si pas d'invoice sélectionnée (bouton "Générer un bon de dépôt")
           />
         )}
 
@@ -3024,6 +4317,191 @@ export default function ClientDetailPage() {
           onDiscard={handleDiscardDraft}
           draftDate={draftDate}
         />
+
+        {client && selectedCreditNote && (() => {
+          const relatedInvoice = globalInvoices.find(inv => inv.id === selectedCreditNote.invoice_id);
+          if (!relatedInvoice) return null;
+          return (
+            <CreditNoteDialog
+              open={creditNotePreviewDialogOpen}
+              onOpenChange={setCreditNotePreviewDialogOpen}
+              client={client}
+              creditNote={selectedCreditNote}
+              invoice={relatedInvoice}
+            />
+          );
+        })()}
+
+        {/* Vacation Period Dialog */}
+        <Dialog open={vacationPeriodDialogOpen} onOpenChange={(open) => {
+          setVacationPeriodDialogOpen(open);
+          if (!open) resetVacationPeriodDialog();
+        }}>
+          <DialogContent className="sm:max-w-[550px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingVacationPeriod ? 'Modifier une période de fermeture' : 'Ajouter une période de fermeture'}
+              </DialogTitle>
+              <DialogDescription>
+                Choisissez le type de période et le format de saisie.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-4">
+              {/* Type de période */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Type de période</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={vacationPeriodType === 'specific' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodType('specific')}
+                    className="flex-1"
+                  >
+                    Ponctuel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={vacationPeriodType === 'recurring' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodType('recurring')}
+                    className="flex-1"
+                  >
+                    Annuel
+                  </Button>
+                </div>
+              </div>
+
+              {/* Format de saisie */}
+              <div>
+                <Label className="text-sm font-medium mb-3 block">Format de saisie</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={vacationPeriodInputType === 'dates' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodInputType('dates')}
+                    className="flex-1"
+                  >
+                    Dates précises
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={vacationPeriodInputType === 'weeks' ? 'default' : 'outline'}
+                    onClick={() => setVacationPeriodInputType('weeks')}
+                    className="flex-1"
+                  >
+                    Semaines (S1 à S52)
+                  </Button>
+                </div>
+              </div>
+
+              {/* Année (seulement pour période spécifique avec saisie par semaines) */}
+              {vacationPeriodType === 'specific' && vacationPeriodInputType === 'weeks' && (
+                <div>
+                  <Label htmlFor="vacation-year">Année</Label>
+                  <Input
+                    id="vacation-year"
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={tempVacationYear}
+                    onChange={(e) => setTempVacationYear(e.target.value)}
+                    className="mt-1.5 w-32"
+                    placeholder="2024"
+                  />
+                </div>
+              )}
+
+              {/* Saisie par semaines */}
+              {vacationPeriodInputType === 'weeks' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <Label className="text-xs text-slate-600">Semaine de début</Label>
+                      <Select
+                        value={tempVacationStartWeek.toString()}
+                        onValueChange={(val) => setTempVacationStartWeek(Number(val))}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <span className="text-sm mt-6">à</span>
+                    <div className="flex-1">
+                      <Label className="text-xs text-slate-600">Semaine de fin</Label>
+                      <Select
+                        value={tempVacationEndWeek.toString()}
+                        onValueChange={(val) => setTempVacationEndWeek(Number(val))}
+                      >
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="Sélectionner..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Saisie par dates */}
+              {vacationPeriodInputType === 'dates' && (
+                <div className="flex items-center gap-2">
+                  <div>
+                    <Label className="text-xs text-slate-600">Date de début</Label>
+                    <Input
+                      type="date"
+                      value={tempVacationStartDate}
+                      onChange={(e) => setTempVacationStartDate(e.target.value)}
+                      className="mt-1 w-40"
+                    />
+                  </div>
+                  <span className="text-sm mt-6">au</span>
+                  <div>
+                    <Label className="text-xs text-slate-600">Date de fin</Label>
+                    <Input
+                      type="date"
+                      value={tempVacationEndDate}
+                      onChange={(e) => setTempVacationEndDate(e.target.value)}
+                      className="mt-1 w-40"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setVacationPeriodDialogOpen(false);
+                resetVacationPeriodDialog();
+              }}>
+                Annuler
+              </Button>
+              <Button 
+                type="button" 
+                onClick={handleSaveVacationPeriod}
+                disabled={
+                  savingVacationPeriod ||
+                  (vacationPeriodInputType === 'weeks' && (!tempVacationStartWeek || !tempVacationEndWeek)) ||
+                  (vacationPeriodInputType === 'dates' && (!tempVacationStartDate || !tempVacationEndDate)) ||
+                  (vacationPeriodType === 'specific' && vacationPeriodInputType === 'weeks' && !tempVacationYear)
+                }
+              >
+                {savingVacationPeriod ? 'Enregistrement...' : (editingVacationPeriod ? 'Modifier' : 'Ajouter')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

@@ -24,6 +24,12 @@ import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { cn } from '@/lib/utils';
 
+// Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+
+// Options de minutes - identiques aux horaires d'ouverture
+const MINUTE_OPTIONS = ['00', '15', '30', '45'];
+
 export default function ClientInfoPage() {
   const router = useRouter();
   const params = useParams();
@@ -60,6 +66,7 @@ export default function ClientInfoPage() {
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
+    company_name: '',
     street_address: '',
     postal_code: '',
     city: '',
@@ -72,17 +79,15 @@ export default function ClientInfoPage() {
     phone_2_info: '',
     phone_3: '',
     phone_3_info: '',
-    rcs_number: '',
-    naf_code: '',
+    siret_number: '',
+    tva_number: '',
     client_number: '',
     establishment_type_id: '',
     visit_frequency_number: '',
     visit_frequency_unit: '',
     average_time_hours: '',
     average_time_minutes: '',
-    vacation_start_date: '',
-    vacation_end_date: '',
-    closing_day: '',
+
     payment_method_id: '',
     email: '',
     comment: ''
@@ -177,7 +182,7 @@ export default function ClientInfoPage() {
         setMarketDaysSchedule(defaultMarketSchedule);
       }
 
-      // Charger les périodes de vacances avec migration des anciennes données
+      // Charger les périodes de fermeture avec migration des anciennes données
       if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
         const migratedPeriods = data.vacation_periods.map((period: any) => {
           // Migration : si inputType n'existe pas, c'est une ancienne donnée
@@ -213,6 +218,7 @@ export default function ClientInfoPage() {
       
       setFormData({
         name: data.name || '',
+        company_name: data.company_name || '',
         street_address: data.street_address || '',
         postal_code: data.postal_code || '',
         city: data.city || '',
@@ -225,17 +231,14 @@ export default function ClientInfoPage() {
         phone_2_info: data.phone_2_info || '',
         phone_3: data.phone_3 || '',
         phone_3_info: data.phone_3_info || '',
-        rcs_number: data.rcs_number || '',
-        naf_code: data.naf_code || '',
+        siret_number: data.siret_number || '',
+        tva_number: data.tva_number || '',
         client_number: data.client_number || '',
         establishment_type_id: data.establishment_type_id || '',
         visit_frequency_number: data.visit_frequency_number?.toString() || '',
         visit_frequency_unit: data.visit_frequency_unit || '',
         average_time_hours: data.average_time_hours?.toString() || '',
         average_time_minutes: data.average_time_minutes?.toString() || '',
-        vacation_start_date: data.vacation_start_date || '',
-        vacation_end_date: data.vacation_end_date || '',
-        closing_day: data.closing_day || '',
         payment_method_id: data.payment_method_id || '',
         email: data.email || '',
         comment: data.comment || ''
@@ -516,10 +519,10 @@ export default function ClientInfoPage() {
         return;
       }
 
-      // Validation des périodes de vacances
+      // Validation des périodes de fermeture
       const vacationPeriodsValidation = validateVacationPeriods(vacationPeriods);
       if (!vacationPeriodsValidation.valid) {
-        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de vacances');
+        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de fermeture');
         setSubmitting(false);
         return;
       }
@@ -551,6 +554,7 @@ export default function ClientInfoPage() {
         .from('clients')
         .update({
           name: formData.name,
+          company_name: formData.company_name || null,
           address: `${formData.street_address}, ${formData.postal_code} ${formData.city}`,
           street_address: formData.street_address,
           postal_code: formData.postal_code,
@@ -564,8 +568,8 @@ export default function ClientInfoPage() {
           phone_2_info: formData.phone_2_info || null,
           phone_3: formData.phone_3 || null,
           phone_3_info: formData.phone_3_info || null,
-          rcs_number: formData.rcs_number || null,
-          naf_code: formData.naf_code || null,
+          siret_number: formData.siret_number || null,
+          tva_number: formData.tva_number || null,
           client_number: formData.client_number || null,
           establishment_type_id: formData.establishment_type_id || null,
           opening_hours: openingHours,
@@ -661,7 +665,7 @@ export default function ClientInfoPage() {
         setMarketDaysSchedule(defaultMarketSchedule);
       }
 
-      // Mettre à jour les périodes de vacances
+      // Mettre à jour les périodes de fermeture
       if (data.vacation_periods && Array.isArray(data.vacation_periods) && data.vacation_periods.length > 0) {
         setVacationPeriods(data.vacation_periods as VacationPeriod[]);
       } else {
@@ -773,9 +777,16 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label className="text-slate-500 text-sm">Nom de la société</Label>
+                      <Label className="text-slate-500 text-sm">Nom Commercial</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.name || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Nom Société</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.company_name || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -910,16 +921,16 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label className="text-slate-500 text-sm">Numéro RCS</Label>
+                      <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.rcs_number || <span className="text-slate-400">Non renseigné</span>}
+                        {client.siret_number || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Code NAF</Label>
+                      <Label className="text-slate-500 text-sm">Numéro TVA</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.naf_code || <span className="text-slate-400">Non renseigné</span>}
+                        {client.tva_number || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
@@ -992,7 +1003,7 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Période(s) de vacances</Label>
+                      <Label className="text-slate-500 text-sm">Période(s) de fermeture</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0
                           ? formatVacationPeriods(client.vacation_periods as VacationPeriod[])
@@ -1038,6 +1049,7 @@ export default function ClientInfoPage() {
               const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
               setFormData({
                 name: client.name || '',
+                company_name: client.company_name || '',
                 street_address: client.street_address || '',
                 postal_code: client.postal_code || '',
                 city: client.city || '',
@@ -1050,17 +1062,14 @@ export default function ClientInfoPage() {
                 phone_2_info: client.phone_2_info || '',
                 phone_3: client.phone_3 || '',
                 phone_3_info: client.phone_3_info || '',
-                rcs_number: client.rcs_number || '',
-                naf_code: client.naf_code || '',
+                siret_number: client.siret_number || '',
+                tva_number: client.tva_number || '',
                 client_number: client.client_number || '',
                 establishment_type_id: client.establishment_type_id || '',
                 visit_frequency_number: client.visit_frequency_number?.toString() || '',
                 visit_frequency_unit: client.visit_frequency_unit || '',
                 average_time_hours: client.average_time_hours?.toString() || '',
                 average_time_minutes: client.average_time_minutes?.toString() || '',
-                vacation_start_date: client.vacation_start_date || '',
-                vacation_end_date: client.vacation_end_date || '',
-                closing_day: client.closing_day || '',
                 payment_method_id: client.payment_method_id || '',
                 email: client.email || '',
                 comment: client.comment || ''
@@ -1130,7 +1139,7 @@ export default function ClientInfoPage() {
                 <Separator />
                 
                 <div>
-                  <Label htmlFor="name">Nom de la société *</Label>
+                  <Label htmlFor="name">Nom Commercial *</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -1139,6 +1148,19 @@ export default function ClientInfoPage() {
                     placeholder="Ex: Boutique du Centre"
                     className="mt-1.5"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="company_name">Nom Société *</Label>
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
+                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                    required
+                    placeholder="Ex: SARL Boutique du Centre"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Raison sociale utilisée dans les factures</p>
                 </div>
 
                 {/* Type d'établissement */}
@@ -1455,23 +1477,23 @@ export default function ClientInfoPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="rcs_number">Numéro RCS</Label>
+                    <Label htmlFor="siret_number">Numéro SIRET</Label>
                     <Input
-                      id="rcs_number"
-                      value={formData.rcs_number}
-                      onChange={(e) => setFormData({ ...formData, rcs_number: e.target.value })}
-                      placeholder="123 456 789"
+                      id="siret_number"
+                      value={formData.siret_number}
+                      onChange={(e) => setFormData({ ...formData, siret_number: e.target.value })}
+                      placeholder="123 456 789 00012"
                       className="mt-1.5"
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="naf_code">Code NAF</Label>
+                    <Label htmlFor="tva_number">Numéro TVA</Label>
                     <Input
-                      id="naf_code"
-                      value={formData.naf_code}
-                      onChange={(e) => setFormData({ ...formData, naf_code: e.target.value })}
-                      placeholder="Ex: 4759A"
+                      id="tva_number"
+                      value={formData.tva_number}
+                      onChange={(e) => setFormData({ ...formData, tva_number: e.target.value })}
+                      placeholder="Ex: FR12 345678901"
                       className="mt-1.5"
                     />
                   </div>
@@ -1534,26 +1556,39 @@ export default function ClientInfoPage() {
                     <div>
                       <Label>Temps moyen</Label>
                       <div className="flex items-center gap-2 mt-1.5">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={formData.average_time_hours}
-                          onChange={(e) => setFormData({ ...formData, average_time_hours: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="0"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_hours || ''}
+                          onValueChange={(val) => {
+                            setFormData({ 
+                              ...formData, 
+                              average_time_hours: val,
+                              average_time_minutes: '00' // Réinitialiser les minutes à "00" quand une heure est sélectionnée
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {HOUR_OPTIONS.map((h) => (
+                              <SelectItem key={h} value={h}>{h}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">h</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={formData.average_time_minutes}
-                          onChange={(e) => setFormData({ ...formData, average_time_minutes: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="00"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_minutes || ''}
+                          onValueChange={(val) => setFormData({ ...formData, average_time_minutes: val })}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINUTE_OPTIONS.map((m) => (
+                              <SelectItem key={m} value={m}>{m}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">min</span>
                       </div>
                     </div>
@@ -1771,6 +1806,7 @@ export default function ClientInfoPage() {
                     const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
                     setFormData({
                       name: client.name || '',
+                      company_name: client.company_name || '',
                       street_address: client.street_address || '',
                       postal_code: client.postal_code || '',
                       city: client.city || '',
@@ -1783,17 +1819,14 @@ export default function ClientInfoPage() {
                       phone_2_info: client.phone_2_info || '',
                       phone_3: client.phone_3 || '',
                       phone_3_info: client.phone_3_info || '',
-                      rcs_number: client.rcs_number || '',
-                      naf_code: client.naf_code || '',
+                      siret_number: client.siret_number || '',
+                      tva_number: client.tva_number || '',
                       client_number: client.client_number || '',
                       establishment_type_id: client.establishment_type_id || '',
                       visit_frequency_number: client.visit_frequency_number?.toString() || '',
                       visit_frequency_unit: client.visit_frequency_unit || '',
                       average_time_hours: client.average_time_hours?.toString() || '',
                       average_time_minutes: client.average_time_minutes?.toString() || '',
-                      vacation_start_date: client.vacation_start_date || '',
-                      vacation_end_date: client.vacation_end_date || '',
-                      closing_day: client.closing_day || '',
                       payment_method_id: client.payment_method_id || '',
                       email: client.email || '',
                       comment: client.comment || ''

@@ -9,6 +9,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export type Client = {
   id: string;
   name: string;
+  company_name: string | null;
   address: string; // Ancien champ, conservé pour compatibilité
   street_address: string | null;
   postal_code: string | null;
@@ -22,8 +23,8 @@ export type Client = {
   phone_2_info: string | null;
   phone_3: string | null;
   phone_3_info: string | null;
-  rcs_number: string | null;
-  naf_code: string | null;
+  siret_number: string | null;
+  tva_number: string | null;
   client_number: string | null;
   establishment_type_id: string | null;
   opening_hours: any | null;
@@ -31,18 +32,12 @@ export type Client = {
   visit_frequency_unit: string | null;
   average_time_hours: number | null;
   average_time_minutes: number | null;
-  vacation_start_date: string | null;
-  vacation_end_date: string | null;
-  market_days: string[] | null;
   market_days_schedule: any | null;  // Structure: {"Lundi": [{"start": "08:00", "end": "12:00"}], ...}
   vacation_periods: any | null;      // Structure: [{"id": "period-123", "startDate": "2024-07-01", "endDate": "2024-07-31", "isRecurring": true}]
-  closing_day: string | null;
   payment_method: string | null; // Ancien champ, conservé pour compatibilité
   payment_method_id: string | null;
   email: string | null;
   comment: string | null;
-  initial_stock: number;
-  current_stock: number;
   created_at: string;
   updated_at: string;
 };
@@ -71,6 +66,8 @@ export type StockUpdate = {
   cards_added: number;
   new_stock: number;
   collection_info?: string | null;
+  unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu la collection
+  total_amount_ht?: number | null; // Montant total HT : cards_sold x unit_price_ht
   created_at: string;
 };
 
@@ -91,6 +88,10 @@ export type Invoice = {
   total_cards_sold: number;
   total_amount: number;
   invoice_number: string | null;
+  discount_percentage: number | null; // Pourcentage de remise commerciale (0-100)
+  invoice_pdf_path: string | null;
+  stock_report_pdf_path: string | null;
+  deposit_slip_pdf_path: string | null;
   created_at: string;
 };
 
@@ -153,6 +154,7 @@ export type ClientCollection = {
 export type UserProfile = {
   id: string;
   company_name: string | null;
+  company_name_short: string | null;
   first_name: string | null;
   last_name: string | null;
   street_address: string | null;
@@ -181,4 +183,17 @@ export type DraftStockUpdate = {
   draft_data: DraftStockUpdateData;
   created_at: string;
   updated_at: string;
+};
+
+export type CreditNote = {
+  id: string;
+  invoice_id: string;
+  client_id: string;
+  unit_price: number;
+  quantity: number;
+  total_amount: number;
+  operation_name: string;
+  credit_note_number: string | null;
+  credit_note_pdf_path: string | null;
+  created_at: string;
 };

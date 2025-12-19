@@ -1,37 +1,28 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
-import type { InvoiceAdjustment } from '@/lib/supabase';
+import { Client, CreditNote, Invoice, supabase } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface GlobalInvoiceDialogProps {
+interface CreditNoteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: Client;
+  creditNote: CreditNote;
   invoice: Invoice;
-  stockUpdates: StockUpdate[];
-  collections: Collection[];
-  clientCollections?: (ClientCollection & { collection?: Collection })[];
 }
 
-export function GlobalInvoiceDialog({
+export function CreditNoteDialog({
   open,
   onOpenChange,
   client,
-  invoice,
-  stockUpdates,
-  collections,
-  clientCollections = []
-}: GlobalInvoiceDialogProps) {
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loadingProfile, setLoadingProfile] = useState(true);
+  creditNote,
+  invoice
+}: CreditNoteDialogProps) {
   const [generating, setGenerating] = useState(false);
-  const [adjustments, setAdjustments] = useState<InvoiceAdjustment[] | null>(null); // null = not loaded yet
-  const [loadingAdjustments, setLoadingAdjustments] = useState(true);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
@@ -42,29 +33,7 @@ export function GlobalInvoiceDialog({
       setPdfGenerated(false);
       setPdfUrl(null);
       setPdfBlob(null);
-      setLoadingProfile(true);
-      setLoadingAdjustments(true);
-      setAdjustments(null); // Reset to null to indicate not loaded
-      loadUserProfile();
-      
-      // Load invoice adjustments for this invoice
-      (async () => {
-        try {
-          const { data, error } = await supabase
-            .from('invoice_adjustments')
-            .select('*')
-            .eq('invoice_id', invoice.id)
-            .order('created_at', { ascending: true });
-          if (error) throw error;
-          setAdjustments(data || []);
-        } catch (e) {
-          console.error('Error loading adjustments:', e);
-          // Non-blocking for PDF
-          setAdjustments([]);
-        } finally {
-          setLoadingAdjustments(false);
-        }
-      })();
+      loadStoredPDF();
     }
     
     // Cleanup: revoke blob URL when dialog closes
@@ -73,27 +42,23 @@ export function GlobalInvoiceDialog({
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [open, invoice.id]);
+  }, [open, creditNote.id]);
 
-  // Load stored PDF when dialog opens and data is loaded
-  // IMPORTANT: PDFs are now generated automatically when stock is updated
-  // This dialog only loads existing PDFs, it never generates new ones
   useEffect(() => {
-    if (open && !loadingProfile && !loadingAdjustments && !pdfGenerated && adjustments !== null) {
+    if (open && !pdfGenerated) {
       setPdfGenerated(true);
       loadStoredPDF();
     }
-  }, [open, loadingProfile, loadingAdjustments, pdfGenerated, adjustments]);
+  }, [open, pdfGenerated]);
 
   const loadStoredPDF = async () => {
     // Load stored PDF if it exists
-    // PDFs are now generated automatically when stock is updated, so we only load existing ones
-    if (invoice.invoice_pdf_path) {
+    if (creditNote.credit_note_pdf_path) {
       try {
         setGenerating(true);
         const { data, error } = await supabase.storage
           .from('documents')
-          .createSignedUrl(invoice.invoice_pdf_path, 3600); // 1 hour expiry
+          .createSignedUrl(creditNote.credit_note_pdf_path, 3600); // 1 hour expiry
 
         if (!error && data) {
           // Fetch the PDF
@@ -110,47 +75,26 @@ export function GlobalInvoiceDialog({
         throw new Error('Could not load PDF from storage');
       } catch (error) {
         console.error('Could not load stored PDF:', error);
-        toast.error('Impossible de charger la facture. Veuillez réessayer plus tard.');
+        toast.error('Impossible de charger l\'avoir. Veuillez réessayer plus tard.');
         setGenerating(false);
       }
     } else {
-      // No PDF exists yet - this should not happen if stock was updated correctly
-      console.warn('No PDF path found for invoice:', invoice.id);
-      toast.warning('La facture n\'a pas encore été générée. Veuillez mettre à jour le stock pour générer les documents.');
+      // No PDF exists yet
+      console.warn('No PDF path found for credit note:', creditNote.id);
+      toast.warning('L\'avoir n\'a pas encore été généré.');
       setGenerating(false);
-    }
-  };
-
-  const loadUserProfile = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_profile')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-
-      setUserProfile(data);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      toast.error('Erreur lors du chargement du profil');
-    } finally {
-      setLoadingProfile(false);
     }
   };
 
   const handleDownloadPDF = () => {
     if (pdfBlob) {
-      const fileName = `Facture_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(invoice.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;
+      const fileName = `Avoir_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(creditNote.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(pdfBlob);
       link.download = fileName;
       link.click();
       URL.revokeObjectURL(link.href);
-      toast.success('Facture téléchargée avec succès');
+      toast.success('Avoir téléchargé avec succès');
     }
   };
 
@@ -179,7 +123,7 @@ export function GlobalInvoiceDialog({
           throw new Error('Erreur de conversion du PDF');
         }
         
-        const fileName = `Facture_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(invoice.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;
+        const fileName = `Avoir_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date(creditNote.created_at).toLocaleDateString('fr-FR').replace(/\//g, '-')}.pdf`;
         
         const response = await fetch('/api/send-invoice', {
           method: 'POST',
@@ -191,11 +135,6 @@ export function GlobalInvoiceDialog({
             clientName: client.name,
             pdfBase64: base64data,
             fileName: fileName,
-            invoiceDate: new Date(invoice.created_at).toLocaleDateString('fr-FR'),
-            senderEmail: userProfile?.email,
-            senderName: `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || undefined,
-            senderCompanyName: userProfile?.company_name_short || userProfile?.company_name || undefined,
-            senderPhone: userProfile?.phone,
           }),
         });
 
@@ -205,7 +144,7 @@ export function GlobalInvoiceDialog({
           throw new Error(data.error || 'Erreur lors de l\'envoi');
         }
 
-        toast.success(`Facture envoyée avec succès à ${client.email}`);
+        toast.success(`Avoir envoyé avec succès à ${client.email}`);
         setSendingEmail(false);
       };
       
@@ -223,11 +162,11 @@ export function GlobalInvoiceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-3 border-b flex-shrink-0">
-          <DialogTitle>Prévisualisation de la facture</DialogTitle>
+          <DialogTitle>Prévisualisation de l'avoir</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-          {generating || loadingProfile || loadingAdjustments ? (
+          {generating ? (
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
               <p className="text-slate-600">Chargement des données en cours...</p>
@@ -236,7 +175,7 @@ export function GlobalInvoiceDialog({
             <iframe
               src={pdfUrl}
               className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-              title="Prévisualisation de la facture"
+              title="Prévisualisation de l'avoir"
             />
           ) : (
             <div className="text-center text-slate-600">
@@ -287,4 +226,3 @@ export function GlobalInvoiceDialog({
     </Dialog>
   );
 }
-

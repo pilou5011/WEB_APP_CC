@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, supabase } from '@/lib/supabase';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Client, Collection, ClientCollection, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,8 @@ interface DepositSlipDialogProps {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates?: StockUpdate[];
+  invoice?: Invoice | null;
+  generateMode?: boolean; // Si true, génère un nouveau PDF à chaque fois sans le sauvegarder
 }
 
 export function DepositSlipDialog({
@@ -22,10 +24,13 @@ export function DepositSlipDialog({
   onOpenChange,
   client,
   clientCollections,
-  stockUpdates = []
+  stockUpdates = [],
+  invoice = null,
+  generateMode = false
 }: DepositSlipDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingInfos, setLoadingInfos] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [collectionInfos, setCollectionInfos] = useState<Record<string, string>>({});
   const [needsInfoInput, setNeedsInfoInput] = useState(false);
@@ -39,10 +44,23 @@ export function DepositSlipDialog({
       setPdfUrl(null);
       setPdfBlob(null);
       setLoadingProfile(true);
+      setLoadingInfos(false);
       loadUserProfile();
-      loadLastInvoiceInfos();
+      
+      // En mode génération, charger les infos depuis la dernière mise à jour de stock
+      // On génère directement avec les infos disponibles (ou vides)
+      if (!generateMode) {
+        loadLastInvoiceInfos();
+      } else {
+        // En mode génération, charger les collection_info depuis la dernière mise à jour de stock
+        setLoadingInfos(true);
+        loadLastStockUpdateInfos().finally(() => {
+          setLoadingInfos(false);
+        });
+        setNeedsInfoInput(false); // Ne pas demander les infos en mode génération
+      }
     }
-  }, [open, stockUpdates, clientCollections]);
+  }, [open, stockUpdates, clientCollections, generateMode]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -53,13 +71,58 @@ export function DepositSlipDialog({
     };
   }, [pdfUrl]);
 
-  // Generate PDF preview when dialog opens and data is loaded
+  // Load stored PDF or generate new one when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated && !needsInfoInput) {
-      setPdfGenerated(true);
-      generatePDFPreview();
+    if (open && !loadingProfile && !pdfGenerated) {
+      // En mode génération, attendre que les infos soient chargées avant de générer
+      if (generateMode) {
+        if (!loadingInfos) {
+          setPdfGenerated(true);
+          generatePDFPreview();
+        }
+      } else if (!needsInfoInput) {
+        // Mode chargement : charger le PDF existant depuis le bucket
+        setPdfGenerated(true);
+        loadStoredPDF();
+      }
     }
-  }, [open, loadingProfile, pdfGenerated, needsInfoInput]);
+  }, [open, loadingProfile, loadingInfos, pdfGenerated, needsInfoInput, generateMode]);
+
+  const loadStoredPDF = async () => {
+    // Load stored PDF if it exists
+    // PDFs are now generated automatically when stock is updated, so we only load existing ones
+    if (invoice?.deposit_slip_pdf_path) {
+      try {
+        setGenerating(true);
+        const { data, error } = await supabase.storage
+          .from('documents')
+          .createSignedUrl(invoice.deposit_slip_pdf_path, 3600); // 1 hour expiry
+
+        if (!error && data) {
+          // Fetch the PDF
+          const response = await fetch(data.signedUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            setPdfBlob(blob);
+            setPdfUrl(url);
+            setGenerating(false);
+            return; // Successfully loaded stored PDF
+          }
+        }
+        throw new Error('Could not load PDF from storage');
+      } catch (error) {
+        console.error('Could not load stored PDF:', error);
+        toast.error('Impossible de charger le bon de dépôt. Veuillez réessayer plus tard.');
+        setGenerating(false);
+      }
+    } else {
+      // No PDF exists yet - this should not happen if stock was updated correctly
+      console.warn('No PDF path found for deposit slip:', invoice?.id);
+      toast.warning('Le bon de dépôt n\'a pas encore été généré. Veuillez mettre à jour le stock pour générer les documents.');
+      setGenerating(false);
+    }
+  };
 
   const loadUserProfile = async () => {
     try {
@@ -79,6 +142,52 @@ export function DepositSlipDialog({
       toast.error('Erreur lors du chargement du profil');
     } finally {
       setLoadingProfile(false);
+    }
+  };
+
+  const loadLastStockUpdateInfos = async (): Promise<void> => {
+    try {
+      // Charger toutes les mises à jour de stock pour ce client
+      const { data: allStockUpdates, error: stockUpdatesError } = await supabase
+        .from('stock_updates')
+        .select('*')
+        .eq('client_id', client.id)
+        .order('created_at', { ascending: false });
+
+      if (stockUpdatesError) throw stockUpdatesError;
+
+      // Créer un map pour stocker la dernière collection_info de chaque collection
+      const infos: Record<string, string> = {};
+      const processedCollections = new Set<string>();
+
+      // Parcourir les stock_updates triés par date décroissante
+      // Pour chaque collection, prendre la première occurrence (la plus récente)
+      // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+      (allStockUpdates || []).forEach((update: StockUpdate) => {
+        if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
+          infos[update.collection_id] = update.collection_info || '';
+          processedCollections.add(update.collection_id);
+        }
+      });
+
+      // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
+      clientCollections.forEach(cc => {
+        if (cc.collection_id && !infos[cc.collection_id]) {
+          infos[cc.collection_id] = '';
+        }
+      });
+
+      setCollectionInfos(infos);
+    } catch (error) {
+      console.error('Error loading last stock update infos:', error);
+      // En cas d'erreur, initialiser avec des infos vides
+      const infos: Record<string, string> = {};
+      clientCollections.forEach(cc => {
+        if (cc.collection_id) {
+          infos[cc.collection_id] = '';
+        }
+      });
+      setCollectionInfos(infos);
     }
   };
 
@@ -161,11 +270,8 @@ export function DepositSlipDialog({
       yPosition += 7;
       
       doc.setTextColor(0, 0, 0);
-      
-      // Sauter une ligne
       yPosition += 4;
       
-      // Nom du distributeur en gras et police plus grande
       if (userProfile && userProfile.company_name) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
@@ -176,16 +282,12 @@ export function DepositSlipDialog({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       if (userProfile) {
-        // Nom/Prénom
         if (userProfile.first_name || userProfile.last_name) {
           const fullName = `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim();
           doc.text(fullName, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
-        
-        // A1 - Espacement entre nom/prénom et adresse
         yPosition += 2;
-        
         if (userProfile.street_address) {
           doc.text(userProfile.street_address, leftBoxX + 2, yPosition);
           yPosition += 4;
@@ -198,12 +300,9 @@ export function DepositSlipDialog({
           doc.text(`Email: ${userProfile.email}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
-        
-        // A2 - Espacement entre email et SIRET
         if (userProfile.email && userProfile.siret) {
           yPosition += 2;
         }
-        
         if (userProfile.siret) {
           doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
           yPosition += 4;
@@ -212,13 +311,9 @@ export function DepositSlipDialog({
           doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
-        
-        // Espacement entre TVA et TEL
         if (userProfile.tva_number && userProfile.phone) {
           yPosition += 2;
         }
-        
-        // Téléphone en dessous de TVA en police 11 et gras
         if (userProfile.phone) {
           doc.setFontSize(11);
           doc.setFont('helvetica', 'bold');
@@ -243,7 +338,6 @@ export function DepositSlipDialog({
       const rightBoxWidth = 80;
       let clientYPosition = rightBoxY;
       
-      // En-tête DÉTAILLANT centré et encadré
       doc.setFillColor(71, 85, 105);
       doc.rect(rightBoxX, clientYPosition, rightBoxWidth, 7, 'F');
       doc.setTextColor(255, 255, 255);
@@ -253,15 +347,13 @@ export function DepositSlipDialog({
       clientYPosition += 7;
       
       doc.setTextColor(0, 0, 0);
-      
-      // Sauter une ligne
       clientYPosition += 4;
       
-      // Nom du client en gras et police plus grande
-      if (client.name) {
+      const clientCompanyName = client.company_name || client.name;
+      if (clientCompanyName) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(client.name, rightBoxX + 2, clientYPosition);
+        doc.text(clientCompanyName, rightBoxX + 2, clientYPosition);
         clientYPosition += 5;
       }
       
@@ -275,21 +367,19 @@ export function DepositSlipDialog({
         doc.text(`${client.postal_code || ''} ${client.city || ''}`.trim(), rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
-      
-      if (client.rcs_number) {
-        doc.text(`RCS: ${client.rcs_number}`, rightBoxX + 2, clientYPosition);
+      if (client.siret_number) {
+        doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
-      if (client.naf_code) {
-        doc.text(`NAF: ${client.naf_code}`, rightBoxX + 2, clientYPosition);
-        clientYPosition += 3; // Même espacement que N° Facture
+      if (client.tva_number) {
+        doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+        clientYPosition += 3;
       }
       
       const rightBoxHeight = clientYPosition - rightBoxY + 1;
       doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
-      // Encart numéro de client (en dessous du DÉTAILLANT)
-      // B3 - Abaisser l'encart pour qu'il ne soit pas caché
+      // Encart numéro de client
       clientYPosition += 6;
       const infoBoxY = clientYPosition;
       doc.setFont('helvetica', 'bold');
@@ -304,7 +394,6 @@ export function DepositSlipDialog({
       const infoBoxHeight = clientYPosition - infoBoxY + 1;
       doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
 
-      // Position après les encarts
       yPosition = Math.max(yPosition, clientYPosition) + 10;
 
       // Date
@@ -319,11 +408,9 @@ export function DepositSlipDialog({
       doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
-      // 3) Tableau des collections (Collection, Infos, Prix de cession (HT), Prix de vente conseillé (TTC), Marchandise remise)
-      // Sort by display_order
+      // Tableau des collections
       const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
-      // Create a map of stock updates by collection_id for quick lookup
       const stockUpdatesMap = new Map<string, StockUpdate>();
       stockUpdates.forEach((update) => {
         if (update.collection_id) {
@@ -337,7 +424,7 @@ export function DepositSlipDialog({
         const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
         const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
         
-        // Use new_stock from stock update if available (for historical deposit slips), otherwise use current_stock
+        // Use new_stock from stock update if available, otherwise use current_stock
         const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
         const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
         
@@ -350,19 +437,16 @@ export function DepositSlipDialog({
         ];
       });
 
-      // Calculer la largeur disponible pour le tableau (en tenant compte des marges)
       const marginLeft = 15;
       const marginRight = 15;
       const tableWidth = pageWidth - marginLeft - marginRight;
-
-      // Définir les largeurs des colonnes : les 3 dernières colonnes doivent avoir exactement 10% chacune
-      // Collection: 35%, Infos: 30% (réduit), Prix cession HT: 10%, Prix vente conseillé TTC: 10%, Marchandise: 15% (élargi)
+      
       const columnWidths = [
-        tableWidth * 0.35,  // Collection - 35%
-        tableWidth * 0.30,  // Infos - 30% (réduit de 35% à 30%)
-        tableWidth * 0.10,  // Prix de cession (HT) - 10% (exact)
-        tableWidth * 0.10,  // Prix de vente conseillé (TTC) - 10% (exact, même taille que précédent)
-        tableWidth * 0.15   // Marchandise remise - 15% (élargi de 10% à 15%)
+        tableWidth * 0.35,
+        tableWidth * 0.30,
+        tableWidth * 0.10,
+        tableWidth * 0.10,
+        tableWidth * 0.15
       ];
 
       autoTable(doc, {
@@ -391,14 +475,14 @@ export function DepositSlipDialog({
           fontSize: 8,
           cellPadding: 2,
           overflow: 'linebreak',
-          textColor: [0, 0, 0] // Noir pour toutes les valeurs du tableau
+          textColor: [0, 0, 0]
         },
         columnStyles: {
           0: { halign: 'left', cellWidth: columnWidths[0] },
           1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-          2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // 10% - Prix de cession HT (police augmentée)
-          3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // 10% - Prix de vente conseillé TTC (police augmentée)
-          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }  // 10% - Marchandise remise
+          2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
+          3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
+          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }
         }
       });
 
@@ -420,16 +504,16 @@ export function DepositSlipDialog({
         doc.text(line, 15, footerY + (index * 3.5));
       });
 
-      // Generate PDF blob for preview
+      // Generate PDF blob for preview (NE PAS SAUVEGARDER)
       const pdfBlobData = doc.output('blob');
       const url = URL.createObjectURL(pdfBlobData);
       
       setPdfBlob(pdfBlobData);
       setPdfUrl(url);
+      setGenerating(false);
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.error('Erreur lors de la génération du PDF');
-    } finally {
       setGenerating(false);
     }
   };
@@ -453,6 +537,9 @@ export function DepositSlipDialog({
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
         <DialogHeader className="px-6 py-3 border-b flex-shrink-0">
           <DialogTitle>Prévisualisation du bon de dépôt</DialogTitle>
+          <DialogDescription className="sr-only">
+            Visualisez et téléchargez le bon de dépôt pour ce client
+          </DialogDescription>
         </DialogHeader>
 
         {needsInfoInput ? (

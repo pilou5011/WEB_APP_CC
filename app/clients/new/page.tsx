@@ -2,22 +2,33 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, EstablishmentType } from '@/lib/supabase';
+import { supabase, EstablishmentType, PaymentMethod } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Plus, X, Settings, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Plus, X, Settings, MessageSquare, Check, ChevronsUpDown, Pencil, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { EstablishmentTypesManager } from '@/components/establishment-types-manager';
+import { PaymentMethodsManager } from '@/components/payment-methods-manager';
+import { cn } from '@/lib/utils';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { OpeningHoursEditor, WeekSchedule, getDefaultWeekSchedule, validateWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, validateMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods } from '@/components/vacation-periods-editor';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
+
+// Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+
+// Options de minutes - identiques aux horaires d'ouverture
+const MINUTE_OPTIONS = ['00', '15', '30', '45'];
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -27,11 +38,25 @@ export default function NewClientPage() {
   const [showNewTypeInput, setShowNewTypeInput] = useState(false);
   const [addingNewType, setAddingNewType] = useState(false);
   const [manageTypesDialogOpen, setManageTypesDialogOpen] = useState(false);
+  const [editingEstablishmentType, setEditingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [editEstablishmentTypeName, setEditEstablishmentTypeName] = useState('');
+  const [deletingEstablishmentType, setDeletingEstablishmentType] = useState<EstablishmentType | null>(null);
+  const [deleteEstablishmentTypeDialogOpen, setDeleteEstablishmentTypeDialogOpen] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
+  const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
+  const [addingNewPaymentMethod, setAddingNewPaymentMethod] = useState(false);
+  const [managePaymentMethodsDialogOpen, setManagePaymentMethodsDialogOpen] = useState(false);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [editPaymentMethodName, setEditPaymentMethodName] = useState('');
+  const [deletingPaymentMethod, setDeletingPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [deletePaymentMethodDialogOpen, setDeletePaymentMethodDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
   const [formData, setFormData] = useState({
     name: '',
+    company_name: '',
     street_address: '',
     postal_code: '',
     city: '',
@@ -44,24 +69,22 @@ export default function NewClientPage() {
     phone_2_info: '',
     phone_3: '',
     phone_3_info: '',
-    rcs_number: '',
-    naf_code: '',
+    siret_number: '',
+    tva_number: '',
     client_number: '',
     establishment_type_id: '',
     visit_frequency_number: '',
     visit_frequency_unit: '',
     average_time_hours: '',
     average_time_minutes: '',
-    vacation_start_date: '',
-    vacation_end_date: '',
-    closing_day: '',
-    payment_method: '',
+    payment_method_id: '',
     email: '',
     comment: ''
   });
 
   useEffect(() => {
     loadEstablishmentTypes();
+    loadPaymentMethods();
   }, []);
 
   const loadEstablishmentTypes = async () => {
@@ -75,6 +98,117 @@ export default function NewClientPage() {
       setEstablishmentTypes(data || []);
     } catch (error) {
       console.error('Error loading establishment types:', error);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setPaymentMethods(data || []);
+    } catch (error) {
+      console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const handleAddNewPaymentMethod = async () => {
+    if (!newPaymentMethodName.trim()) {
+      toast.error('Veuillez saisir un nom de méthode de paiement');
+      return;
+    }
+
+    setAddingNewPaymentMethod(true);
+    try {
+      const { data, error } = await supabase
+        .from('payment_methods')
+        .insert([{ name: newPaymentMethodName.trim() }])
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Cette méthode de paiement existe déjà');
+        } else {
+          throw error;
+        }
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
+      setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setFormData({ ...formData, payment_method_id: data.id });
+      setNewPaymentMethodName('');
+      setShowNewPaymentMethodInput(false);
+      toast.success('Méthode de paiement ajoutée');
+    } catch (error) {
+      console.error('Error adding payment method:', error);
+      toast.error('Erreur lors de l\'ajout de la méthode');
+    } finally {
+      setAddingNewPaymentMethod(false);
+    }
+  };
+
+  const handleEditPaymentMethod = async () => {
+    if (!editingPaymentMethod || !editPaymentMethodName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .update({ name: editPaymentMethodName.trim() })
+        .eq('id', editingPaymentMethod.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadPaymentMethods();
+      setEditingPaymentMethod(null);
+      setEditPaymentMethodName('');
+      toast.success('Méthode de paiement modifiée avec succès');
+    } catch (error) {
+      console.error('Error updating payment method:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeletePaymentMethodClick = (method: PaymentMethod) => {
+    setDeletingPaymentMethod(method);
+    setDeletePaymentMethodDialogOpen(true);
+  };
+
+  const handleDeletePaymentMethod = async () => {
+    if (!deletingPaymentMethod) return;
+
+    try {
+      const { error } = await supabase
+        .from('payment_methods')
+        .delete()
+        .eq('id', deletingPaymentMethod.id);
+
+      if (error) throw error;
+
+      await loadPaymentMethods();
+      if (formData.payment_method_id === deletingPaymentMethod.id) {
+        setFormData({ ...formData, payment_method_id: '' });
+      }
+      setDeletePaymentMethodDialogOpen(false);
+      setDeletingPaymentMethod(null);
+      toast.success('Méthode de paiement supprimée avec succès');
+    } catch (error) {
+      console.error('Error deleting payment method:', error);
+      toast.error('Erreur lors de la suppression');
     }
   };
 
@@ -102,7 +236,7 @@ export default function NewClientPage() {
         return;
       }
 
-      setEstablishmentTypes([...establishmentTypes, data].sort((a, b) => a.name.localeCompare(b.name)));
+      await loadEstablishmentTypes();
       setFormData({ ...formData, establishment_type_id: data.id });
       setNewTypeName('');
       setShowNewTypeInput(false);
@@ -115,14 +249,81 @@ export default function NewClientPage() {
     }
   };
 
+  const handleEditEstablishmentType = async () => {
+    if (!editingEstablishmentType || !editEstablishmentTypeName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .update({ name: editEstablishmentTypeName.trim() })
+        .eq('id', editingEstablishmentType.id);
+
+      if (error) {
+        if (error.code === '23505') {
+          toast.error('Ce nom existe déjà');
+        } else {
+          throw error;
+        }
+        return;
+      }
+
+      await loadEstablishmentTypes();
+      setEditingEstablishmentType(null);
+      setEditEstablishmentTypeName('');
+      toast.success('Type modifié avec succès');
+    } catch (error) {
+      console.error('Error updating establishment type:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteEstablishmentTypeClick = (type: EstablishmentType) => {
+    setDeletingEstablishmentType(type);
+    setDeleteEstablishmentTypeDialogOpen(true);
+  };
+
+  const handleDeleteEstablishmentType = async () => {
+    if (!deletingEstablishmentType) return;
+
+    try {
+      const { error } = await supabase
+        .from('establishment_types')
+        .delete()
+        .eq('id', deletingEstablishmentType.id);
+
+      if (error) throw error;
+
+      await loadEstablishmentTypes();
+      if (formData.establishment_type_id === deletingEstablishmentType.id) {
+        setFormData({ ...formData, establishment_type_id: '' });
+      }
+      setDeleteEstablishmentTypeDialogOpen(false);
+      setDeletingEstablishmentType(null);
+      toast.success('Type supprimé avec succès');
+    } catch (error) {
+      console.error('Error deleting establishment type:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      // Validation du nom (obligatoire)
+      // Validation du nom commercial (obligatoire)
       if (!formData.name.trim()) {
-        toast.error('Le nom de la société est obligatoire');
+        toast.error('Le nom commercial est obligatoire');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du nom société (obligatoire)
+      if (!formData.company_name.trim()) {
+        toast.error('Le nom société est obligatoire');
         setSubmitting(false);
         return;
       }
@@ -168,10 +369,10 @@ export default function NewClientPage() {
         return;
       }
 
-      // Validation des périodes de vacances
+      // Validation des périodes de fermeture
       const vacationPeriodsValidation = validateVacationPeriods(vacationPeriods);
       if (!vacationPeriodsValidation.valid) {
-        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de vacances');
+        toast.error(vacationPeriodsValidation.message || 'Erreur de validation des périodes de fermeture');
         setSubmitting(false);
         return;
       }
@@ -198,26 +399,32 @@ export default function NewClientPage() {
         }
       }
 
+      // Construire l'adresse complète (obligatoire dans la base de données)
+      const fullAddress = [formData.street_address, formData.postal_code, formData.city]
+        .filter(Boolean)
+        .join(', ') || 'Adresse non renseignée';
+
       const { data, error } = await supabase
         .from('clients')
         .insert([{
-          name: formData.name,
-          address: `${formData.street_address}, ${formData.postal_code} ${formData.city}`,
-          street_address: formData.street_address,
-          postal_code: formData.postal_code,
-          city: formData.city,
+          name: formData.name.trim(),
+          company_name: formData.company_name.trim() || null,
+          address: fullAddress,
+          street_address: formData.street_address || null,
+          postal_code: formData.postal_code || null,
+          city: formData.city || null,
           department: formData.department || null,
           latitude: formData.latitude,
           longitude: formData.longitude,
-          phone: formData.phone || null,
-          phone_1_info: formData.phone_1_info || null,
-          phone_2: formData.phone_2 || null,
-          phone_2_info: formData.phone_2_info || null,
-          phone_3: formData.phone_3 || null,
-          phone_3_info: formData.phone_3_info || null,
-          rcs_number: formData.rcs_number || null,
-          naf_code: formData.naf_code || null,
-          client_number: formData.client_number || null,
+          phone: formData.phone?.trim() || null,
+          phone_1_info: formData.phone_1_info?.trim() || null,
+          phone_2: formData.phone_2?.trim() || null,
+          phone_2_info: formData.phone_2_info?.trim() || null,
+          phone_3: formData.phone_3?.trim() || null,
+          phone_3_info: formData.phone_3_info?.trim() || null,
+          siret_number: formData.siret_number?.trim() || null,
+          tva_number: formData.tva_number?.trim() || null,
+          client_number: formData.client_number?.trim() || null,
           establishment_type_id: formData.establishment_type_id || null,
           opening_hours: openingHours,
           visit_frequency_number: visitFrequencyNumber,
@@ -226,21 +433,28 @@ export default function NewClientPage() {
           average_time_minutes: averageTimeMinutes,
           market_days_schedule: marketDaysSchedule,
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
-          payment_method: formData.payment_method || null,
-          email: formData.email || null,
-          comment: formData.comment || null,
-          initial_stock: 0,
-          current_stock: 0
+          payment_method_id: formData.payment_method_id || null,
+          email: formData.email?.trim() || null,
+          comment: formData.comment?.trim() || null
         }])
         .select()
         .single();
 
       if (error) {
+        console.error('Erreur détaillée:', error);
         // Vérifier si c'est une erreur de numéro de client dupliqué
-        if (error.code === '23505' && error.message.includes('unique_client_number')) {
-          toast.error('Ce numéro de client existe déjà');
+        if (error.code === '23505') {
+          if (error.message.includes('unique_client_number')) {
+            toast.error('Ce numéro de client existe déjà');
+          } else if (error.message.includes('clients_name_key')) {
+            toast.error('Un client avec ce nom existe déjà');
+          } else {
+            toast.error('Une contrainte d\'unicité est violée');
+          }
+        } else if (error.code === '23502') {
+          toast.error('Un champ obligatoire est manquant');
         } else {
-          throw error;
+          toast.error(`Erreur lors de la création : ${error.message || 'Erreur inconnue'}`);
         }
         setSubmitting(false);
         return;
@@ -290,7 +504,7 @@ export default function NewClientPage() {
                 <Separator />
                 
                 <div>
-                  <Label htmlFor="name">Nom de la société *</Label>
+                  <Label htmlFor="name">Nom Commercial *</Label>
                   <Input
                     id="name"
                     value={formData.name}
@@ -301,44 +515,139 @@ export default function NewClientPage() {
                   />
                 </div>
 
+                <div>
+                  <Label htmlFor="company_name">Nom Société *</Label>
+                  <Input
+                    id="company_name"
+                    value={formData.company_name}
+                    onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                    required
+                    placeholder="Ex: SARL Boutique du Centre"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Raison sociale utilisée dans les factures</p>
+                </div>
+
                 {/* Type d'établissement */}
                 <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <Label htmlFor="establishment_type">Type d'établissement</Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setManageTypesDialogOpen(true)}
-                      className="h-7 text-xs"
-                    >
-                      <Settings className="h-3 w-3 mr-1" />
-                      Gérer les types
-                    </Button>
-                  </div>
-                  {!showNewTypeInput ? (
-                    <div className="flex gap-2">
-                      <Select
-                        value={formData.establishment_type_id}
-                        onValueChange={(value) => setFormData({ ...formData, establishment_type_id: value })}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Sélectionner un type..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {establishmentTypes.map((type) => (
-                            <SelectItem key={type.id} value={type.id}>
-                              {type.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  <Label htmlFor="establishment_type">Type d'établissement (optionnel)</Label>
+                  {!showNewTypeInput && !editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="flex-1 justify-between"
+                          >
+                            {formData.establishment_type_id
+                              ? establishmentTypes.find(t => t.id === formData.establishment_type_id)?.name
+                              : 'Sélectionner un type...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Rechercher un type..." />
+                            <CommandList>
+                              {establishmentTypes.length === 0 ? (
+                                <CommandEmpty>
+                                  <div className="py-6 text-center text-sm text-slate-400">
+                                    Liste vide, veuillez ajouter un élément
+                                  </div>
+                                </CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {establishmentTypes.map((type) => (
+                                    <div key={type.id} className="flex items-center group">
+                                      <CommandItem
+                                        value={type.id}
+                                        onSelect={() => {
+                                          setFormData({ ...formData, establishment_type_id: type.id });
+                                        }}
+                                        className="flex-1"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            formData.establishment_type_id === type.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {type.name}
+                                      </CommandItem>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingEstablishmentType(type);
+                                          setEditEstablishmentTypeName(type.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteEstablishmentTypeClick(type);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() => setShowNewTypeInput(true)}
                       >
                         <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingEstablishmentType ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={editEstablishmentTypeName}
+                        onChange={(e) => setEditEstablishmentTypeName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditEstablishmentType();
+                          } else if (e.key === 'Escape') {
+                            setEditingEstablishmentType(null);
+                            setEditEstablishmentTypeName('');
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleEditEstablishmentType}
+                      >
+                        Enregistrer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingEstablishmentType(null);
+                          setEditEstablishmentTypeName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
                       </Button>
                     </div>
                   ) : (
@@ -351,8 +660,13 @@ export default function NewClientPage() {
                           if (e.key === 'Enter') {
                             e.preventDefault();
                             handleAddNewType();
+                          } else if (e.key === 'Escape') {
+                            setShowNewTypeInput(false);
+                            setNewTypeName('');
                           }
                         }}
+                        className="flex-1"
+                        autoFocus
                       />
                       <Button
                         type="button"
@@ -528,23 +842,23 @@ export default function NewClientPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="rcs_number">Numéro RCS</Label>
+                    <Label htmlFor="siret_number">Numéro SIRET</Label>
                     <Input
-                      id="rcs_number"
-                      value={formData.rcs_number}
-                      onChange={(e) => setFormData({ ...formData, rcs_number: e.target.value })}
-                      placeholder="123 456 789"
+                      id="siret_number"
+                      value={formData.siret_number}
+                      onChange={(e) => setFormData({ ...formData, siret_number: e.target.value })}
+                      placeholder="123 456 789 00012"
                       className="mt-1.5"
                     />
                   </div>
 
                   <div>
-                    <Label htmlFor="naf_code">Code NAF</Label>
+                    <Label htmlFor="tva_number">Numéro TVA</Label>
                     <Input
-                      id="naf_code"
-                      value={formData.naf_code}
-                      onChange={(e) => setFormData({ ...formData, naf_code: e.target.value })}
-                      placeholder="Ex: 4759A"
+                      id="tva_number"
+                      value={formData.tva_number}
+                      onChange={(e) => setFormData({ ...formData, tva_number: e.target.value })}
+                      placeholder="Ex: FR12 345678901"
                       className="mt-1.5"
                     />
                   </div>
@@ -607,26 +921,39 @@ export default function NewClientPage() {
                     <div>
                       <Label>Temps moyen</Label>
                       <div className="flex items-center gap-2 mt-1.5">
-                        <Input
-                          type="number"
-                          min="0"
-                          value={formData.average_time_hours}
-                          onChange={(e) => setFormData({ ...formData, average_time_hours: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="0"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_hours || ''}
+                          onValueChange={(val) => {
+                            setFormData({ 
+                              ...formData, 
+                              average_time_hours: val,
+                              average_time_minutes: '00' // Réinitialiser les minutes à "00" quand une heure est sélectionnée
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {HOUR_OPTIONS.map((h) => (
+                              <SelectItem key={h} value={h}>{h}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">h</span>
-                        <Input
-                          type="number"
-                          min="0"
-                          max="59"
-                          value={formData.average_time_minutes}
-                          onChange={(e) => setFormData({ ...formData, average_time_minutes: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          placeholder="00"
-                          className="w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
+                        <Select
+                          value={formData.average_time_minutes || ''}
+                          onValueChange={(val) => setFormData({ ...formData, average_time_minutes: val })}
+                        >
+                          <SelectTrigger className="w-16">
+                            <SelectValue placeholder="--" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {MINUTE_OPTIONS.map((m) => (
+                              <SelectItem key={m} value={m}>{m}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <span className="text-sm">min</span>
                       </div>
                     </div>
@@ -649,15 +976,176 @@ export default function NewClientPage() {
                     <Separator />
 
                     <div>
-                      <Label htmlFor="payment_method">Règlement</Label>
-                      <p className="text-xs text-slate-500 mt-1">Ex: Virement, Chèque, Espèces, Carte bancaire...</p>
-                      <Input
-                        id="payment_method"
-                        value={formData.payment_method}
-                        onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                        placeholder="Ex: Virement"
-                        className="mt-1.5"
-                      />
+                      <div className="flex justify-between items-center mb-1.5">
+                        <Label htmlFor="payment_method_id">Règlement (optionnel)</Label>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setManagePaymentMethodsDialogOpen(true)}
+                          className="h-7 text-xs"
+                        >
+                          <Settings className="h-3 w-3 mr-1" />
+                          Gérer les méthodes
+                        </Button>
+                      </div>
+                      {!showNewPaymentMethodInput && !editingPaymentMethod ? (
+                        <div className="flex gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                className="flex-1 justify-between"
+                              >
+                                {formData.payment_method_id
+                                  ? paymentMethods.find(m => m.id === formData.payment_method_id)?.name
+                                  : 'Sélectionner une méthode...'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Rechercher une méthode..." />
+                                <CommandList>
+                                  {paymentMethods.length === 0 ? (
+                                    <CommandEmpty>
+                                      <div className="py-6 text-center text-sm text-slate-400">
+                                        Liste vide, veuillez ajouter un élément
+                                      </div>
+                                    </CommandEmpty>
+                                  ) : (
+                                    <CommandGroup>
+                                      {paymentMethods.map((method) => (
+                                        <div key={method.id} className="flex items-center group">
+                                          <CommandItem
+                                            value={method.id}
+                                            onSelect={() => {
+                                              setFormData({ ...formData, payment_method_id: method.id });
+                                            }}
+                                            className="flex-1"
+                                          >
+                                            <Check
+                                              className={cn(
+                                                'mr-2 h-4 w-4',
+                                                formData.payment_method_id === method.id ? 'opacity-100' : 'opacity-0'
+                                              )}
+                                            />
+                                            {method.name}
+                                          </CommandItem>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingPaymentMethod(method);
+                                              setEditPaymentMethodName(method.name);
+                                            }}
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeletePaymentMethodClick(method);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowNewPaymentMethodInput(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : editingPaymentMethod ? (
+                        <div className="flex gap-2">
+                          <Input
+                            value={editPaymentMethodName}
+                            onChange={(e) => setEditPaymentMethodName(e.target.value)}
+                            className="flex-1"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleEditPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setEditingPaymentMethod(null);
+                                setEditPaymentMethodName('');
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleEditPaymentMethod}
+                          >
+                            Enregistrer
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingPaymentMethod(null);
+                              setEditPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Nouvelle méthode..."
+                            value={newPaymentMethodName}
+                            onChange={(e) => setNewPaymentMethodName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewPaymentMethod();
+                              } else if (e.key === 'Escape') {
+                                setShowNewPaymentMethodInput(false);
+                                setNewPaymentMethodName('');
+                              }
+                            }}
+                            className="flex-1"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddNewPaymentMethod}
+                            disabled={addingNewPaymentMethod}
+                          >
+                            {addingNewPaymentMethod ? '...' : 'Ajouter'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewPaymentMethodInput(false);
+                              setNewPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -700,6 +1188,57 @@ export default function NewClientPage() {
           types={establishmentTypes}
           onTypesUpdated={loadEstablishmentTypes}
         />
+
+        <PaymentMethodsManager
+          open={managePaymentMethodsDialogOpen}
+          onOpenChange={setManagePaymentMethodsDialogOpen}
+          methods={paymentMethods}
+          onMethodsUpdated={loadPaymentMethods}
+        />
+
+        {/* Dialog de confirmation de suppression - Type d'établissement */}
+        <AlertDialog open={deleteEstablishmentTypeDialogOpen} onOpenChange={setDeleteEstablishmentTypeDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer ce type d'établissement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer le type "{deletingEstablishmentType?.name}" ?
+                Les clients utilisant ce type ne seront pas supprimés, mais leur type sera réinitialisé.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteEstablishmentType}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Dialog de confirmation de suppression - Méthode de paiement */}
+        <AlertDialog open={deletePaymentMethodDialogOpen} onOpenChange={setDeletePaymentMethodDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer cette méthode de paiement ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la méthode "{deletingPaymentMethod?.name}" ?
+                Les clients utilisant cette méthode ne seront pas supprimés, mais leur méthode de paiement sera réinitialisée.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeletePaymentMethod}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );
