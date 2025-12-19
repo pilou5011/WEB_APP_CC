@@ -86,6 +86,7 @@ export type Invoice = {
   total_cards_sold: number;
   total_amount: number;
   invoice_number: string | null;
+  discount_percentage: number | null; // Pourcentage de remise commerciale (0-100)
   invoice_pdf_path: string | null;
   stock_report_pdf_path: string | null;
   deposit_slip_pdf_path: string | null;
@@ -151,6 +152,7 @@ export type ClientCollection = {
 export type UserProfile = {
   id: string;
   company_name: string | null;
+  company_name_short: string | null;
   first_name: string | null;
   last_name: string | null;
   street_address: string | null;

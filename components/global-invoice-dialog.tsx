@@ -191,6 +191,11 @@ export function GlobalInvoiceDialog({
             clientName: client.name,
             pdfBase64: base64data,
             fileName: fileName,
+            invoiceDate: new Date(invoice.created_at).toLocaleDateString('fr-FR'),
+            senderEmail: userProfile?.email,
+            senderName: `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || undefined,
+            senderCompanyName: userProfile?.company_name_short || userProfile?.company_name || undefined,
+            senderPhone: userProfile?.phone,
           }),
         });
 

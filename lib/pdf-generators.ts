@@ -251,11 +251,20 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const bOrder = bCC?.display_order || 0;
       return aOrder - bOrder;
     });
+    // Récupérer le pourcentage de remise de la facture
+    const discountPercentage = invoice.discount_percentage || 0;
+    const discountRatio = discountPercentage > 0 && discountPercentage <= 100 
+      ? (1 - discountPercentage / 100)
+      : 1;
+    
+    // Appliquer la remise proportionnellement à chaque ligne de facture
     const stockRows = sortedStockUpdates.map((update) => {
       const collection = collections.find(c => c.id === update.collection_id);
       const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
       const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
-      const totalHT = update.cards_sold * effectivePrice;
+      const totalHTBeforeDiscount = update.cards_sold * effectivePrice;
+      // Appliquer la remise proportionnellement à chaque ligne (conforme fiscalement)
+      const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
         collection?.name || 'Collection',
@@ -265,13 +274,17 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         update.counted_stock.toString(),
         update.cards_sold.toString(),
         effectivePrice.toFixed(2) + ' €',
-        totalHT.toFixed(2) + ' €'
+        totalHTAfterDiscount.toFixed(2) + ' €'
       ];
     });
 
+    // Appliquer la remise proportionnellement aux ajustements aussi
     const adjustmentRows = adjustments.map((adj) => {
       const amt = Number(adj.amount);
-      const amtStr = (isNaN(amt) ? '0.00' : amt.toFixed(2)) + ' €';
+      const amtBeforeDiscount = isNaN(amt) ? 0 : amt;
+      // Appliquer la remise proportionnellement aux ajustements (conforme fiscalement)
+      const amtAfterDiscount = amtBeforeDiscount * discountRatio;
+      const amtStr = amtAfterDiscount.toFixed(2) + ' €';
       const quantity = adj.quantity || '';
       const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
       return [
@@ -319,14 +332,24 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     });
 
     // Calculer les totaux (uniquement pour les collections, pas les sous-produits)
+    // Note: discountPercentage et discountRatio sont déjà définis plus haut
     const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
-    const totalHT = collectionStockUpdates.reduce((sum, update) => {
+    const totalHTBeforeDiscount = collectionStockUpdates.reduce((sum, update) => {
       const collection = collections.find(c => c.id === update.collection_id);
       const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
       const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
       return sum + (update.cards_sold * effectivePrice);
     }, 0) + adjustmentsTotal;
     
+    // Appliquer la remise commerciale sur le HT (conforme fiscalement)
+    // La remise a déjà été appliquée proportionnellement à chaque ligne, donc on recalcule ici pour vérification
+    const discountAmount = discountPercentage > 0 && discountPercentage <= 100
+      ? (totalHTBeforeDiscount * discountPercentage / 100)
+      : 0;
+    
+    const totalHT = totalHTBeforeDiscount - discountAmount;
+    
+    // Calculer la TVA après remise (conforme fiscalement)
     const tva = totalHT * 0.20;
     const totalTTC = totalHT + tva;
 
@@ -334,13 +357,21 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const finalTableY = (doc as any).lastAutoTable.finalY + 8; // Espacement de 2 lignes
     
     // Utiliser les mêmes marges globales pour l'alignement vertical
+    const summaryRows: string[][] = [];
+    
+    // Montant HT avant remise (si remise appliquée)
+    if (discountAmount > 0) {
+      summaryRows.push(['TOTAL H.T. (avant remise)', totalHTBeforeDiscount.toFixed(2) + ' €']);
+      summaryRows.push([`Remise commerciale (${discountPercentage.toFixed(2)}%)`, '-' + discountAmount.toFixed(2) + ' €']);
+    }
+    
+    summaryRows.push(['TOTAL H.T.', totalHT.toFixed(2) + ' €']);
+    summaryRows.push(['TVA 20%', tva.toFixed(2) + ' €']);
+    summaryRows.push(['TOTAL T.T.C A PAYER', totalTTC.toFixed(2) + ' €']);
+    
     autoTable(doc, {
       startY: finalTableY,
-      body: [
-        ['TOTAL H.T.', totalHT.toFixed(2) + ' €'],
-        ['TVA 20%', tva.toFixed(2) + ' €'],
-        ['TOTAL T.T.C A PAYER', totalTTC.toFixed(2) + ' €']
-      ],
+      body: summaryRows,
       theme: 'plain',
       bodyStyles: {
         fontSize: 10,

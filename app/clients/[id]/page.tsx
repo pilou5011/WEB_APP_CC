@@ -1168,7 +1168,7 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async () => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
     if (!client) return;
 
     setSubmitting(true);
@@ -1196,7 +1196,14 @@ export default function ClientDetailPage() {
         return sum + (unitPrice * quantity);
       }, 0);
 
-      const finalTotalAmount = totalAmount + adjustmentsTotal;
+      const totalAmountBeforeDiscount = totalAmount + adjustmentsTotal;
+      
+      // Appliquer la remise commerciale si fournie
+      const discountAmount = discountPercentage && discountPercentage > 0 && discountPercentage <= 100
+        ? (totalAmountBeforeDiscount * discountPercentage / 100)
+        : 0;
+      
+      const finalTotalAmount = totalAmountBeforeDiscount - discountAmount;
 
       // Vérifier si le montant total est négatif
       if (finalTotalAmount < 0) {
@@ -1215,7 +1222,8 @@ export default function ClientDetailPage() {
           .insert([{
             client_id: clientId,
             total_cards_sold: totalCardsSold,
-            total_amount: finalTotalAmount
+            total_amount: finalTotalAmount,
+            discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
           }])
           .select()
           .single();
@@ -3819,6 +3827,7 @@ export default function ClientDetailPage() {
                           total_cards_sold: stockUpdate.total_cards_sold,
                           total_amount: stockUpdate.total_amount,
                           invoice_number: null,
+                          discount_percentage: null,
                           invoice_pdf_path: null,
                           stock_report_pdf_path: null,
                           deposit_slip_pdf_path: null,
