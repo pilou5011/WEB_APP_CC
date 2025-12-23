@@ -6,6 +6,7 @@ import { supabase, UserProfile } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone, Edit } from 'lucide-react';
 import { toast } from 'sonner';
@@ -32,8 +33,35 @@ export default function ProfilePage() {
     ape_code: '',
     tva_number: '',
     email: '',
-    phone: ''
+    phone: '',
+    terms_and_conditions: ''
   });
+
+  // Fonction pour générer les conditions générales par défaut avec le nom de la société
+  const getDefaultTermsAndConditions = (companyName: string | null = null): string => {
+    const company = companyName || formData.company_name || 'Votre Société';
+    return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+  };
+
+  // Fonction pour calculer le nombre de lignes approximatif du texte
+  const calculateLineCount = (text: string): number => {
+    if (!text) return 0;
+    // Estimation : environ 65 caractères par ligne pour un textarea standard
+    const charsPerLine = 150;
+    const lines = text.split('\n');
+    let totalLines = 0;
+    
+    lines.forEach((line) => {
+      if (line.length === 0) {
+        totalLines += 1; // Ligne vide compte comme une ligne
+      } else {
+        // Calculer le nombre de lignes nécessaires pour cette ligne (avec retour à la ligne automatique)
+        totalLines += Math.ceil(line.length / charsPerLine);
+      }
+    });
+    
+    return totalLines;
+  };
 
   useEffect(() => {
     loadProfile();
@@ -67,7 +95,8 @@ export default function ProfilePage() {
           ape_code: data.ape_code || '',
           tva_number: data.tva_number || '',
           email: data.email || '',
-          phone: data.phone || ''
+          phone: data.phone || '',
+          terms_and_conditions: data.terms_and_conditions || getDefaultTermsAndConditions(data.company_name)
         });
       }
     } catch (error) {
@@ -104,6 +133,23 @@ export default function ProfilePage() {
         return;
       }
 
+      // Validation des conditions générales (max 600 caractères)
+      if (formData.terms_and_conditions && formData.terms_and_conditions.length > 600) {
+        toast.error('Les conditions générales de vente ne peuvent pas dépasser 600 caractères');
+        setSubmitting(false);
+        return;
+      }
+
+      // Validation du nombre de lignes (max 5 lignes)
+      if (formData.terms_and_conditions) {
+        const lineCount = calculateLineCount(formData.terms_and_conditions);
+        if (lineCount > 5) {
+          toast.error('Les conditions générales de vente ne peuvent pas dépasser 5 lignes');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const profileData = {
         company_name: formData.company_name || null,
         company_name_short: formData.company_name_short || null,
@@ -117,6 +163,7 @@ export default function ProfilePage() {
         tva_number: formData.tva_number || null,
         email: formData.email || null,
         phone: formData.phone || null,
+        terms_and_conditions: formData.terms_and_conditions || null,
         updated_at: new Date().toISOString()
       };
 
@@ -330,6 +377,25 @@ export default function ProfilePage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Conditions générales de vente */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <FileText className="h-5 w-5" />
+                      <h3>Conditions générales de vente</h3>
+                    </div>
+                    <Separator />
+                    
+                    <div>
+                      <Label className="text-slate-500 text-sm">Conditions générales de vente</Label>
+                      <p className="text-base font-medium mt-1 whitespace-pre-wrap">
+                        {profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name)}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Ces conditions apparaissent en bas des factures et bons de dépôt
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -346,28 +412,29 @@ export default function ProfilePage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => {
-              setIsEditing(false);
-              // Restaurer les données du profil si on annule l'édition
-              if (profile) {
-                setFormData({
-                  company_name: profile.company_name || '',
-                  company_name_short: profile.company_name_short || '',
-                  first_name: profile.first_name || '',
-                  last_name: profile.last_name || '',
-                  street_address: profile.street_address || '',
-                  postal_code: profile.postal_code || '',
-                  city: profile.city || '',
-                  latitude: profile.latitude || null,
-                  longitude: profile.longitude || null,
-                  siret: profile.siret || '',
-                  ape_code: profile.ape_code || '',
-                  tva_number: profile.tva_number || '',
-                  email: profile.email || '',
-                  phone: profile.phone || ''
-                });
-              }
-            }}
+              onClick={() => {
+                setIsEditing(false);
+                // Restaurer les données du profil si on annule l'édition
+                if (profile) {
+                  setFormData({
+                    company_name: profile.company_name || '',
+                    company_name_short: profile.company_name_short || '',
+                    first_name: profile.first_name || '',
+                    last_name: profile.last_name || '',
+                    street_address: profile.street_address || '',
+                    postal_code: profile.postal_code || '',
+                    city: profile.city || '',
+                    latitude: profile.latitude || null,
+                    longitude: profile.longitude || null,
+                    siret: profile.siret || '',
+                    ape_code: profile.ape_code || '',
+                    tva_number: profile.tva_number || '',
+                    email: profile.email || '',
+                    phone: profile.phone || '',
+                    terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name)
+                  });
+                }
+              }}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour
@@ -543,6 +610,69 @@ export default function ProfilePage() {
                 </div>
               </div>
 
+              {/* Conditions générales de vente */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                  <FileText className="h-5 w-5" />
+                  <h3>Conditions générales de vente</h3>
+                </div>
+                <Separator />
+                
+                <div>
+                  <Label htmlFor="terms_and_conditions">Conditions générales de vente</Label>
+                  <Textarea
+                    id="terms_and_conditions"
+                    value={formData.terms_and_conditions}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      const lineCount = calculateLineCount(newValue);
+                      if (lineCount <= 5 || newValue.length <= formData.terms_and_conditions.length) {
+                        // Permettre la modification si le nombre de lignes est acceptable ou si on réduit le texte
+                        setFormData({ ...formData, terms_and_conditions: newValue });
+                      } else {
+                        // Empêcher la saisie si cela dépasse 5 lignes
+                        toast.error('Les conditions générales de vente ne peuvent pas dépasser 5 lignes');
+                      }
+                    }}
+                    placeholder={getDefaultTermsAndConditions(formData.company_name)}
+                    className="mt-1.5 min-h-[150px]"
+                    rows={6}
+                    maxLength={600}
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-xs text-slate-500">
+                      Ces conditions apparaissent en bas des factures et bons de dépôt
+                    </p>
+                    <div className="flex gap-3">
+                      <p className="text-xs text-slate-500">
+                        {formData.terms_and_conditions.length}/600 caractères
+                      </p>
+                      <p className={`text-xs ${calculateLineCount(formData.terms_and_conditions) > 5 ? 'text-red-600' : 'text-slate-500'}`}>
+                        {calculateLineCount(formData.terms_and_conditions)}/5 lignes
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData({ ...formData, terms_and_conditions: getDefaultTermsAndConditions(formData.company_name) })}
+                    >
+                      Utiliser la valeur par défaut
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFormData({ ...formData, terms_and_conditions: '' })}
+                    >
+                      Effacer
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               <Separator />
 
               <div className="flex justify-end gap-3">
@@ -567,7 +697,8 @@ export default function ProfilePage() {
                         ape_code: profile.ape_code || '',
                         tva_number: profile.tva_number || '',
                         email: profile.email || '',
-                        phone: profile.phone || ''
+                        phone: profile.phone || '',
+                        terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name)
                       });
                     }
                   }}

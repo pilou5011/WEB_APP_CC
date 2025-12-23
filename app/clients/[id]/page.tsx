@@ -1494,7 +1494,8 @@ export default function ClientDetailPage() {
               invoice: invoiceData,
               client,
               clientCollections,
-              stockUpdates: insertedStockUpdates
+              stockUpdates: insertedStockUpdates,
+              userProfile: userProfile || null
             })
           ]);
 

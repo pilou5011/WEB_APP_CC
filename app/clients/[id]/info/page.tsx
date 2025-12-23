@@ -520,36 +520,41 @@ export default function ClientInfoPage() {
   const hasUnsavedChanges = (): boolean => {
     if (!client) return false;
 
+    // Fonction helper pour normaliser les valeurs pour comparaison
+    const normalize = (val: string | null | undefined): string => {
+      return val ?? '';
+    };
+
     // Comparer les données du formulaire avec les données du client
     const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
     
-    // Comparer les champs de base
+    // Comparer les champs de base - comparaison directe avec normalisation
     if (
-      formData.name !== (client.name || '') ||
-      formData.company_name !== (client.company_name || '') ||
-      formData.street_address !== (client.street_address || '') ||
-      formData.postal_code !== (client.postal_code || '') ||
-      formData.city !== (client.city || '') ||
-      formData.department !== (department || '') ||
-      formData.latitude !== (client.latitude || null) ||
-      formData.longitude !== (client.longitude || null) ||
-      formData.phone !== (client.phone || '') ||
-      formData.phone_1_info !== (client.phone_1_info || '') ||
-      formData.phone_2 !== (client.phone_2 || '') ||
-      formData.phone_2_info !== (client.phone_2_info || '') ||
-      formData.phone_3 !== (client.phone_3 || '') ||
-      formData.phone_3_info !== (client.phone_3_info || '') ||
-      formData.siret_number !== (client.siret_number || '') ||
-      formData.tva_number !== (client.tva_number || '') ||
-      formData.client_number !== (client.client_number || '') ||
-      formData.establishment_type_id !== (client.establishment_type_id || '') ||
-      formData.visit_frequency_number !== (client.visit_frequency_number?.toString() || '') ||
-      formData.visit_frequency_unit !== (client.visit_frequency_unit || '') ||
-      formData.average_time_hours !== (client.average_time_hours?.toString() || '') ||
-      formData.average_time_minutes !== (client.average_time_minutes?.toString() || '') ||
-      formData.payment_method_id !== (client.payment_method_id || '') ||
-      formData.email !== (client.email || '') ||
-      formData.comment !== (client.comment || '')
+      normalize(formData.name) !== normalize(client.name) ||
+      normalize(formData.company_name) !== normalize(client.company_name) ||
+      normalize(formData.street_address) !== normalize(client.street_address) ||
+      normalize(formData.postal_code) !== normalize(client.postal_code) ||
+      normalize(formData.city) !== normalize(client.city) ||
+      normalize(formData.department) !== normalize(department) ||
+      formData.latitude !== (client.latitude ?? null) ||
+      formData.longitude !== (client.longitude ?? null) ||
+      normalize(formData.phone) !== normalize(client.phone) ||
+      normalize(formData.phone_1_info) !== normalize(client.phone_1_info) ||
+      normalize(formData.phone_2) !== normalize(client.phone_2) ||
+      normalize(formData.phone_2_info) !== normalize(client.phone_2_info) ||
+      normalize(formData.phone_3) !== normalize(client.phone_3) ||
+      normalize(formData.phone_3_info) !== normalize(client.phone_3_info) ||
+      normalize(formData.siret_number) !== normalize(client.siret_number) ||
+      normalize(formData.tva_number) !== normalize(client.tva_number) ||
+      normalize(formData.client_number) !== normalize(client.client_number) ||
+      normalize(formData.establishment_type_id) !== normalize(client.establishment_type_id) ||
+      normalize(formData.visit_frequency_number) !== normalize(client.visit_frequency_number?.toString()) ||
+      normalize(formData.visit_frequency_unit) !== normalize(client.visit_frequency_unit) ||
+      normalize(formData.average_time_hours) !== normalize(client.average_time_hours?.toString()) ||
+      normalize(formData.average_time_minutes) !== normalize(client.average_time_minutes?.toString()) ||
+      normalize(formData.payment_method_id) !== normalize(client.payment_method_id) ||
+      normalize(formData.email) !== normalize(client.email) ||
+      normalize(formData.comment) !== normalize(client.comment)
     ) {
       return true;
     }

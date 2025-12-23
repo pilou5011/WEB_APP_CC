@@ -29,6 +29,7 @@ interface GenerateDepositSlipPDFParams {
   client: Client;
   clientCollections: (ClientCollection & { collection?: Collection })[];
   stockUpdates: StockUpdate[];
+  userProfile: UserProfile | null;
 }
 
 interface GenerateCreditNotePDFParams {
@@ -417,7 +418,24 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     // Conditions de Dépôt-Vente - toujours en bas de page
     const finalSummaryTableY = (doc as any).lastAutoTable.finalY;
-    const conditionsHeight = 4 * 3.5; // Hauteur approximative des 4 lignes de conditions
+    
+    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    
+    // Calculer la largeur disponible en tenant compte des marges gauche et droite
+    const availableWidth = pageWidth - globalLeftMargin - globalRightMargin;
+    
+    // Diviser le texte en lignes adaptées à la largeur disponible
+    // Utiliser doc.splitTextToSize pour diviser le texte correctement selon la largeur en mm
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    
+    const conditionsHeight = conditionsLines.length * 3.5; // Hauteur approximative des lignes de conditions
     const footerY = pageHeight - 20; // Position en bas de page pour les conditions
     
     // Vérifier si le tableau récapitulatif chevaucherait l'espace réservé aux conditions
@@ -427,20 +445,11 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     }
     
     // Toujours placer les conditions en bas de la page actuelle
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
     doc.setTextColor(0, 0, 0);
     
-    const conditionsText = [
-      "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-      "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-      "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-      "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-    ];
-    
-    // Placer les conditions en bas de page (footerY)
-    conditionsText.forEach((line, index) => {
-      doc.text(line, globalLeftMargin, footerY + (index * 3.5));
+    // Placer les conditions en bas de page (footerY) avec marge droite
+    conditionsLines.forEach((line: string, index: number) => {
+      doc.text(line, globalLeftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
     });
 
     // Generate PDF blob
@@ -1067,7 +1076,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<void> {
-  const { invoice, client, clientCollections, stockUpdates } = params;
+  const { invoice, client, clientCollections, stockUpdates, userProfile } = params;
 
   // Check if PDF already exists
   if (invoice.deposit_slip_pdf_path) {
@@ -1360,19 +1369,27 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     // Conditions de Dépôt-Vente en bas de page
     const footerY = pageHeight - 20;
     
+    // Définir les marges pour les conditions générales
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const availableWidth = pageWidth - leftMargin - rightMargin;
+    
+    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    
+    // Diviser le texte en lignes adaptées à la largeur disponible
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    
     doc.setTextColor(0, 0, 0);
     
-    const conditionsText = [
-      "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-      "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-      "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-      "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-    ];
-    
-    conditionsText.forEach((line, index) => {
-      doc.text(line, 15, footerY + (index * 3.5));
+    conditionsLines.forEach((line: string, index: number) => {
+      doc.text(line, leftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
     });
 
     const pdfBlobData = doc.output('blob');
