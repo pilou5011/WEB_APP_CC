@@ -41,6 +41,7 @@ export default function ClientInfoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const [establishmentTypes, setEstablishmentTypes] = useState<EstablishmentType[]>([]);
   const [establishmentTypeName, setEstablishmentTypeName] = useState<string>('');
   const [newTypeName, setNewTypeName] = useState('');
@@ -514,6 +515,178 @@ export default function ClientInfoPage() {
       console.error('Error deleting payment method:', error);
       toast.error('Erreur lors de la suppression');
     }
+  };
+
+  const hasUnsavedChanges = (): boolean => {
+    if (!client) return false;
+
+    // Comparer les données du formulaire avec les données du client
+    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
+    
+    // Comparer les champs de base
+    if (
+      formData.name !== (client.name || '') ||
+      formData.company_name !== (client.company_name || '') ||
+      formData.street_address !== (client.street_address || '') ||
+      formData.postal_code !== (client.postal_code || '') ||
+      formData.city !== (client.city || '') ||
+      formData.department !== (department || '') ||
+      formData.latitude !== (client.latitude || null) ||
+      formData.longitude !== (client.longitude || null) ||
+      formData.phone !== (client.phone || '') ||
+      formData.phone_1_info !== (client.phone_1_info || '') ||
+      formData.phone_2 !== (client.phone_2 || '') ||
+      formData.phone_2_info !== (client.phone_2_info || '') ||
+      formData.phone_3 !== (client.phone_3 || '') ||
+      formData.phone_3_info !== (client.phone_3_info || '') ||
+      formData.siret_number !== (client.siret_number || '') ||
+      formData.tva_number !== (client.tva_number || '') ||
+      formData.client_number !== (client.client_number || '') ||
+      formData.establishment_type_id !== (client.establishment_type_id || '') ||
+      formData.visit_frequency_number !== (client.visit_frequency_number?.toString() || '') ||
+      formData.visit_frequency_unit !== (client.visit_frequency_unit || '') ||
+      formData.average_time_hours !== (client.average_time_hours?.toString() || '') ||
+      formData.average_time_minutes !== (client.average_time_minutes?.toString() || '') ||
+      formData.payment_method_id !== (client.payment_method_id || '') ||
+      formData.email !== (client.email || '') ||
+      formData.comment !== (client.comment || '')
+    ) {
+      return true;
+    }
+
+    // Comparer les horaires d'ouverture
+    const defaultSchedule = getDefaultWeekSchedule();
+    const clientSchedule = client.opening_hours ? (client.opening_hours as any) : defaultSchedule;
+    const mergedClientSchedule = { ...defaultSchedule };
+    Object.keys(defaultSchedule).forEach((day) => {
+      if (clientSchedule[day]) {
+        mergedClientSchedule[day as keyof WeekSchedule] = clientSchedule[day];
+      }
+    });
+    
+    if (JSON.stringify(openingHours) !== JSON.stringify(mergedClientSchedule)) {
+      return true;
+    }
+
+    // Comparer les jours de marché
+    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+    const clientMarketSchedule = client.market_days_schedule ? (client.market_days_schedule as any) : defaultMarketSchedule;
+    const mergedClientMarketSchedule = { ...defaultMarketSchedule };
+    Object.keys(defaultMarketSchedule).forEach((day) => {
+      if (clientMarketSchedule[day]) {
+        mergedClientMarketSchedule[day as keyof MarketDaysSchedule] = clientMarketSchedule[day];
+      }
+    });
+    
+    if (JSON.stringify(marketDaysSchedule) !== JSON.stringify(mergedClientMarketSchedule)) {
+      return true;
+    }
+
+    // Comparer les périodes de fermeture
+    const clientVacationPeriods = client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0
+      ? client.vacation_periods as VacationPeriod[]
+      : [];
+    
+    if (JSON.stringify(vacationPeriods) !== JSON.stringify(clientVacationPeriods)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleBackClick = () => {
+    if (!client) return;
+    
+    if (hasUnsavedChanges()) {
+      setUnsavedChangesDialogOpen(true);
+    } else {
+      handleCancelEdit();
+    }
+  };
+
+  const handleCancelEdit = () => {
+    if (!client) return;
+    
+    setIsEditing(false);
+    // Restaurer les données du client si on annule l'édition
+    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
+    setFormData({
+      name: client.name || '',
+      company_name: client.company_name || '',
+      street_address: client.street_address || '',
+      postal_code: client.postal_code || '',
+      city: client.city || '',
+      department: department || '',
+      latitude: client.latitude || null,
+      longitude: client.longitude || null,
+      phone: client.phone || '',
+      phone_1_info: client.phone_1_info || '',
+      phone_2: client.phone_2 || '',
+      phone_2_info: client.phone_2_info || '',
+      phone_3: client.phone_3 || '',
+      phone_3_info: client.phone_3_info || '',
+      siret_number: client.siret_number || '',
+      tva_number: client.tva_number || '',
+      client_number: client.client_number || '',
+      establishment_type_id: client.establishment_type_id || '',
+      visit_frequency_number: client.visit_frequency_number?.toString() || '',
+      visit_frequency_unit: client.visit_frequency_unit || '',
+      average_time_hours: client.average_time_hours?.toString() || '',
+      average_time_minutes: client.average_time_minutes?.toString() || '',
+      payment_method_id: client.payment_method_id || '',
+      email: client.email || '',
+      comment: client.comment || ''
+    });
+    const defaultSchedule = getDefaultWeekSchedule();
+    if (client.opening_hours) {
+      const loadedSchedule = client.opening_hours as any;
+      const mergedSchedule = { ...defaultSchedule };
+      
+      Object.keys(defaultSchedule).forEach((day) => {
+        if (loadedSchedule[day]) {
+          mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
+        }
+      });
+      
+      setOpeningHours(mergedSchedule);
+    } else {
+      setOpeningHours(defaultSchedule);
+    }
+    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+    if (client.market_days_schedule) {
+      const loadedMarketSchedule = client.market_days_schedule as any;
+      const mergedMarketSchedule = { ...defaultMarketSchedule };
+      
+      Object.keys(defaultMarketSchedule).forEach((day) => {
+        if (loadedMarketSchedule[day]) {
+          mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+        }
+      });
+      
+      setMarketDaysSchedule(mergedMarketSchedule);
+    } else {
+      setMarketDaysSchedule(defaultMarketSchedule);
+    }
+    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
+      setVacationPeriods(client.vacation_periods as VacationPeriod[]);
+    } else {
+      setVacationPeriods([]);
+    }
+    setShowNewTypeInput(false);
+    setNewTypeName('');
+  };
+
+  const handleSaveAndExit = async () => {
+    setUnsavedChangesDialogOpen(false);
+    
+    // Créer un événement de soumission artificiel
+    const fakeEvent = {
+      preventDefault: () => {},
+    } as React.FormEvent;
+    
+    // Sauvegarder les données (handleSubmit gère déjà setIsEditing(false) en cas de succès)
+    // Si la sauvegarde échoue, l'utilisateur reste en mode édition et peut réessayer
+    await handleSubmit(fakeEvent);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1088,75 +1261,7 @@ export default function ClientInfoPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => {
-              setIsEditing(false);
-              // Restaurer les données du client si on annule l'édition
-              const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
-              setFormData({
-                name: client.name || '',
-                company_name: client.company_name || '',
-                street_address: client.street_address || '',
-                postal_code: client.postal_code || '',
-                city: client.city || '',
-                department: department || '',
-                latitude: client.latitude || null,
-                longitude: client.longitude || null,
-                phone: client.phone || '',
-                phone_1_info: client.phone_1_info || '',
-                phone_2: client.phone_2 || '',
-                phone_2_info: client.phone_2_info || '',
-                phone_3: client.phone_3 || '',
-                phone_3_info: client.phone_3_info || '',
-                siret_number: client.siret_number || '',
-                tva_number: client.tva_number || '',
-                client_number: client.client_number || '',
-                establishment_type_id: client.establishment_type_id || '',
-                visit_frequency_number: client.visit_frequency_number?.toString() || '',
-                visit_frequency_unit: client.visit_frequency_unit || '',
-                average_time_hours: client.average_time_hours?.toString() || '',
-                average_time_minutes: client.average_time_minutes?.toString() || '',
-                payment_method_id: client.payment_method_id || '',
-                email: client.email || '',
-                comment: client.comment || ''
-              });
-              const defaultSchedule = getDefaultWeekSchedule();
-              if (client.opening_hours) {
-                const loadedSchedule = client.opening_hours as any;
-                const mergedSchedule = { ...defaultSchedule };
-                
-                Object.keys(defaultSchedule).forEach((day) => {
-                  if (loadedSchedule[day]) {
-                    mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
-                  }
-                });
-                
-                setOpeningHours(mergedSchedule);
-              } else {
-                setOpeningHours(defaultSchedule);
-              }
-              const defaultMarketSchedule = getDefaultMarketDaysSchedule();
-              if (client.market_days_schedule) {
-                const loadedMarketSchedule = client.market_days_schedule as any;
-                const mergedMarketSchedule = { ...defaultMarketSchedule };
-                
-                Object.keys(defaultMarketSchedule).forEach((day) => {
-                  if (loadedMarketSchedule[day]) {
-                    mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
-                  }
-                });
-                
-                setMarketDaysSchedule(mergedMarketSchedule);
-              } else {
-                setMarketDaysSchedule(defaultMarketSchedule);
-              }
-              if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
-                setVacationPeriods(client.vacation_periods as VacationPeriod[]);
-              } else {
-                setVacationPeriods([]);
-              }
-              setShowNewTypeInput(false);
-              setNewTypeName('');
-            }}
+            onClick={handleBackClick}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour
@@ -1846,79 +1951,11 @@ export default function ClientInfoPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                    setIsEditing(false);
-                    // Restaurer les données du client si on annule l'édition
-                    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
-                    setFormData({
-                      name: client.name || '',
-                      company_name: client.company_name || '',
-                      street_address: client.street_address || '',
-                      postal_code: client.postal_code || '',
-                      city: client.city || '',
-                      department: department || '',
-                      latitude: client.latitude || null,
-                      longitude: client.longitude || null,
-                      phone: client.phone || '',
-                      phone_1_info: client.phone_1_info || '',
-                      phone_2: client.phone_2 || '',
-                      phone_2_info: client.phone_2_info || '',
-                      phone_3: client.phone_3 || '',
-                      phone_3_info: client.phone_3_info || '',
-                      siret_number: client.siret_number || '',
-                      tva_number: client.tva_number || '',
-                      client_number: client.client_number || '',
-                      establishment_type_id: client.establishment_type_id || '',
-                      visit_frequency_number: client.visit_frequency_number?.toString() || '',
-                      visit_frequency_unit: client.visit_frequency_unit || '',
-                      average_time_hours: client.average_time_hours?.toString() || '',
-                      average_time_minutes: client.average_time_minutes?.toString() || '',
-                      payment_method_id: client.payment_method_id || '',
-                      email: client.email || '',
-                      comment: client.comment || ''
-                    });
-                    const defaultSchedule = getDefaultWeekSchedule();
-                    if (client.opening_hours) {
-                      const loadedSchedule = client.opening_hours as any;
-                      const mergedSchedule = { ...defaultSchedule };
-                      
-                      Object.keys(defaultSchedule).forEach((day) => {
-                        if (loadedSchedule[day]) {
-                          mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
-                        }
-                      });
-                      
-                      setOpeningHours(mergedSchedule);
-                    } else {
-                      setOpeningHours(defaultSchedule);
-                    }
-                    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
-                    if (client.market_days_schedule) {
-                      const loadedMarketSchedule = client.market_days_schedule as any;
-                      const mergedMarketSchedule = { ...defaultMarketSchedule };
-                      
-                      Object.keys(defaultMarketSchedule).forEach((day) => {
-                        if (loadedMarketSchedule[day]) {
-                          mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
-                        }
-                      });
-                      
-                      setMarketDaysSchedule(mergedMarketSchedule);
-                    } else {
-                      setMarketDaysSchedule(defaultMarketSchedule);
-                    }
-                    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
-                      setVacationPeriods(client.vacation_periods as VacationPeriod[]);
-                    } else {
-                      setVacationPeriods([]);
-                    }
-                    setShowNewTypeInput(false);
-                    setNewTypeName('');
-                  }}
-                  disabled={submitting}
-                >
-                  Annuler
-                    </Button>
+                    onClick={handleBackClick}
+                    disabled={submitting}
+                  >
+                    Annuler
+                  </Button>
                     <Button type="submit" disabled={submitting}>
                       {submitting ? 'Enregistrement...' : 'Enregistrer'}
                     </Button>
@@ -2030,6 +2067,43 @@ export default function ClientInfoPage() {
                 className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deleting ? 'Suppression en cours...' : 'Supprimer définitivement'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Dialog de confirmation pour modifications non sauvegardées */}
+        <AlertDialog 
+          open={unsavedChangesDialogOpen} 
+          onOpenChange={(open) => {
+            if (!submitting) {
+              setUnsavedChangesDialogOpen(open);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Modifications non sauvegardées</AlertDialogTitle>
+              <AlertDialogDescription>
+                Vous avez modifié des informations du client. Souhaitez-vous enregistrer ces modifications avant de quitter ?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel 
+                onClick={() => {
+                  setUnsavedChangesDialogOpen(false);
+                  handleCancelEdit();
+                }}
+                disabled={submitting}
+              >
+                Quitter sans enregistrer
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleSaveAndExit}
+                disabled={submitting}
+                className="disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Enregistrement...' : 'Enregistrer et quitter'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

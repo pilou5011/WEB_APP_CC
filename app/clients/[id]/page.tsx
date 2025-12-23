@@ -3096,7 +3096,7 @@ export default function ClientDetailPage() {
                       id="assoc-initial" 
                       type="text" 
                       inputMode="numeric"
-                      value={selectedCollectionHasSubProducts ? 'Calculé depuis les sous-produits' : associateForm.initial_stock}
+                      value={selectedCollectionHasSubProducts ? 'Cliquer sur le bouton "Ajouter la collection"' : associateForm.initial_stock}
                       onChange={(e) => {
                         if (selectedCollectionHasSubProducts) return;
                         const value = e.target.value;
@@ -3106,7 +3106,7 @@ export default function ClientDetailPage() {
                         }
                       }}
                       onWheel={(e) => e.currentTarget.blur()}
-                      placeholder={selectedCollectionHasSubProducts ? "Calculé depuis les sous-produits" : "Ex: 100 (0 si vide)"} 
+                      placeholder={selectedCollectionHasSubProducts ? "Cliquer sur le bouton 'Ajouter la collection'" : "Ex: 100 (0 si vide)"} 
                       className={cn("mt-1.5", selectedCollectionHasSubProducts && "bg-slate-100 cursor-not-allowed")}
                       disabled={selectedCollectionHasSubProducts}
                       readOnly={selectedCollectionHasSubProducts}
@@ -3114,7 +3114,7 @@ export default function ClientDetailPage() {
                     />
                     {selectedCollectionHasSubProducts ? (
                       <p className="text-xs text-slate-500 mt-1">
-                        Le stock initial sera calculé automatiquement à partir des stocks des sous-produits
+                        Cliquer sur le bouton "Ajouter la collection" pour renseigner les stocks des sous-produits
                       </p>
                     ) : (
                       <p className="text-xs text-slate-500 mt-1">
