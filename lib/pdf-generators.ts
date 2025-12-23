@@ -290,7 +290,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const amtBeforeDiscount = isNaN(amt) ? 0 : amt;
       // Appliquer la remise proportionnellement aux ajustements (conforme fiscalement)
       const amtAfterDiscount = amtBeforeDiscount * discountRatio;
-      // Afficher le prix HT avant remise dans la colonne "Prix TOTAL H.T."
+      // Afficher le prix HT avant remise dans la colonne "Total HT"
       const amtStr = amtBeforeDiscount.toFixed(2) + ' €';
       const quantity = adj.quantity || '';
       const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
@@ -311,7 +311,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Collection', 'Infos', 'Code Barre\nProduit', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
+      head: [['Collection', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -944,8 +944,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       head: [[
         'Collection', 
         'Infos', 
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Ancien\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Stock\ncompté', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Réassort', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1313,9 +1313,9 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       tableWidth * 0.20, // Collection
       tableWidth * 0.25, // Infos
       tableWidth * 0.25, // Code barre produit
-      tableWidth * 0.10, // Prix de cession (HT)
-      tableWidth * 0.10, // Prix de vente conseillé (TTC)
-      tableWidth * 0.10  // Marchandise remise
+      tableWidth * 0.10, // Prix cession HT
+      tableWidth * 0.10, // Prix conseillé TTC
+      tableWidth * 0.10  // Qté remise
     ];
 
     autoTable(doc, {
@@ -1323,10 +1323,10 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       head: [[
         'Collection', 
         'Infos',
-        { content: 'Code Barre\nProduit', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1351,9 +1351,9 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         0: { halign: 'left', cellWidth: columnWidths[0] }, // Collection
         1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
         2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix de cession (HT)
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix de vente conseillé (TTC)
-        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Marchandise remise
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix conseillé TTC
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Qté remise
       }
     });
 
@@ -1646,7 +1646,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Produits et prestations', 'Qté', 'Prix à l\'unité', 'Prix Total HT']],
+      head: [['Produits et prestations', 'Qté', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
