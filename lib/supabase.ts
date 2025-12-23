@@ -226,6 +226,7 @@ export type UserProfile = {
   tva_number: string | null;
   email: string | null;
   phone: string | null;
+  terms_and_conditions: string | null;
   created_at: string;
   updated_at: string;
 };
