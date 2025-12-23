@@ -1282,6 +1282,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableData = sortedCollections.map((cc) => {
       const collectionName = cc.collection?.name || 'Collection';
       const info = collectionInfos[cc.collection_id || ''] || '';
+      const barcode = cc.collection?.barcode || ''; // Code barre produit
       const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
       const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
       
@@ -1291,6 +1292,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       return [
         collectionName,
         info,
+        barcode, // Code barre produit
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
         stock
@@ -1302,18 +1304,20 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const columnWidths = [
-      tableWidth * 0.35,
-      tableWidth * 0.30,
-      tableWidth * 0.10,
-      tableWidth * 0.10,
-      tableWidth * 0.15
+      tableWidth * 0.20, // Collection
+      tableWidth * 0.25, // Infos
+      tableWidth * 0.25, // Code barre produit
+      tableWidth * 0.10, // Prix de cession (HT)
+      tableWidth * 0.10, // Prix de vente conseillé (TTC)
+      tableWidth * 0.10  // Marchandise remise
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
         'Collection', 
-        'Infos', 
+        'Infos',
+        { content: 'Code Barre\nProduit', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
         { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
         { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
@@ -1338,11 +1342,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] },
-        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }
+        0: { halign: 'left', cellWidth: columnWidths[0] }, // Collection
+        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
+        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix de cession (HT)
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix de vente conseillé (TTC)
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Marchandise remise
       }
     });
 
