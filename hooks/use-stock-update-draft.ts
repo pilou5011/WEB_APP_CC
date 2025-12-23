@@ -51,6 +51,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
@@ -111,6 +112,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('*')
         .eq('client_id', clientId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -151,6 +153,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('client_id, created_at')
         .eq('client_id', clientId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -181,11 +184,12 @@ export function useStockUpdateDraft(clientId: string) {
       localStorage.removeItem(key);
       console.log('[Draft] Deleted local draft for client:', clientId);
 
-      // Delete from server - use .select() to get confirmation
+      // Delete from server (soft delete) - use .select() to get confirmation
       const { error, data } = await supabase
         .from('draft_stock_updates')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('client_id', clientId)
+        .is('deleted_at', null) // Only update non-deleted drafts
         .select();
 
       if (error) {
@@ -203,15 +207,17 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .is('deleted_at', null) // Only check non-deleted drafts
         .maybeSingle();
       
       if (verifyData) {
         console.warn('[Draft] WARNING: Draft still exists after deletion attempt! Retrying...');
-        // Try one more time to delete from server
+        // Try one more time to delete from server (soft delete)
         const { error: retryError } = await supabase
           .from('draft_stock_updates')
-          .delete()
-          .eq('client_id', clientId);
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('client_id', clientId)
+          .is('deleted_at', null); // Only update non-deleted drafts
         
         if (retryError) {
           console.error('[Draft] Retry deletion also failed:', retryError);

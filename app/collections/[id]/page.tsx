@@ -76,6 +76,7 @@ export default function CollectionDetailPage() {
       const { data, error } = await supabase
         .from('collection_categories')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -90,6 +91,7 @@ export default function CollectionDetailPage() {
       const { data, error } = await supabase
         .from('collection_subcategories')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -111,6 +113,20 @@ export default function CollectionDetailPage() {
 
     setAddingNewCategory(true);
     try {
+      // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('collection_categories')
+        .select('id')
+        .eq('name', newCategoryName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette catégorie existe déjà');
+        setAddingNewCategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('collection_categories')
         .insert([{ name: newCategoryName.trim() }])
@@ -118,13 +134,7 @@ export default function CollectionDetailPage() {
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette catégorie existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewCategory(false);
-        return;
+        throw error;
       }
 
       await loadCategories();
@@ -148,6 +158,21 @@ export default function CollectionDetailPage() {
 
     setAddingNewSubcategory(true);
     try {
+      // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      const { data: existing } = await supabase
+        .from('collection_subcategories')
+        .select('id')
+        .eq('category_id', formData.category_id)
+        .eq('name', newSubcategoryName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        setAddingNewSubcategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('collection_subcategories')
         .insert([{ 
@@ -158,13 +183,7 @@ export default function CollectionDetailPage() {
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        setAddingNewSubcategory(false);
-        return;
+        throw error;
       }
 
       await loadSubcategories();
@@ -187,18 +206,29 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
+      if (editCategoryName.trim() !== editingCategory.name) {
+        const { data: existing } = await supabase
+          .from('collection_categories')
+          .select('id')
+          .eq('name', editCategoryName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingCategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('collection_categories')
         .update({ name: editCategoryName.trim() })
         .eq('id', editingCategory.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Catégorie modifiée avec succès');
@@ -217,7 +247,7 @@ export default function CollectionDetailPage() {
     try {
       const { error } = await supabase
         .from('collection_categories')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingCategory.id);
 
       if (error) throw error;
@@ -242,18 +272,30 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      if (editSubcategoryName.trim() !== editingSubcategory.name) {
+        const { data: existing } = await supabase
+          .from('collection_subcategories')
+          .select('id')
+          .eq('category_id', editingSubcategory.category_id)
+          .eq('name', editSubcategoryName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingSubcategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ name: editSubcategoryName.trim() })
         .eq('id', editingSubcategory.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Sous-catégorie modifiée avec succès');
@@ -272,7 +314,7 @@ export default function CollectionDetailPage() {
     try {
       const { error } = await supabase
         .from('collection_subcategories')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingSubcategory.id);
 
       if (error) throw error;
@@ -296,6 +338,7 @@ export default function CollectionDetailPage() {
         .from('collections')
         .select('*')
         .eq('id', collectionId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (collectionError) throw collectionError;
@@ -323,6 +366,7 @@ export default function CollectionDetailPage() {
         .from('sub_products')
         .select('*')
         .eq('collection_id', collectionId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true });
 
       if (subProductsError) throw subProductsError;
@@ -383,6 +427,7 @@ export default function CollectionDetailPage() {
         .select('id, name')
         .eq('name', formData.name.trim())
         .neq('id', collectionId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (checkError) throw checkError;
@@ -430,7 +475,7 @@ export default function CollectionDetailPage() {
         if (toDelete.length > 0) {
           const { error: deleteError } = await supabase
             .from('sub_products')
-            .delete()
+            .update({ deleted_at: new Date().toISOString() })
             .in('id', toDelete);
           if (deleteError) throw deleteError;
         }
@@ -471,7 +516,8 @@ export default function CollectionDetailPage() {
           const { data: clientCollections, error: clientCollectionsError } = await supabase
             .from('client_collections')
             .select('client_id')
-            .eq('collection_id', collectionId);
+            .eq('collection_id', collectionId)
+            .is('deleted_at', null);
 
           if (clientCollectionsError) throw clientCollectionsError;
 
@@ -499,11 +545,11 @@ export default function CollectionDetailPage() {
           }
         }
       } else {
-        // Remove all sub-products if hasSubProducts is false
+        // Remove all sub-products if hasSubProducts is false (soft delete)
         if (existingSubProducts.length > 0) {
           const { error: deleteError } = await supabase
             .from('sub_products')
-            .delete()
+            .update({ deleted_at: new Date().toISOString() })
             .eq('collection_id', collectionId);
           if (deleteError) throw deleteError;
         }
@@ -533,9 +579,42 @@ export default function CollectionDetailPage() {
 
   const handleDelete = async () => {
     try {
+      const deletedAt = new Date().toISOString();
+
+      // 1. Supprimer (soft delete) toutes les lignes dans client_collections qui référencent cette collection
+      const { error: clientCollectionsError } = await supabase
+        .from('client_collections')
+        .update({ deleted_at: deletedAt })
+        .eq('collection_id', collectionId)
+        .is('deleted_at', null); // Seulement les lignes non supprimées
+
+      if (clientCollectionsError) throw clientCollectionsError;
+
+      // 2. Récupérer tous les sous-produits de cette collection (non supprimés)
+      const { data: subProducts, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('id')
+        .eq('collection_id', collectionId)
+        .is('deleted_at', null);
+
+      if (subProductsError) throw subProductsError;
+
+      // 3. Si la collection a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
+      if (subProducts && subProducts.length > 0) {
+        const subProductIds = subProducts.map(sp => sp.id);
+        const { error: clientSubProductsError } = await supabase
+          .from('client_sub_products')
+          .update({ deleted_at: deletedAt })
+          .in('sub_product_id', subProductIds)
+          .is('deleted_at', null); // Seulement les lignes non supprimées
+
+        if (clientSubProductsError) throw clientSubProductsError;
+      }
+
+      // 4. Supprimer (soft delete) la collection elle-même
       const { error } = await supabase
         .from('collections')
-        .delete()
+        .update({ deleted_at: deletedAt })
         .eq('id', collectionId);
 
       if (error) throw error;

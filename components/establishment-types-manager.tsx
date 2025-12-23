@@ -47,19 +47,30 @@ export function EstablishmentTypesManager({
 
     setSubmitting(true);
     try {
+      // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
+      if (editName.trim() !== editingType.name) {
+        const { data: existing } = await supabase
+          .from('establishment_types')
+          .select('id')
+          .eq('name', editName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingType.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editName.trim() })
         .eq('id', editingType.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        setSubmitting(false);
-        return;
+        throw error;
       }
 
       toast.success('Type modifié avec succès');
@@ -86,7 +97,7 @@ export function EstablishmentTypesManager({
     try {
       const { error } = await supabase
         .from('establishment_types')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingType.id);
 
       if (error) throw error;

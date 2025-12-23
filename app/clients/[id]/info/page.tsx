@@ -105,6 +105,7 @@ export default function ClientInfoPage() {
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error) throw error;
@@ -123,6 +124,7 @@ export default function ClientInfoPage() {
           .from('establishment_types')
           .select('name')
           .eq('id', data.establishment_type_id)
+          .is('deleted_at', null)
           .single();
         
         if (typeData) {
@@ -138,6 +140,7 @@ export default function ClientInfoPage() {
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .is('deleted_at', null)
           .single();
         
         if (methodData) {
@@ -256,6 +259,7 @@ export default function ClientInfoPage() {
       const { data, error } = await supabase
         .from('establishment_types')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -270,6 +274,7 @@ export default function ClientInfoPage() {
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -287,6 +292,20 @@ export default function ClientInfoPage() {
 
     setAddingNewPaymentMethod(true);
     try {
+      // Vérifier si une méthode avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .eq('name', newPaymentMethodName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette méthode de paiement existe déjà');
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
         .insert([{ name: newPaymentMethodName.trim() }])
@@ -294,13 +313,7 @@ export default function ClientInfoPage() {
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette méthode de paiement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewPaymentMethod(false);
-        return;
+        throw error;
       }
 
       setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
@@ -324,6 +337,20 @@ export default function ClientInfoPage() {
 
     setAddingNewType(true);
     try {
+      // Vérifier si un type avec le même nom existe déjà (non supprimé)
+      const { data: existing } = await supabase
+        .from('establishment_types')
+        .select('id')
+        .eq('name', newTypeName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce type d\'établissement existe déjà');
+        setAddingNewType(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('establishment_types')
         .insert([{ name: newTypeName.trim() }])
@@ -331,13 +358,7 @@ export default function ClientInfoPage() {
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce type d\'établissement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewType(false);
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -360,18 +381,29 @@ export default function ClientInfoPage() {
     }
 
     try {
+      // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
+      if (editEstablishmentTypeName.trim() !== editingEstablishmentType.name) {
+        const { data: existing } = await supabase
+          .from('establishment_types')
+          .select('id')
+          .eq('name', editEstablishmentTypeName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingEstablishmentType.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editEstablishmentTypeName.trim() })
         .eq('id', editingEstablishmentType.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -395,7 +427,7 @@ export default function ClientInfoPage() {
     try {
       const { error } = await supabase
         .from('establishment_types')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingEstablishmentType.id);
 
       if (error) throw error;
@@ -420,18 +452,29 @@ export default function ClientInfoPage() {
     }
 
     try {
+      // Vérifier si une autre méthode avec le même nom existe déjà (non supprimée)
+      if (editPaymentMethodName.trim() !== editingPaymentMethod.name) {
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', editPaymentMethodName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingPaymentMethod.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editPaymentMethodName.trim() })
         .eq('id', editingPaymentMethod.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadPaymentMethods();
@@ -455,7 +498,7 @@ export default function ClientInfoPage() {
     try {
       const { error } = await supabase
         .from('payment_methods')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingPaymentMethod.id);
 
       if (error) throw error;
@@ -607,6 +650,7 @@ export default function ClientInfoPage() {
           .from('establishment_types')
           .select('name')
           .eq('id', data.establishment_type_id)
+          .is('deleted_at', null)
           .single();
         
         if (typeData) {
@@ -622,6 +666,7 @@ export default function ClientInfoPage() {
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .is('deleted_at', null)
           .single();
         
         if (methodData) {
@@ -689,7 +734,7 @@ export default function ClientInfoPage() {
     try {
       const { error } = await supabase
         .from('clients')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', clientId);
 
       if (error) {
