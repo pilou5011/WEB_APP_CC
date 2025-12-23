@@ -237,6 +237,12 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
+    // Titre "Facture N°[numero_facture]" en gras
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Facture N°${invoiceNumber}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
     // 3) Tableau des collections
     // Filter out sub-products: only include stock updates with collection_id and no sub_product_id
     const collectionStockUpdates = stockUpdates.filter(update => 
