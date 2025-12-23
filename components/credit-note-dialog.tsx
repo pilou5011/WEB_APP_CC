@@ -81,7 +81,7 @@ export function CreditNoteDialog({
     } else {
       // No PDF exists yet
       console.warn('No PDF path found for credit note:', creditNote.id);
-      toast.warning('L\'avoir n\'a pas encore été généré.');
+      toast.warning('L\'avoir n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };

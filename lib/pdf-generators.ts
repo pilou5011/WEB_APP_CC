@@ -237,6 +237,12 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
+    // Titre "Facture N°[numero_facture]" en gras
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Facture N°${invoiceNumber}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
     // 3) Tableau des collections
     // Filter out sub-products: only include stock updates with collection_id and no sub_product_id
     const collectionStockUpdates = stockUpdates.filter(update => 
@@ -284,7 +290,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const amtBeforeDiscount = isNaN(amt) ? 0 : amt;
       // Appliquer la remise proportionnellement aux ajustements (conforme fiscalement)
       const amtAfterDiscount = amtBeforeDiscount * discountRatio;
-      // Afficher le prix HT avant remise dans la colonne "Prix TOTAL H.T."
+      // Afficher le prix HT avant remise dans la colonne "Total HT"
       const amtStr = amtBeforeDiscount.toFixed(2) + ' €';
       const quantity = adj.quantity || '';
       const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
@@ -305,7 +311,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Collection', 'Infos', 'Code Barre\nProduit', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
+      head: [['Collection', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -938,8 +944,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       head: [[
         'Collection', 
         'Infos', 
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Ancien\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Stock\ncompté', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Réassort', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1282,6 +1288,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableData = sortedCollections.map((cc) => {
       const collectionName = cc.collection?.name || 'Collection';
       const info = collectionInfos[cc.collection_id || ''] || '';
+      const barcode = cc.collection?.barcode || ''; // Code barre produit
       const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
       const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
       
@@ -1291,6 +1298,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       return [
         collectionName,
         info,
+        barcode, // Code barre produit
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
         stock
@@ -1302,21 +1310,23 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const columnWidths = [
-      tableWidth * 0.35,
-      tableWidth * 0.30,
-      tableWidth * 0.10,
-      tableWidth * 0.10,
-      tableWidth * 0.15
+      tableWidth * 0.20, // Collection
+      tableWidth * 0.25, // Infos
+      tableWidth * 0.25, // Code barre produit
+      tableWidth * 0.10, // Prix cession HT
+      tableWidth * 0.10, // Prix conseillé TTC
+      tableWidth * 0.10  // Qté remise
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
         'Collection', 
-        'Infos', 
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        'Infos',
+        { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1338,11 +1348,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] },
-        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }
+        0: { halign: 'left', cellWidth: columnWidths[0] }, // Collection
+        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
+        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix conseillé TTC
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Qté remise
       }
     });
 
@@ -1635,7 +1646,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Produits et prestations', 'Qté', 'Prix à l\'unité', 'Prix Total HT']],
+      head: [['Produits et prestations', 'Qté', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {

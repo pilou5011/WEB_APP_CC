@@ -126,19 +126,22 @@ export function StockUpdateConfirmationDialog({
                 </Label>
                 <Input
                   id="discount"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={discountPercentage}
                   onChange={(e) => {
                     const value = e.target.value;
-                    if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
-                      setDiscountPercentage(value);
+                    // Permettre les nombres décimaux entre 0 et 100
+                    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                      const numValue = parseFloat(value);
+                      if (value === '' || (!isNaN(numValue) && numValue >= 0 && numValue <= 100)) {
+                        setDiscountPercentage(value);
+                      }
                     }
                   }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   placeholder="0"
-                  className="mt-1.5"
+                  className="mt-1.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
               {discountAmount > 0 && (

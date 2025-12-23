@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export type DaySchedule = {
   isOpen: boolean;
@@ -89,7 +90,7 @@ function TimeSelector({ value, onChange, label }: TimeSelectorProps) {
       <div className="flex gap-1 mt-1">
         <Select
           value={hour || ''}
-          onValueChange={(val) => updateTime(val, minute)}
+          onValueChange={(val) => updateTime(val, '00')}
         >
           <SelectTrigger className="w-16">
             <SelectValue placeholder="--" />
@@ -222,6 +223,8 @@ function timeSlotsToWeekSchedule(timeSlots: TimeSlot[], closedDays: DayKey[]): W
 export function OpeningHoursEditor({ value, onChange }: OpeningHoursEditorProps) {
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [closedDays, setClosedDays] = useState<DayKey[]>([]);
+  const [deletingTimeSlotId, setDeletingTimeSlotId] = useState<string | null>(null);
+  const [deleteTimeSlotDialogOpen, setDeleteTimeSlotDialogOpen] = useState(false);
 
   // Initialiser depuis value
   useEffect(() => {
@@ -246,8 +249,17 @@ export function OpeningHoursEditor({ value, onChange }: OpeningHoursEditorProps)
     updateSchedule([...timeSlots, newSlot], closedDays);
   };
 
-  const removeTimeSlot = (id: string) => {
-    updateSchedule(timeSlots.filter(slot => slot.id !== id), closedDays);
+  const handleDeleteTimeSlotClick = (id: string) => {
+    setDeletingTimeSlotId(id);
+    setDeleteTimeSlotDialogOpen(true);
+  };
+
+  const handleDeleteTimeSlotConfirm = () => {
+    if (deletingTimeSlotId) {
+      updateSchedule(timeSlots.filter(slot => slot.id !== deletingTimeSlotId), closedDays);
+      setDeleteTimeSlotDialogOpen(false);
+      setDeletingTimeSlotId(null);
+    }
   };
 
   const updateTimeSlot = (id: string, updates: Partial<TimeSlot>) => {
@@ -347,7 +359,7 @@ export function OpeningHoursEditor({ value, onChange }: OpeningHoursEditorProps)
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => removeTimeSlot(slot.id)}
+                  onClick={() => handleDeleteTimeSlotClick(slot.id)}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -451,6 +463,27 @@ export function OpeningHoursEditor({ value, onChange }: OpeningHoursEditorProps)
           </Card>
         ))}
       </div>
+
+      {/* Dialog de confirmation de suppression d'horaire */}
+      <AlertDialog open={deleteTimeSlotDialogOpen} onOpenChange={setDeleteTimeSlotDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cet horaire d'ouverture ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer cet horaire ? Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteTimeSlotConfirm}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
