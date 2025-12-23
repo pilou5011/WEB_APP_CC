@@ -113,7 +113,7 @@ export function StockReportDialog({
     } else {
       // No PDF exists yet - this should not happen if stock was updated correctly
       console.warn('No PDF path found for stock report:', invoice?.id);
-      toast.warning('Le relevé de stock n\'a pas encore été généré. Veuillez mettre à jour le stock pour générer les documents.');
+      toast.warning('Le relevé de stock n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };

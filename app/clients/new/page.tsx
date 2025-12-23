@@ -762,6 +762,7 @@ export default function NewClientPage() {
                   }}
                   onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
                   onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  streetLabel="Numéro et libellé de voie"
                   required
                 />
 
@@ -1016,19 +1017,7 @@ export default function NewClientPage() {
                     <Separator />
 
                     <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <Label htmlFor="payment_method_id">Règlement (optionnel)</Label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setManagePaymentMethodsDialogOpen(true)}
-                          className="h-7 text-xs"
-                        >
-                          <Settings className="h-3 w-3 mr-1" />
-                          Gérer les méthodes
-                        </Button>
-                      </div>
+                      <Label htmlFor="payment_method_id" className="mb-1.5 block">Règlement (optionnel)</Label>
                       {!showNewPaymentMethodInput && !editingPaymentMethod ? (
                         <div className="flex gap-2">
                           <Popover>

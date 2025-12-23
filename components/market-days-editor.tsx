@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, X } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export interface MarketDaySchedule {
   day: string;
@@ -58,7 +59,7 @@ function TimeSelector({ value, onChange, label }: TimeSelectorProps) {
       <div className="flex gap-1 mt-1">
         <Select
           value={hour || ''}
-          onValueChange={(val) => updateTime(val, minute)}
+          onValueChange={(val) => updateTime(val, '00')}
         >
           <SelectTrigger className="w-16">
             <SelectValue placeholder="--" />
@@ -134,6 +135,8 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
   const [selectedDays, setSelectedDays] = useState<(keyof MarketDaysSchedule)[]>(
     DAYS.filter(day => value[day].length > 0) as (keyof MarketDaysSchedule)[]
   );
+  const [deletingTimeRange, setDeletingTimeRange] = useState<{ day: keyof MarketDaysSchedule; index: number } | null>(null);
+  const [deleteTimeRangeDialogOpen, setDeleteTimeRangeDialogOpen] = useState(false);
 
   const handleDayToggle = (day: keyof MarketDaysSchedule) => {
     if (selectedDays.includes(day)) {
@@ -160,16 +163,27 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
     });
   };
 
-  const handleRemoveTimeRange = (day: keyof MarketDaysSchedule, index: number) => {
-    const newRanges = value[day].filter((_, i) => i !== index);
-    onChange({
-      ...value,
-      [day]: newRanges
-    });
-    
-    // Si plus de plages horaires, retirer le jour de la sélection
-    if (newRanges.length === 0) {
-      setSelectedDays(selectedDays.filter(d => d !== day));
+  const handleDeleteTimeRangeClick = (day: keyof MarketDaysSchedule, index: number) => {
+    setDeletingTimeRange({ day, index });
+    setDeleteTimeRangeDialogOpen(true);
+  };
+
+  const handleDeleteTimeRangeConfirm = () => {
+    if (deletingTimeRange) {
+      const { day, index } = deletingTimeRange;
+      const newRanges = value[day].filter((_, i) => i !== index);
+      onChange({
+        ...value,
+        [day]: newRanges
+      });
+      
+      // Si plus de plages horaires, retirer le jour de la sélection
+      if (newRanges.length === 0) {
+        setSelectedDays(selectedDays.filter(d => d !== day));
+      }
+      
+      setDeleteTimeRangeDialogOpen(false);
+      setDeletingTimeRange(null);
     }
   };
 
@@ -238,7 +252,7 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveTimeRange(day, index)}
+                      onClick={() => handleDeleteTimeRangeClick(day, index)}
                       className="h-8 w-8 p-0 mb-0.5 hover:bg-red-50"
                     >
                       <X className="h-4 w-4 text-red-600" />
@@ -250,6 +264,27 @@ export function MarketDaysEditor({ value, onChange }: MarketDaysEditorProps) {
           ))}
         </div>
       )}
+
+      {/* Dialog de confirmation de suppression d'horaire de marché */}
+      <AlertDialog open={deleteTimeRangeDialogOpen} onOpenChange={setDeleteTimeRangeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cet horaire de marché ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer cet horaire de marché pour {deletingTimeRange ? deletingTimeRange.day : ''} ? Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteTimeRangeConfirm}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

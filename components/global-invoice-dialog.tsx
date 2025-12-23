@@ -116,7 +116,7 @@ export function GlobalInvoiceDialog({
     } else {
       // No PDF exists yet - this should not happen if stock was updated correctly
       console.warn('No PDF path found for invoice:', invoice.id);
-      toast.warning('La facture n\'a pas encore été générée. Veuillez mettre à jour le stock pour générer les documents.');
+      toast.warning('La facture n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };

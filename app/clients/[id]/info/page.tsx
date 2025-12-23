@@ -861,7 +861,7 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="md:col-span-2">
-                      <Label className="text-slate-500 text-sm">Adresse</Label>
+                      <Label className="text-slate-500 text-sm">Numéro et libellé de voie</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.street_address || <span className="text-slate-400">Non renseigné</span>}
                       </p>
@@ -1402,6 +1402,7 @@ export default function ClientInfoPage() {
                   }}
                   onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
                   onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  streetLabel="Numéro et libellé de voie"
                   required
                 />
 
