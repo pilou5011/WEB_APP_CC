@@ -6,6 +6,56 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+/**
+ * Helper pour effectuer une suppression logique (soft delete)
+ * Met à jour la colonne deleted_at au lieu de supprimer l'enregistrement
+ */
+export async function softDelete(table: string, id: string): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from(table)
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+  return { error };
+}
+
+/**
+ * Helper pour restaurer un enregistrement supprimé (soft undelete)
+ */
+export async function softUndelete(table: string, id: string): Promise<{ error: any }> {
+  const { error } = await supabase
+    .from(table)
+    .update({ deleted_at: null })
+    .eq('id', id);
+  return { error };
+}
+
+/**
+ * Tables qui supportent le soft delete
+ */
+const SOFT_DELETE_TABLES = [
+  'clients',
+  'client_collections',
+  'client_sub_products',
+  'establishment_types',
+  'payment_methods',
+  'collection_categories',
+  'collection_subcategories',
+  'collections',
+  'sub_products',
+  'draft_stock_updates'
+];
+
+/**
+ * Helper pour ajouter automatiquement le filtre deleted_at IS NULL aux requêtes SELECT
+ * Utilisez cette fonction pour toutes les requêtes sur les tables avec soft delete
+ */
+export function addSoftDeleteFilter(query: any, table: string): any {
+  if (SOFT_DELETE_TABLES.includes(table)) {
+    return query.is('deleted_at', null);
+  }
+  return query;
+}
+
 export type Client = {
   id: string;
   name: string;
@@ -38,6 +88,7 @@ export type Client = {
   payment_method_id: string | null;
   email: string | null;
   comment: string | null;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };
@@ -45,12 +96,14 @@ export type Client = {
 export type EstablishmentType = {
   id: string;
   name: string;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
 };
 
 export type PaymentMethod = {
   id: string;
   name: string;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
 };
 
@@ -103,6 +156,7 @@ export type Collection = {
   barcode: string | null;
   category_id: string | null;
   subcategory_id: string | null;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };
@@ -110,6 +164,7 @@ export type Collection = {
 export type CollectionCategory = {
   id: string;
   name: string;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
 };
 
@@ -117,6 +172,7 @@ export type CollectionSubcategory = {
   id: string;
   category_id: string;
   name: string;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
 };
 
@@ -124,6 +180,7 @@ export type SubProduct = {
   id: string;
   collection_id: string;
   name: string;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };
@@ -134,6 +191,7 @@ export type ClientSubProduct = {
   sub_product_id: string;
   initial_stock: number;
   current_stock: number;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };
@@ -147,6 +205,7 @@ export type ClientCollection = {
   custom_price: number | null;
   custom_recommended_sale_price: number | null;
   display_order: number;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };
@@ -181,6 +240,7 @@ export type DraftStockUpdate = {
   id: string;
   client_id: string;
   draft_data: DraftStockUpdateData;
+  deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
 };

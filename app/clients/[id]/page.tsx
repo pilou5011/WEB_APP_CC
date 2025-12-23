@@ -641,6 +641,7 @@ export default function ClientDetailPage() {
           .from('sub_products')
           .select('id')
           .eq('collection_id', associateForm.collection_id)
+          .is('deleted_at', null)
           .limit(1);
 
         if (error) throw error;
@@ -685,6 +686,7 @@ export default function ClientDetailPage() {
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (clientError) throw clientError;
@@ -761,6 +763,7 @@ export default function ClientDetailPage() {
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (collectionsError) throw collectionsError;
@@ -769,8 +772,9 @@ export default function ClientDetailPage() {
       // Load client collections with related collection
       const { data: ccData, error: ccError } = await supabase
         .from('client_collections')
-        .select('*, collection:collections(*)')
+        .select('*, collection:collections!inner(*)')
         .eq('client_id', clientId)
+        .is('deleted_at', null)
         .order('display_order', { ascending: true });
 
       if (ccError) throw ccError;
@@ -784,6 +788,7 @@ export default function ClientDetailPage() {
           .from('sub_products')
           .select('*')
           .in('collection_id', collectionIds)
+          .is('deleted_at', null)
           .order('created_at', { ascending: true });
 
         if (subProductsError) throw subProductsError;
@@ -804,7 +809,8 @@ export default function ClientDetailPage() {
             .from('client_sub_products')
             .select('*')
             .eq('client_id', clientId)
-            .in('sub_product_id', subProductIds);
+            .in('sub_product_id', subProductIds)
+            .is('deleted_at', null);
 
           if (clientSubProductsError) throw clientSubProductsError;
 
@@ -1561,10 +1567,10 @@ export default function ClientDetailPage() {
           console.error('[Draft] Error verifying draft deletion:', verifyError);
         } else if (verifyDraft) {
           console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
-          // Essayer une suppression directe
+          // Essayer une suppression directe (soft delete)
           const { error: directDeleteError } = await supabase
             .from('draft_stock_updates')
-            .delete()
+            .update({ deleted_at: new Date().toISOString() })
             .eq('id', verifyDraft.id);
           
           if (directDeleteError) {
@@ -1676,17 +1682,17 @@ export default function ClientDetailPage() {
         const subProductIds = collectionSubProducts.map(sp => sp.id);
         const { error: deleteSubProductsError } = await supabase
           .from('client_sub_products')
-          .delete()
+          .update({ deleted_at: new Date().toISOString() })
           .eq('client_id', clientId)
           .in('sub_product_id', subProductIds);
 
         if (deleteSubProductsError) throw deleteSubProductsError;
       }
 
-      // Supprimer la collection du client
+      // Supprimer la collection du client (soft delete)
       const { error } = await supabase
         .from('client_collections')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', collectionToDelete.id);
       
       if (error) throw error;
@@ -1950,6 +1956,7 @@ export default function ClientDetailPage() {
               .select('*')
               .eq('client_id', clientId)
               .eq('collection_id', itemToAdjust.collectionId)
+              .is('deleted_at', null)
               .maybeSingle();
 
             if (ccError) throw ccError;
@@ -2373,7 +2380,8 @@ export default function ClientDetailPage() {
       const { data: collectionSubProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
-        .eq('collection_id', associateForm.collection_id);
+        .eq('collection_id', associateForm.collection_id)
+        .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
       if (subProductsError) throw subProductsError;
 
@@ -2527,6 +2535,7 @@ export default function ClientDetailPage() {
           .from('collections')
           .select('*')
           .eq('id', associateForm.collection_id)
+          .is('deleted_at', null)
           .single();
         
         if (collectionError) {
@@ -2559,11 +2568,12 @@ export default function ClientDetailPage() {
       if (subProductsStocks) {
         // Collection has sub-products: create client_sub_products with provided stocks
         // IMPORTANT: Ajouter TOUS les sous-produits de la collection, même ceux qui n'ont pas été saisis
-        // Récupérer tous les sous-produits de la collection
+        // Récupérer tous les sous-produits de la collection (non supprimés)
         const { data: allSubProducts, error: fetchSubProductsError } = await supabase
           .from('sub_products')
           .select('*')
-          .eq('collection_id', associateForm.collection_id!);
+          .eq('collection_id', associateForm.collection_id!)
+          .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
         if (fetchSubProductsError) throw fetchSubProductsError;
 

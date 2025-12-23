@@ -47,19 +47,30 @@ export function PaymentMethodsManager({
 
     setSubmitting(true);
     try {
+      // Vérifier si une autre méthode avec le même nom existe déjà (non supprimée)
+      if (editName.trim() !== editingMethod.name) {
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', editName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingMethod.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editName.trim() })
         .eq('id', editingMethod.id);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        setSubmitting(false);
-        return;
+        throw error;
       }
 
       toast.success('Méthode de paiement modifiée avec succès');
@@ -86,7 +97,7 @@ export function PaymentMethodsManager({
     try {
       const { error } = await supabase
         .from('payment_methods')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingMethod.id);
 
       if (error) throw error;
