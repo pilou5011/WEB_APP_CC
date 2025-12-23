@@ -404,9 +404,13 @@ export default function ClientDetailPage() {
   const [editPriceForm, setEditPriceForm] = useState<{
     price_type: 'default' | 'custom';
     custom_price: string;
+    recommended_sale_price_type: 'default' | 'custom';
+    custom_recommended_sale_price: string;
   }>({
     price_type: 'default',
-    custom_price: ''
+    custom_price: '',
+    recommended_sale_price_type: 'default',
+    custom_recommended_sale_price: ''
   });
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
@@ -1714,17 +1718,28 @@ export default function ClientDetailPage() {
 
   const handleEditPriceClick = (cc: ClientCollection & { collection?: Collection }) => {
     setCollectionToEdit(cc);
-    if (cc.custom_price !== null) {
-      setEditPriceForm({
-        price_type: 'custom',
-        custom_price: cc.custom_price.toString()
-      });
+    
+    // Initialiser le prix de cession
+    const priceType = cc.custom_price !== null ? 'custom' : 'default';
+    const customPrice = cc.custom_price !== null ? cc.custom_price.toString() : '';
+    
+    // Initialiser le prix de vente conseillé
+    let recommendedSalePriceType: 'default' | 'custom' = 'default';
+    let customRecommendedSalePrice = '';
+    
+    if (cc.custom_recommended_sale_price !== null) {
+      recommendedSalePriceType = 'custom';
+      customRecommendedSalePrice = cc.custom_recommended_sale_price.toString();
     } else {
-      setEditPriceForm({
-        price_type: 'default',
-        custom_price: ''
-      });
+      recommendedSalePriceType = 'default';
     }
+    
+    setEditPriceForm({
+      price_type: priceType,
+      custom_price: customPrice,
+      recommended_sale_price_type: recommendedSalePriceType,
+      custom_recommended_sale_price: customRecommendedSalePrice
+    });
     setEditPriceDialogOpen(true);
   };
 
@@ -1746,10 +1761,26 @@ export default function ClientDetailPage() {
         customPrice = parsedPrice;
       }
 
+      let customRecommendedSalePrice: number | null = null;
+      
+      if (editPriceForm.recommended_sale_price_type === 'custom') {
+        const parsedRecommendedPrice = parseFloat(editPriceForm.custom_recommended_sale_price);
+        if (isNaN(parsedRecommendedPrice) || parsedRecommendedPrice < 0) {
+          toast.error('Le prix de vente conseillé personnalisé doit être un nombre positif');
+          setUpdatingPrice(false);
+          return;
+        }
+        customRecommendedSalePrice = parsedRecommendedPrice;
+      } else {
+        // 'default' : utiliser le prix par défaut de la collection (mettre null pour utiliser celui de la collection)
+        customRecommendedSalePrice = null;
+      }
+
       const { error } = await supabase
         .from('client_collections')
         .update({
           custom_price: customPrice,
+          custom_recommended_sale_price: customRecommendedSalePrice,
           updated_at: new Date().toISOString()
         })
         .eq('id', collectionToEdit.id);
@@ -1759,7 +1790,12 @@ export default function ClientDetailPage() {
       toast.success('Prix modifié avec succès');
       setEditPriceDialogOpen(false);
       setCollectionToEdit(null);
-      setEditPriceForm({ price_type: 'default', custom_price: '' });
+      setEditPriceForm({ 
+        price_type: 'default', 
+        custom_price: '',
+        recommended_sale_price_type: 'default',
+        custom_recommended_sale_price: ''
+      });
       await loadClientData();
     } catch (error) {
       console.error('Error updating price:', error);
@@ -4028,7 +4064,19 @@ export default function ClientDetailPage() {
         </AlertDialog>
 
         {/* Edit Price Dialog */}
-        <Dialog open={editPriceDialogOpen} onOpenChange={setEditPriceDialogOpen}>
+        <Dialog open={editPriceDialogOpen} onOpenChange={(open) => {
+          setEditPriceDialogOpen(open);
+          if (!open) {
+            // Réinitialiser le formulaire quand le dialog se ferme
+            setEditPriceForm({ 
+              price_type: 'default', 
+              custom_price: '',
+              recommended_sale_price_type: 'default',
+              custom_recommended_sale_price: ''
+            });
+            setCollectionToEdit(null);
+          }
+        }}>
           <DialogContent>
             <form onSubmit={handleEditPriceSubmit}>
               <DialogHeader>
@@ -4040,13 +4088,21 @@ export default function ClientDetailPage() {
               
               <div className="space-y-4 py-4">
                 {collectionToEdit?.collection && (
-                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                  <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
                     <p className="text-sm text-slate-600">
                       Prix par défaut de la collection : 
                       <span className="font-semibold text-slate-900 ml-2">
                         {collectionToEdit.collection.price.toFixed(2)} €
                       </span>
                     </p>
+                    {collectionToEdit.collection.recommended_sale_price !== null && (
+                      <p className="text-sm text-slate-600">
+                        Prix de vente conseillé par défaut : 
+                        <span className="font-semibold text-slate-900 ml-2">
+                          {collectionToEdit.collection.recommended_sale_price.toFixed(2)} €
+                        </span>
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -4093,13 +4149,70 @@ export default function ClientDetailPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Prix de vente conseillé */}
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4">
+                  <Label>Prix de vente conseillé (TTC)</Label>
+                  <RadioGroup
+                    value={editPriceForm.recommended_sale_price_type}
+                    onValueChange={(val) => {
+                      if (val === 'default' || val === 'custom') {
+                        setEditPriceForm({ ...editPriceForm, recommended_sale_price_type: val });
+                      }
+                    }}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="edit-recommended-price-default" />
+                      <Label htmlFor="edit-recommended-price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="edit-recommended-price-custom" />
+                      <Label htmlFor="edit-recommended-price-custom" className="font-normal cursor-pointer">
+                        Utiliser un prix spécifique
+                      </Label>
+                    </div>
+                  </RadioGroup>
+
+                  {editPriceForm.recommended_sale_price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="edit-custom-recommended-price">Prix de vente conseillé personnalisé (€)</Label>
+                      <Input
+                        id="edit-custom-recommended-price"
+                        type="text"
+                        inputMode="decimal"
+                        value={editPriceForm.custom_recommended_sale_price}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setEditPriceForm({ ...editPriceForm, custom_recommended_sale_price: value });
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="Ex: 3.50"
+                        className="mt-1.5"
+                        required
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setEditPriceDialogOpen(false)}
+                  onClick={() => {
+                    setEditPriceDialogOpen(false);
+                    setEditPriceForm({ 
+                      price_type: 'default', 
+                      custom_price: '',
+                      recommended_sale_price_type: 'default',
+                      custom_recommended_sale_price: ''
+                    });
+                  }}
                   disabled={updatingPrice}
                 >
                   Annuler
