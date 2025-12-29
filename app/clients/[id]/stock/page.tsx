@@ -2781,331 +2781,703 @@ export default function ClientDetailPage() {
         </div>
 
         <div className="space-y-6">
+          
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle className="text-3xl">{client.name}</CardTitle>
-              <CardDescription className="flex items-start gap-1.5 mt-2 text-base">
-                <MapPin className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                <span>{client.address}</span>
+              <CardTitle>Collections liées</CardTitle>
+              <CardDescription>
+                Associez des collections au client et gérez leur stock
               </CardDescription>
-              
-              {/* Informations complémentaires */}
-              <div className="mt-4 pt-4 border-t border-slate-200">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Date de dernier passage */}
-                    {lastVisitDate && (
-                      <div className="flex items-start gap-2">
-                        <Calendar className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Dernier passage : </span>
-                          <span className="text-slate-900 font-semibold text-base">
-                            {new Date(lastVisitDate).toLocaleDateString('fr-FR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Code client */}
-                    {client.client_number && (
-                      <div className="flex items-start gap-2">
-                        <Hash className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Code client : </span>
-                          <span className="text-slate-900 font-bold text-lg font-mono">{client.client_number}</span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Téléphone 1 */}
-                    {client.phone && (
-                      <div className="flex items-start gap-2">
-                        <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Tél : </span>
-                          <span className="text-slate-900 font-bold text-base">{client.phone}</span>
-                          {client.phone_1_info && (
-                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* E-mail */}
-                    {client.email && (
-                      <div className="flex items-start gap-2">
-                        <Mail className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex items-center gap-1 whitespace-nowrap min-w-0">
-                          <span className="font-medium text-slate-700 text-base">E-mail : </span>
-                          <a 
-                            href={`mailto:${client.email}`}
-                            className="text-slate-900 font-bold text-base hover:text-blue-600 hover:underline transition-colors"
-                          >
-                            {client.email}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Jour de fermeture - removed as closing_day no longer exists */}
-                  </div>
-                  
-                  {/* Commentaire */}
-                  {client.comment && (
-                    <div className="mt-3">
-                      <div className="flex items-start gap-2">
-                        <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-slate-900 text-base flex-1">{client.comment}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Périodes de fermeture dans les 2 prochains mois */}
-                  {(() => {
-                    const now = new Date();
-                    now.setHours(0, 0, 0, 0);
-                    const twoMonthsLater = new Date();
-                    twoMonthsLater.setMonth(now.getMonth() + 2);
-                    twoMonthsLater.setHours(23, 59, 59, 999);
-                    
-                    // Filtrer les périodes de fermeture dans les 2 prochains mois
-                    const upcomingPeriods = vacationPeriods.filter(period => {
-                      let periodStart: Date;
-                      let periodEnd: Date;
-                      
-                      if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
-                        if (period.isRecurring) {
-                          // Pour les périodes récurrentes, utiliser l'année actuelle
-                          const currentYear = now.getFullYear();
-                          periodStart = new Date(weekToDate(period.startWeek, currentYear));
-                          const endWeekStart = new Date(weekToDate(period.endWeek, currentYear));
-                          periodEnd = getEndOfWeek(endWeekStart);
-                        } else {
-                          // Pour les périodes ponctuelles, utiliser l'année de la période
-                          const year = period.year || now.getFullYear();
-                          periodStart = new Date(weekToDate(period.startWeek, year));
-                          const endWeekStart = new Date(weekToDate(period.endWeek, year));
-                          periodEnd = getEndOfWeek(endWeekStart);
-                        }
-                      } else {
-                        periodStart = new Date(period.startDate);
-                        periodEnd = new Date(period.endDate);
-                        
-                        // Pour les périodes récurrentes, utiliser l'année actuelle
-                        if (period.isRecurring) {
-                          const currentYear = now.getFullYear();
-                          const startMonth = periodStart.getMonth();
-                          const startDay = periodStart.getDate();
-                          const endMonth = periodEnd.getMonth();
-                          const endDay = periodEnd.getDate();
-                          
-                          periodStart = new Date(currentYear, startMonth, startDay);
-                          periodEnd = new Date(currentYear, endMonth, endDay);
-                        }
-                      }
-                      
-                      // Vérifier si la période chevauche avec les 2 prochains mois
-                      return periodStart <= twoMonthsLater && periodEnd >= now;
-                    });
-                    
-                    if (upcomingPeriods.length > 0) {
-                      return (
-                        <div className="mt-3">
-                          <div className="flex items-start gap-2">
-                            <DoorClosed className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1">
-                              <div className="text-slate-900 text-base font-medium mb-1">Périodes de fermeture à venir :</div>
-                              <div className="space-y-1">
-                                {upcomingPeriods.map((period) => {
-                                  let periodDisplay: string;
-                                  
-                                  if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
-                                    const weekStr = period.startWeek === period.endWeek 
-                                      ? `S${period.startWeek}`
-                                      : `S${period.startWeek} à S${period.endWeek}`;
-                                    
-                                    if (period.isRecurring) {
-                                      periodDisplay = `${weekStr} (annuel)`;
-                                    } else {
-                                      periodDisplay = `${weekStr} - ${period.year}`;
-                                    }
-                                  } else {
-                                    const start = new Date(period.startDate);
-                                    const end = new Date(period.endDate);
-                                    
-                                    // Pour les périodes récurrentes, utiliser l'année actuelle pour l'affichage
-                                    if (period.isRecurring) {
-                                      const currentYear = now.getFullYear();
-                                      const startMonth = start.getMonth();
-                                      const startDay = start.getDate();
-                                      const endMonth = end.getMonth();
-                                      const endDay = end.getDate();
-                                      
-                                      const displayStart = new Date(currentYear, startMonth, startDay);
-                                      const displayEnd = new Date(currentYear, endMonth, endDay);
-                                      periodDisplay = `${displayStart.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} au ${displayEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} (annuel)`;
-                                    } else {
-                                      periodDisplay = `${start.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })} au ${end.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
-                                    }
-                                  }
-                                  
-                                  return (
-                                    <div key={period.id} className="text-slate-700 text-sm">
-                                      • {periodDisplay}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  
-                  {/* Horaires d'ouverture */}
-                  {client.opening_hours && (
-                    <div className="mt-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="h-5 w-5 text-slate-500 flex-shrink-0" />
-                        <span className="font-medium text-slate-700 text-base">Horaires d'ouverture</span>
-                      </div>
-                      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
-                          {formatWeekScheduleData(client.opening_hours).map((item, index) => (
-                            <React.Fragment key={`schedule-${index}`}>
-                              <div className="text-slate-600">{item.day}</div>
-                              <div className="text-slate-800">{item.hours}</div>
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Calendrier */}
-                  {client && (
-                    <div className="mt-4 space-y-4">
-                      <ClientCalendar
-                        openingHours={openingHours}
-                        vacationPeriods={vacationPeriods}
-                        marketDaysSchedule={marketDaysSchedule}
-                        clientName={client.name}
-                      />
-                      <Button type="button" onClick={handleAddVacationPeriodClick} size="sm" variant="outline">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Ajouter une période de fermeture
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
             </CardHeader>
             <CardContent>
-              <Separator className="my-6" />
-
-{/* {              <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Euro className="h-5 w-5" />
-                  Résumé de facturation
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Cartes vendues</span>
-                    <span className="font-semibold text-slate-900">{cardsSold}</span>
+              <form onSubmit={handleAssociate} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Collection</Label>
+                    <Popover open={collectionComboboxOpen} onOpenChange={setCollectionComboboxOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={collectionComboboxOpen}
+                          className="w-full justify-between mt-1.5"
+                        >
+                          {associateForm.collection_id
+                            ? allCollections.find((c) => c.id === associateForm.collection_id)?.name
+                            : "Choisir une collection"}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Rechercher une collection..." />
+                          <CommandList>
+                            <CommandEmpty>Aucune collection trouvée.</CommandEmpty>
+                            <CommandGroup>
+                              {allCollections
+                                .filter(c => !clientCollections.some(cc => cc.collection_id === c.id))
+                                .map((c) => (
+                                  <CommandItem
+                                    key={c.id}
+                                    value={c.name}
+                                    onSelect={() => {
+                                      setAssociateForm(a => ({ ...a, collection_id: c.id }));
+                                      setCollectionComboboxOpen(false);
+                                    }}
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "mr-2 h-4 w-4",
+                                        associateForm.collection_id === c.id ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    {c.name} — {c.price.toFixed(2)} €
+                                  </CommandItem>
+                                ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Prix unitaire</span>
-                    <span className="font-semibold text-slate-900">2,00 €</span>
+                  <div>
+                    <Label htmlFor="assoc-initial">Stock initial *</Label>
+                    <Input 
+                      id="assoc-initial" 
+                      type="text" 
+                      inputMode="numeric"
+                      value={selectedCollectionHasSubProducts ? 'Cliquer sur le bouton "Ajouter la collection"' : associateForm.initial_stock}
+                      onChange={(e) => {
+                        if (selectedCollectionHasSubProducts) return;
+                        const value = e.target.value;
+                        // N'accepter que les nombres
+                        if (value === '' || /^\d+$/.test(value)) {
+                          setAssociateForm(a => ({ ...a, initial_stock: value }));
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder={selectedCollectionHasSubProducts ? "Cliquer sur le bouton 'Ajouter la collection'" : "Ex: 100 (0 si vide)"} 
+                      className={cn("mt-1.5", selectedCollectionHasSubProducts && "bg-slate-100 cursor-not-allowed")}
+                      disabled={selectedCollectionHasSubProducts}
+                      readOnly={selectedCollectionHasSubProducts}
+                      required={!selectedCollectionHasSubProducts}
+                    />
+                    {selectedCollectionHasSubProducts ? (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Cliquer sur le bouton "Ajouter la collection" pour renseigner les stocks des sous-produits
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Obligatoire (peut être 0)
+                      </p>
+                    )}
                   </div>
-                  <Separator />
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold text-slate-900">Montant dû</span>
-                    <span className="text-2xl font-bold text-slate-900">{amountDue.toFixed(2)} €</span>
-                  </div>
-                </div> 
-               </div>}  */}
-            </CardContent>
-                    </Card>
-          
-          {/* Sections déplacées vers les sous-pages :
-              - Collections liées, Reprise de stock, Mise à jour du stock → /clients/[id]/stock
-              - Générer un avoir → /clients/[id]/credit-note
-              - Bon de dépôt, Historique des documents → /clients/[id]/documents
-          */}
                 </div>
 
-        {client && (
-          <StockUpdateConfirmationDialog
-            open={confirmationDialogOpen}
-            onOpenChange={setConfirmationDialogOpen}
-            onConfirm={handleConfirmStockUpdate}
-            collectionUpdates={prepareCollectionUpdates() || []}
-            pendingAdjustments={pendingAdjustments}
-            loading={submitting}
-          />
-        )}
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                  <Label>Prix de cession (HT)</Label>
+                  <RadioGroup
+                    value={associateForm.price_type}
+                    onValueChange={(val: 'default' | 'custom') => setAssociateForm(a => ({ ...a, price_type: val }))}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="price-default" />
+                      <Label htmlFor="price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                        {associateForm.collection_id && allCollections.find(c => c.id === associateForm.collection_id) && (
+                          <span className="ml-2 text-sm text-slate-600">
+                            ({allCollections.find(c => c.id === associateForm.collection_id)?.price.toFixed(2)} €)
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="price-custom" />
+                      <Label htmlFor="price-custom" className="font-normal cursor-pointer">
+                        Définir un prix spécifique pour ce client
+                      </Label>
+                    </div>
+                  </RadioGroup>
 
-        {client && selectedGlobalInvoice && (
-          <GlobalInvoiceDialog
-            open={globalInvoiceDialogOpen}
-            onOpenChange={setGlobalInvoiceDialogOpen}
-            client={client}
-            invoice={selectedGlobalInvoice}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}
-            collections={allCollections}
-            clientCollections={clientCollections}
-          />
-        )}
+                  {associateForm.price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="custom-price">Prix personnalisé (€)</Label>
+                      <Input
+                        id="custom-price"
+                        type="text"
+                        inputMode="decimal"
+                        value={associateForm.custom_price}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setAssociateForm(a => ({ ...a, custom_price: value }));
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="Ex: 2.50"
+                        className="mt-1.5"
+                      />
+                    </div>
+                  )}
+                </div>
 
-        {client && (
-          <DepositSlipDialog
-            open={depositSlipDialogOpen}
-            onOpenChange={(open) => {
-              setDepositSlipDialogOpen(open);
-              if (!open) {
-                // Reset selected invoice when dialog closes
-                setSelectedInvoiceForDepositSlip(null);
-              }
-            }}
-            client={client}
-            clientCollections={clientCollections}
-            invoice={selectedInvoiceForDepositSlip}
-            stockUpdates={selectedInvoiceForDepositSlip 
-              ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
-              : recentStockUpdatesWithoutInvoice}
-          />
-        )}
+                <div className="space-y-3 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                  <Label>Prix de vente conseillé (TTC)</Label>
+                  <RadioGroup
+                    value={associateForm.recommended_sale_price_type}
+                    onValueChange={(val: 'default' | 'custom') => setAssociateForm(a => ({ ...a, recommended_sale_price_type: val }))}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="default" id="recommended-price-default" />
+                      <Label htmlFor="recommended-price-default" className="font-normal cursor-pointer">
+                        Utiliser le prix par défaut
+                        {associateForm.collection_id && allCollections.find(c => c.id === associateForm.collection_id) && (
+                          <span className="ml-2 text-sm text-slate-600">
+                            ({(() => {
+                              const collection = allCollections.find(c => c.id === associateForm.collection_id);
+                              return collection?.recommended_sale_price 
+                                ? `${collection.recommended_sale_price.toFixed(2)} €`
+                                : 'Non défini';
+                            })()})
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="custom" id="recommended-price-custom" />
+                      <Label htmlFor="recommended-price-custom" className="font-normal cursor-pointer">
+                        Définir un prix spécifique pour ce client
+                      </Label>
+                    </div>
+                  </RadioGroup>
 
-        {client && selectedInvoiceForStockReport && (
-          <StockReportDialog
-            open={stockReportDialogOpen}
-            onOpenChange={setStockReportDialogOpen}
-            client={client}
-            clientCollections={clientCollections}
-            stockUpdates={(() => {
-              if (selectedInvoiceForStockReport) {
-                const filtered = stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id);
-                if (filtered.length > 0) {
-                  return filtered;
-                }
-              }
-              if (stockUpdatesFromHistory.length > 0) {
-                return stockUpdatesFromHistory;
-              }
-              if (stockUpdatesForDialog.length > 0) {
-                return stockUpdatesForDialog;
-              }
-              return recentStockUpdatesWithoutInvoice;
-            })()}
-            invoice={selectedInvoiceForStockReport}
-          />
-        )}
+                  {associateForm.recommended_sale_price_type === 'custom' && (
+                    <div className="pt-2">
+                      <Label htmlFor="custom-recommended-price">Prix personnalisé (€)</Label>
+                      <Input
+                        id="custom-recommended-price"
+                        type="text"
+                        inputMode="decimal"
+                        value={associateForm.custom_recommended_sale_price}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setAssociateForm(a => ({ ...a, custom_recommended_sale_price: value }));
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="Ex: 3.00"
+                        className="mt-1.5"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Button type="submit" className="w-full md:w-auto">Ajouter la collection</Button>
+                </div>
+              </form>
+
+              <Separator className="my-6" />
+
+              {clientCollections.length === 0 ? (
+                <p className="text-sm text-slate-600">Aucune collection associée.</p>
+              ) : (
+                <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={clientCollections.map(cc => cc.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Table noWrapper>
+                        <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                          <TableRow className="bg-slate-50">
+                            <TableHead className="w-[15%] font-semibold">Collection</TableHead>
+                            <TableHead className="w-[5%] font-semibold"></TableHead>
+                            <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[20%] font-semibold">Info collection pour facture</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
+                            <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                            <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {clientCollections.map((cc) => {
+                        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
+                        const isCustomPrice = cc.custom_price !== null;
+                        const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+                        const isCustomRecommendedSalePrice = cc.custom_recommended_sale_price !== null;
+                        
+                        const collectionSubProducts = subProducts[cc.collection_id] || [];
+                        const hasSubProducts = collectionSubProducts.length > 0;
+
+                        // Calculate parent collection stock from sub-products
+                        let parentCountedStock = 0;
+                        let parentCardsAdded = 0;
+                        let parentCurrentStock = 0;
+
+                        if (hasSubProducts) {
+                          collectionSubProducts.forEach(sp => {
+                            const csp = clientSubProducts[sp.id];
+                            // Inclure tous les sous-produits, même ceux sans client_sub_product (stock = 0)
+                            const subProductStock = csp ? (csp.current_stock || 0) : 0;
+                            parentCurrentStock += subProductStock;
+                            const formData = perSubProductForm[sp.id];
+                            if (formData) {
+                              parentCountedStock += parseInt(formData.counted_stock) || 0;
+                              parentCardsAdded += parseInt(formData.cards_added) || 0;
+                            }
+                          });
+                        }
+
+                        return (
+                          <React.Fragment key={cc.id}>
+                            <SortableCollectionRow
+                              cc={cc}
+                              effectivePrice={effectivePrice}
+                              isCustomPrice={isCustomPrice}
+                              effectiveRecommendedSalePrice={effectiveRecommendedSalePrice}
+                              isCustomRecommendedSalePrice={isCustomRecommendedSalePrice}
+                              collectionSubProducts={collectionSubProducts}
+                              hasSubProducts={hasSubProducts}
+                              parentCountedStock={parentCountedStock}
+                              parentCardsAdded={parentCardsAdded}
+                              parentCurrentStock={parentCurrentStock}
+                              perCollectionForm={perCollectionForm}
+                              setPerCollectionForm={setPerCollectionForm}
+                              clientSubProducts={clientSubProducts}
+                              perSubProductForm={perSubProductForm}
+                              setPerSubProductForm={setPerSubProductForm}
+                              onEditPrice={() => handleEditPriceClick(cc)}
+                              onDelete={() => handleDeleteCollectionClick(cc)}
+                              subProducts={subProducts}
+                              onAdjustStock={() => handleAdjustStockClick('collection', cc.id)}
+                              clientId={clientId}
+                            />
+                            {/* Sub-products rows */}
+                            {hasSubProducts && collectionSubProducts.map((sp) => {
+                              const csp = clientSubProducts[sp.id];
+                              // Afficher tous les sous-produits, même s'ils n'ont pas encore de client_sub_product
+                              // (ils seront créés automatiquement lors du chargement)
+                              const currentStock = csp ? (csp.current_stock || 0) : 0;
+                              
+                              return (
+                                <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
+                                  <TableCell className="align-middle py-2 pl-8">
+                                    <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center w-[5%]">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleAdjustStockClick('sub-product', sp.id)}
+                                      className="h-8 w-8 p-0"
+                                      title="Ajuster le stock"
+                                    >
+                                      <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+                                    </Button>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center">
+                                    <p className="text-xs text-slate-500">{currentStock}</p>
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={perSubProductForm[sp.id]?.counted_stock || ''}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || /^\d+$/.test(value)) {
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), counted_stock: value } }));
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      placeholder="......"
+                                      className="h-8 text-sm placeholder:text-slate-400"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center">
+                                    <p className="text-xs font-medium text-slate-600">
+                                      {(() => {
+                                        const formData = perSubProductForm[sp.id] || { counted_stock: '', cards_added: '' };
+                                        const counted = parseInt(formData.counted_stock) || 0;
+                                        const added = parseInt(formData.cards_added) || 0;
+                                        // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
+                                        return added - counted;
+                                      })()}
+                                    </p>
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    <Input
+                                      type="text"
+                                      inputMode="numeric"
+                                      value={perSubProductForm[sp.id]?.cards_added || ''}
+                                      onChange={(e) => {
+                                        const value = e.target.value;
+                                        if (value === '' || /^\d+$/.test(value)) {
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), cards_added: value } }));
+                                        }
+                                      }}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      placeholder="......"
+                                      className="h-8 text-sm placeholder:text-slate-400"
+                                    />
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    {/* Empty - sub-products don't have collection_info */}
+                                  </TableCell>
+                                  <TableCell className="align-top py-2 text-right">
+                                    <p className="text-xs text-slate-500">{effectivePrice.toFixed(2)} €</p>
+                                  </TableCell>
+                                  <TableCell className="align-top py-2 text-right">
+                                    {effectiveRecommendedSalePrice !== null ? (
+                                      <p className="text-xs text-slate-500">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+                                    ) : (
+                                      <p className="text-xs text-slate-400">-</p>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="align-top py-2">
+                                    {/* Empty - no actions for sub-products */}
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </React.Fragment>
+                        );
+                      })}
+                        </TableBody>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        {/* Reprise de stock */}
+        <Card className="border-slate-200 shadow-md">
+          <CardHeader>
+            <CardTitle>Reprise de stock</CardTitle>
+            <CardDescription>
+              Ajoutez une opération de reprise de stock avec le prix unitaire et le nombre de cartes reprises
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Ajouter une reprise de stock
+                </Button>
+              </div>
+              {pendingAdjustments.length > 0 && (
+                <div className="border border-slate-200 rounded-lg divide-y bg-white">
+                  {pendingAdjustments.map((a, idx) => {
+                    // Afficher le prix positif pour l'utilisateur (mais stocké négatif)
+                    const displayPrice = Math.abs(parseFloat(a.unit_price));
+                    const totalAmount = (parseFloat(a.unit_price) * parseInt(a.quantity)).toFixed(2);
+                    return (
+                      <div key={idx} className="flex items-center justify-between p-3">
+                        <div>
+                          <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
+                          <p className="text-xs text-slate-500">      
+                            {a.quantity} carte(s) × {displayPrice.toFixed(2)} € = {totalAmount} €
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 hover:bg-red-50"
+                          title="Supprimer"
+                          onClick={() => setPendingAdjustments(list => list.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Add Adjustment Dialog */}
+        <Dialog open={addAdjustmentOpen} onOpenChange={setAddAdjustmentOpen}>
+          <DialogContent>
+            <form onSubmit={handleAddAdjustmentSubmit}>
+              <DialogHeader>
+                <DialogTitle>Ajouter une reprise de stock</DialogTitle>
+                <DialogDescription>
+                  Saisissez le nom de l'opération, le prix unitaire par carte et le nombre de cartes reprises
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="adj-name">Nom de l'opération</Label>
+                  <Input
+                    id="adj-name"
+                    type="text"
+                    value={adjustmentForm.operation_name}
+                    onChange={(e) => setAdjustmentForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Rachat stock concurrent"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="adj-unit-price">Prix unitaire par carte (€)</Label>
+                  <Input
+                    id="adj-unit-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={adjustmentForm.unit_price}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      // Accepter uniquement des valeurs positives
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setAdjustmentForm(f => ({ ...f, unit_price: value }));
+                      }
+                    }}
+                    placeholder="Ex: 2.00"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Saisissez un prix positif (le montant sera négatif dans la facture)</p>
+                </div>
+                <div>
+                  <Label htmlFor="adj-quantity">Nombre de cartes reprises</Label>
+                  <Input
+                    id="adj-quantity"
+                    type="number"
+                    min="1"
+                    value={adjustmentForm.quantity}
+                    onChange={(e) => setAdjustmentForm(f => ({ ...f, quantity: e.target.value }))}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Ex: 50"
+                    className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </div>
+                {adjustmentForm.unit_price && adjustmentForm.quantity && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700">
+                      Montant total : {(parseFloat(adjustmentForm.unit_price.replace(',', '.')) * parseInt(adjustmentForm.quantity || '0')).toFixed(2)} €
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setAddAdjustmentOpen(false)}>
+                  Annuler
+                </Button>
+                <Button type="submit">Ajouter</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Credit Note Dialog */}
+        <Dialog open={creditNoteDialogOpen} onOpenChange={setCreditNoteDialogOpen} modal={false}>
+          <DialogPortal>
+            <DialogOverlay className="fixed inset-0 z-40 bg-black/50 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <DialogPrimitive.Content
+              className={cn(
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg"
+              )}
+            >
+              <form onSubmit={handleCreditNoteSubmit}>
+              <DialogHeader>
+                <DialogTitle>Générer un avoir</DialogTitle>
+                <DialogDescription>
+                  Renseignez les informations pour générer un avoir
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="credit-note-invoice">Facture d'origine</Label>
+                  <Popover open={invoicePopoverOpen} onOpenChange={setInvoicePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full mt-1.5 justify-between"
+                        type="button"
+                      >
+                        {creditNoteForm.invoice_id
+                          ? globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'Facture sélectionnée'
+                          : 'Sélectionner une facture...'}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent 
+                      className="w-[400px] p-0" 
+                      align="start" 
+                      style={{ zIndex: 9999 }}
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <Command>
+                        <CommandInput placeholder="Rechercher une facture..." autoFocus />
+                        <CommandList className="max-h-[300px] overflow-y-auto">
+                          <CommandEmpty>Aucune facture trouvée</CommandEmpty>
+                          <CommandGroup>
+                            {globalInvoices.map((invoice) => (
+                              <CommandItem
+                                key={invoice.id}
+                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.created_at).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
+                                onSelect={() => {
+                                  setCreditNoteForm(f => ({ ...f, invoice_id: invoice.id }));
+                                  setInvoicePopoverOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    creditNoteForm.invoice_id === invoice.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.created_at).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-operation">Produits et prestations</Label>
+                  <Textarea
+                    id="credit-note-operation"
+                    value={creditNoteForm.operation_name}
+                    onChange={(e) => setCreditNoteForm(f => ({ ...f, operation_name: e.target.value }))}
+                    placeholder="Ex: Retour de marchandise"
+                    className="mt-1.5 min-h-[120px]"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-quantity">Quantité</Label>
+                  <Input
+                    id="credit-note-quantity"
+                    type="number"
+                    min="1"
+                    value={creditNoteForm.quantity}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, quantity: value }));
+                      }
+                    }}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="Ex: 10"
+                    className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-unit-price">Prix à l'unité (€)</Label>
+                  <Input
+                    id="credit-note-unit-price"
+                    type="text"
+                    inputMode="decimal"
+                    value={creditNoteForm.unit_price}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setCreditNoteForm(f => ({ ...f, unit_price: value }));
+                      }
+                    }}
+                    placeholder="Ex: 2.00"
+                    className="mt-1.5"
+                    required
+                  />
+                </div>
+                {creditNoteForm.unit_price && creditNoteForm.quantity && (
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700">
+                      Montant total HT : {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => {
+                  setCreditNoteDialogOpen(false);
+                  setInvoicePopoverOpen(false);
+                }}>
+                  Annuler
+                </Button>
+                <Button type="submit">Créer un avoir</Button>
+              </DialogFooter>
+              </form>
+              <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
+            </DialogPrimitive.Content>
+          </DialogPortal>
+        </Dialog>
+
+        {/* Credit Note Confirmation Dialog */}
+        <Dialog open={creditNoteConfirmDialogOpen} onOpenChange={setCreditNoteConfirmDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Récapitulatif de l'avoir</DialogTitle>
+              <DialogDescription>
+                <div className="space-y-2 mt-2">
+                  <p><strong>Facture d'origine :</strong> {globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id)?.invoice_number || 'N/A'}</p>
+                  <p><strong>Produits et prestations :</strong> {creditNoteForm.operation_name}</p>
+                  <p><strong>Quantité :</strong> {creditNoteForm.quantity}</p>
+                  <p><strong>Prix unitaire :</strong> {creditNoteForm.unit_price} €</p>
+                  <p><strong>Montant total HT :</strong> {(parseFloat(creditNoteForm.unit_price.replace(',', '.')) * parseInt(creditNoteForm.quantity || '0')).toFixed(2)} €</p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setCreditNoteConfirmDialogOpen(false);
+                  setCreditNoteDialogOpen(true);
+                }}
+                disabled={creatingCreditNote}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateCreditNote}
+                disabled={creatingCreditNote}
+              >
+                {creatingCreditNote ? 'Création en cours...' : 'Créer l\'avoir'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+          <Card className="border-slate-200 shadow-md">
+            <CardHeader>
+              <CardTitle>Mise à jour du stock</CardTitle>
+              <CardDescription>
+                Comptez le stock restant et ajoutez les nouvelles cartes pour chaque collection
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <Button type="submit" disabled={submitting} className="w-full md:w-auto">
+                  {submitting ? 'Mise à jour...' : 'Mettre à jour le stock'}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
 
         {client && (
           <StockUpdateConfirmationDialog

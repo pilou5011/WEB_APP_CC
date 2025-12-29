@@ -258,3 +258,15 @@ export type CreditNote = {
   credit_note_pdf_path: string | null;
   created_at: string;
 };
+
+export type StockDirectSold = {
+  id: string;
+  client_id: string;
+  invoice_id: string;
+  collection_id: string | null;
+  sub_product_id: string | null;
+  stock_sold: number;
+  unit_price_ht: number;
+  total_amount_ht: number;
+  created_at: string;
+};
