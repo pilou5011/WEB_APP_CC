@@ -2744,13 +2744,6 @@ export default function ClientDetailPage() {
     return null;
   }
 
-  // Calculate total cards sold from client_collections
-  const cardsSold = clientCollections.reduce((sum, cc) => {
-    const sold = (cc.initial_stock || 0) - (cc.current_stock || 0);
-    return sum + Math.max(0, sold);
-  }, 0);
-  const amountDue = cardsSold * 2;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="container mx-auto py-8 px-4 max-w-6xl">
@@ -2781,331 +2774,254 @@ export default function ClientDetailPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Bon de dépôt */}
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle className="text-3xl">{client.name}</CardTitle>
-              <CardDescription className="flex items-start gap-1.5 mt-2 text-base">
-                <MapPin className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                <span>{client.address}</span>
+              <CardTitle>Bon de dépôt</CardTitle>
+              <CardDescription>
+                Générez un bon de dépôt pour ce client
               </CardDescription>
-              
-              {/* Informations complémentaires */}
-              <div className="mt-4 pt-4 border-t border-slate-200">
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {/* Date de dernier passage */}
-                    {lastVisitDate && (
-                      <div className="flex items-start gap-2">
-                        <Calendar className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Dernier passage : </span>
-                          <span className="text-slate-900 font-semibold text-base">
-                            {new Date(lastVisitDate).toLocaleDateString('fr-FR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Code client */}
-                    {client.client_number && (
-                      <div className="flex items-start gap-2">
-                        <Hash className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Code client : </span>
-                          <span className="text-slate-900 font-bold text-lg font-mono">{client.client_number}</span>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Téléphone 1 */}
-                    {client.phone && (
-                      <div className="flex items-start gap-2">
-                        <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span className="font-medium text-slate-700 text-base">Tél : </span>
-                          <span className="text-slate-900 font-bold text-base">{client.phone}</span>
-                          {client.phone_1_info && (
-                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* E-mail */}
-                    {client.email && (
-                      <div className="flex items-start gap-2">
-                        <Mail className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
-                        <div className="flex items-center gap-1 whitespace-nowrap min-w-0">
-                          <span className="font-medium text-slate-700 text-base">E-mail : </span>
-                          <a 
-                            href={`mailto:${client.email}`}
-                            className="text-slate-900 font-bold text-base hover:text-blue-600 hover:underline transition-colors"
-                          >
-                            {client.email}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {/* Jour de fermeture - removed as closing_day no longer exists */}
-                  </div>
-                  
-                  {/* Commentaire */}
-                  {client.comment && (
-                    <div className="mt-3">
-                      <div className="flex items-start gap-2">
-                        <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-slate-900 text-base flex-1">{client.comment}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Périodes de fermeture dans les 2 prochains mois */}
-                  {(() => {
-                    const now = new Date();
-                    now.setHours(0, 0, 0, 0);
-                    const twoMonthsLater = new Date();
-                    twoMonthsLater.setMonth(now.getMonth() + 2);
-                    twoMonthsLater.setHours(23, 59, 59, 999);
-                    
-                    // Filtrer les périodes de fermeture dans les 2 prochains mois
-                    const upcomingPeriods = vacationPeriods.filter(period => {
-                      let periodStart: Date;
-                      let periodEnd: Date;
-                      
-                      if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
-                        if (period.isRecurring) {
-                          // Pour les périodes récurrentes, utiliser l'année actuelle
-                          const currentYear = now.getFullYear();
-                          periodStart = new Date(weekToDate(period.startWeek, currentYear));
-                          const endWeekStart = new Date(weekToDate(period.endWeek, currentYear));
-                          periodEnd = getEndOfWeek(endWeekStart);
-                        } else {
-                          // Pour les périodes ponctuelles, utiliser l'année de la période
-                          const year = period.year || now.getFullYear();
-                          periodStart = new Date(weekToDate(period.startWeek, year));
-                          const endWeekStart = new Date(weekToDate(period.endWeek, year));
-                          periodEnd = getEndOfWeek(endWeekStart);
-                        }
-                      } else {
-                        periodStart = new Date(period.startDate);
-                        periodEnd = new Date(period.endDate);
-                        
-                        // Pour les périodes récurrentes, utiliser l'année actuelle
-                        if (period.isRecurring) {
-                          const currentYear = now.getFullYear();
-                          const startMonth = periodStart.getMonth();
-                          const startDay = periodStart.getDate();
-                          const endMonth = periodEnd.getMonth();
-                          const endDay = periodEnd.getDate();
-                          
-                          periodStart = new Date(currentYear, startMonth, startDay);
-                          periodEnd = new Date(currentYear, endMonth, endDay);
-                        }
-                      }
-                      
-                      // Vérifier si la période chevauche avec les 2 prochains mois
-                      return periodStart <= twoMonthsLater && periodEnd >= now;
-                    });
-                    
-                    if (upcomingPeriods.length > 0) {
-                      return (
-                        <div className="mt-3">
-                          <div className="flex items-start gap-2">
-                            <DoorClosed className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1">
-                              <div className="text-slate-900 text-base font-medium mb-1">Périodes de fermeture à venir :</div>
-                              <div className="space-y-1">
-                                {upcomingPeriods.map((period) => {
-                                  let periodDisplay: string;
-                                  
-                                  if (period.inputType === 'weeks' && period.startWeek && period.endWeek) {
-                                    const weekStr = period.startWeek === period.endWeek 
-                                      ? `S${period.startWeek}`
-                                      : `S${period.startWeek} à S${period.endWeek}`;
-                                    
-                                    if (period.isRecurring) {
-                                      periodDisplay = `${weekStr} (annuel)`;
-                                    } else {
-                                      periodDisplay = `${weekStr} - ${period.year}`;
-                                    }
-                                  } else {
-                                    const start = new Date(period.startDate);
-                                    const end = new Date(period.endDate);
-                                    
-                                    // Pour les périodes récurrentes, utiliser l'année actuelle pour l'affichage
-                                    if (period.isRecurring) {
-                                      const currentYear = now.getFullYear();
-                                      const startMonth = start.getMonth();
-                                      const startDay = start.getDate();
-                                      const endMonth = end.getMonth();
-                                      const endDay = end.getDate();
-                                      
-                                      const displayStart = new Date(currentYear, startMonth, startDay);
-                                      const displayEnd = new Date(currentYear, endMonth, endDay);
-                                      periodDisplay = `${displayStart.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} au ${displayEnd.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })} (annuel)`;
-                                    } else {
-                                      periodDisplay = `${start.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })} au ${end.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}`;
-                                    }
-                                  }
-                                  
-                                  return (
-                                    <div key={period.id} className="text-slate-700 text-sm">
-                                      • {periodDisplay}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  
-                  {/* Horaires d'ouverture */}
-                  {client.opening_hours && (
-                    <div className="mt-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Clock className="h-5 w-5 text-slate-500 flex-shrink-0" />
-                        <span className="font-medium text-slate-700 text-base">Horaires d'ouverture</span>
-                      </div>
-                      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
-                          {formatWeekScheduleData(client.opening_hours).map((item, index) => (
-                            <React.Fragment key={`schedule-${index}`}>
-                              <div className="text-slate-600">{item.day}</div>
-                              <div className="text-slate-800">{item.hours}</div>
-                            </React.Fragment>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Calendrier */}
-                  {client && (
-                    <div className="mt-4 space-y-4">
-                      <ClientCalendar
-                        openingHours={openingHours}
-                        vacationPeriods={vacationPeriods}
-                        marketDaysSchedule={marketDaysSchedule}
-                        clientName={client.name}
-                      />
-                      <Button type="button" onClick={handleAddVacationPeriodClick} size="sm" variant="outline">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Ajouter une période de fermeture
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
             </CardHeader>
             <CardContent>
-              <Separator className="my-6" />
-
-{/* {              <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-                  <Euro className="h-5 w-5" />
-                  Résumé de facturation
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Cartes vendues</span>
-                    <span className="font-semibold text-slate-900">{cardsSold}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-slate-600">
-                    <span>Prix unitaire</span>
-                    <span className="font-semibold text-slate-900">2,00 €</span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold text-slate-900">Montant dû</span>
-                    <span className="text-2xl font-bold text-slate-900">{amountDue.toFixed(2)} €</span>
-                  </div>
-                </div> 
-               </div>}  */}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSelectedInvoiceForDepositSlip(null);
+                  setDepositSlipDialogOpen(true);
+                }}
+                disabled={clientCollections.length === 0}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Générer un bon de dépôt
+              </Button>
+              {clientCollections.length === 0 && (
+                <p className="text-xs text-slate-500 mt-2">
+                  Veuillez d'abord associer des collections au client
+                </p>
+              )}
             </CardContent>
-                    </Card>
-          
-          {/* Sections déplacées vers les sous-pages :
-              - Collections liées, Reprise de stock, Mise à jour du stock → /clients/[id]/stock
-              - Générer un avoir → /clients/[id]/credit-note
-              - Bon de dépôt, Historique des documents → /clients/[id]/documents
-          */}
+          </Card>
+
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0) && (
+            <Card className="border-slate-200 shadow-md">
+              <CardHeader>
+                <CardTitle>Historique des documents</CardTitle>
+                <CardDescription>
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {/* Combine invoices, stock updates without invoice, and credit notes, sorted by date */}
+                  {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
+                    ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at })),
+                    ...creditNotes.map(cn => ({ type: 'credit_note' as const, data: cn, created_at: cn.created_at }))]
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .map((item) => {
+                      if (item.type === 'invoice') {
+                        const invoice = item.data as Invoice;
+                        return (
+                          <div
+                            key={invoice.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(invoice.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedGlobalInvoice(invoice);
+                                    setGlobalInvoiceDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Facture
+                                </Button>
+                                {invoice.stock_report_pdf_path && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedInvoiceForStockReport(invoice);
+                                      setStockUpdatesFromHistory([]); // Réinitialiser car on vient d'une facture
+                                      setStockReportDialogOpen(true);
+                                    }}
+                                  >
+                                    <ClipboardList className="mr-2 h-4 w-4" />
+                                    Relevé de stock
+                                  </Button>
+                                )}
+                                {invoice.deposit_slip_pdf_path && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedInvoiceForDepositSlip(invoice);
+                                      setDepositSlipDialogOpen(true);
+                                    }}
+                                  >
+                                    <ClipboardList className="mr-2 h-4 w-4" />
+                                    Bon de dépôt
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{invoice.total_cards_sold} carte{invoice.total_cards_sold > 1 ? 's' : ''} vendue{invoice.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{invoice.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
+                      } else if (item.type === 'stock_update') {
+                        // Cas des anciennes données sans facture (compatibilité)
+                        // Récupérer l'invoice_id depuis les stockUpdates (ils ont tous le même invoice_id)
+                        const stockUpdate = item.data as { id: string; created_at: string; total_cards_sold: number; total_amount: number; stockUpdates: StockUpdate[] };
+                        const invoiceId = stockUpdate.stockUpdates.length > 0 
+                          ? stockUpdate.stockUpdates[0].invoice_id 
+                          : null;
+                        
+                        // Si une facture existe, récupérer ses informations (notamment les chemins PDF)
+                        const realInvoice = invoiceId ? globalInvoices.find(inv => inv.id === invoiceId) : null;
+                        
+                        const tempInvoice: Invoice = {
+                          id: invoiceId || stockUpdate.id, // Utiliser invoice_id si disponible, sinon fallback
+                          client_id: clientId,
+                          total_cards_sold: stockUpdate.total_cards_sold,
+                          total_amount: stockUpdate.total_amount,
+                          invoice_number: realInvoice?.invoice_number || null,
+                          discount_percentage: realInvoice?.discount_percentage || null,
+                          invoice_pdf_path: realInvoice?.invoice_pdf_path || null,
+                          stock_report_pdf_path: realInvoice?.stock_report_pdf_path || null,
+                          deposit_slip_pdf_path: realInvoice?.deposit_slip_pdf_path || null,
+                          created_at: stockUpdate.created_at
+                        };
+                        
+                        return (
+                          <div
+                            key={stockUpdate.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(stockUpdate.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                              </div>
+                              <div className="flex gap-2">
+                                {/* Pas de bouton Facture pour les mises à jour sans facture */}
+                                {tempInvoice.stock_report_pdf_path && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      // Maintenant, tempInvoice.id devrait être l'ID de la facture réelle
+                                      // Les stock_updates seront récupérés via invoice_id depuis la base
+                                      setSelectedInvoiceForStockReport(tempInvoice);
+                                      setStockReportDialogOpen(true);
+                                    }}
+                                  >
+                                    <ClipboardList className="mr-2 h-4 w-4" />
+                                    Relevé de stock
+                                  </Button>
+                                )}
+                                {tempInvoice.deposit_slip_pdf_path && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedInvoiceForDepositSlip(tempInvoice);
+                                      setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
+                                      setDepositSlipDialogOpen(true);
+                                    }}
+                                  >
+                                    <ClipboardList className="mr-2 h-4 w-4" />
+                                    Bon de dépôt
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>{stockUpdate.total_cards_sold} carte{stockUpdate.total_cards_sold > 1 ? 's' : ''} vendue{stockUpdate.total_cards_sold > 1 ? 's' : ''}</span>
+                              <span>•</span>
+                              <span>{stockUpdate.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
+                      } else if (item.type === 'credit_note') {
+                        const creditNote = item.data as CreditNote;
+                        return (
+                          <div
+                            key={creditNote.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(creditNote.created_at).toLocaleDateString('fr-FR', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {creditNote.operation_name}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const relatedInvoice = globalInvoices.find(inv => inv.id === creditNote.invoice_id);
+                                    if (!relatedInvoice) {
+                                      toast.error('Facture associée non trouvée');
+                                      return;
+                                    }
+                                    setSelectedCreditNote(creditNote);
+                                    setCreditNotePreviewDialogOpen(true);
+                                  }}
+                                >
+                                  <FileText className="mr-2 h-4 w-4" />
+                                  Avoir
+                                </Button>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-slate-600">
+                              <span>Quantité: {creditNote.quantity}</span>
+                              <span>•</span>
+                              <span>{creditNote.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
                 </div>
-
-        {client && (
-          <StockUpdateConfirmationDialog
-            open={confirmationDialogOpen}
-            onOpenChange={setConfirmationDialogOpen}
-            onConfirm={handleConfirmStockUpdate}
-            collectionUpdates={prepareCollectionUpdates() || []}
-            pendingAdjustments={pendingAdjustments}
-            loading={submitting}
-          />
-        )}
-
-        {client && selectedGlobalInvoice && (
-          <GlobalInvoiceDialog
-            open={globalInvoiceDialogOpen}
-            onOpenChange={setGlobalInvoiceDialogOpen}
-            client={client}
-            invoice={selectedGlobalInvoice}
-            stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}
-            collections={allCollections}
-            clientCollections={clientCollections}
-          />
-        )}
-
-        {client && (
-          <DepositSlipDialog
-            open={depositSlipDialogOpen}
-            onOpenChange={(open) => {
-              setDepositSlipDialogOpen(open);
-              if (!open) {
-                // Reset selected invoice when dialog closes
-                setSelectedInvoiceForDepositSlip(null);
-              }
-            }}
-            client={client}
-            clientCollections={clientCollections}
-            invoice={selectedInvoiceForDepositSlip}
-            stockUpdates={selectedInvoiceForDepositSlip 
-              ? stockUpdates.filter(u => u.invoice_id === selectedInvoiceForDepositSlip.id)
-              : recentStockUpdatesWithoutInvoice}
-          />
-        )}
-
-        {client && selectedInvoiceForStockReport && (
-          <StockReportDialog
-            open={stockReportDialogOpen}
-            onOpenChange={setStockReportDialogOpen}
-            client={client}
-            clientCollections={clientCollections}
-            stockUpdates={(() => {
-              if (selectedInvoiceForStockReport) {
-                const filtered = stockUpdates.filter(u => u.invoice_id === selectedInvoiceForStockReport.id);
-                if (filtered.length > 0) {
-                  return filtered;
-                }
-              }
-              if (stockUpdatesFromHistory.length > 0) {
-                return stockUpdatesFromHistory;
-              }
-              if (stockUpdatesForDialog.length > 0) {
-                return stockUpdatesForDialog;
-              }
-              return recentStockUpdatesWithoutInvoice;
-            })()}
-            invoice={selectedInvoiceForStockReport}
-          />
-        )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         {client && (
           <StockUpdateConfirmationDialog

@@ -5,7 +5,7 @@
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, supabase } from '@/lib/supabase';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
@@ -36,6 +36,14 @@ interface GenerateCreditNotePDFParams {
   creditNote: CreditNote;
   invoice: Invoice;
   client: Client;
+  userProfile: UserProfile | null;
+}
+
+interface GenerateDirectInvoicePDFParams {
+  invoice: Invoice;
+  client: Client;
+  collections: Collection[];
+  stockDirectSold: StockDirectSold[];
   userProfile: UserProfile | null;
 }
 
