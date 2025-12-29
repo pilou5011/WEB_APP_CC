@@ -270,3 +270,29 @@ export type StockDirectSold = {
   total_amount_ht: number;
   created_at: string;
 };
+
+export type Company = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+export type User = {
+  id: string;
+  email: string;
+  company_id: string;
+  role: 'admin' | 'user';
+  created_at: string;
+};
+
+export type UserInvitation = {
+  id: string;
+  email: string;
+  company_id: string;
+  role: 'admin' | 'user';
+  token: string;
+  invited_by: string | null;
+  accepted_at: string | null;
+  expires_at: string;
+  created_at: string;
+};
