@@ -18,7 +18,25 @@ export async function getCurrentUser() {
     .eq('id', user.id)
     .single();
 
-  if (error || !userData) {
+  if (error) {
+    console.error('Error fetching user:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint
+    });
+    // Si l'erreur est 406 (Not Acceptable), cela peut indiquer un problème RLS
+    // Essayons une approche alternative en utilisant auth.uid() directement
+    if (error.code === 'PGRST116' || error.message?.includes('406') || error.message?.includes('row-level security')) {
+      console.warn('RLS issue detected, user might not exist in users table or RLS is blocking access');
+      console.warn('User ID from auth:', user.id);
+    }
+    return null;
+  }
+
+  if (!userData) {
+    console.warn('User not found in users table for id:', user.id);
     return null;
   }
 
@@ -37,8 +55,21 @@ export async function getCurrentUserCompanyId(): Promise<string | null> {
  * Vérifie si l'utilisateur connecté est administrateur
  */
 export async function isCurrentUserAdmin(): Promise<boolean> {
-  const user = await getCurrentUser();
-  return user?.role === 'admin';
+  try {
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      console.warn('isCurrentUserAdmin: User not found in users table');
+      return false;
+    }
+    
+    const isAdmin = user.role === 'admin';
+    console.log('isCurrentUserAdmin:', { userId: user.id, role: user.role, isAdmin });
+    return isAdmin;
+  } catch (error) {
+    console.error('Error in isCurrentUserAdmin:', error);
+    return false;
+  }
 }
 
 /**

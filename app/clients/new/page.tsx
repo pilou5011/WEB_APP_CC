@@ -138,10 +138,16 @@ export default function NewClientPage() {
 
     setAddingNewPaymentMethod(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une méthode avec le même nom existe déjà (non supprimée)
       const { data: existing } = await supabase
         .from('payment_methods')
         .select('id')
+        .eq('company_id', companyId)
         .eq('name', newPaymentMethodName.trim())
         .is('deleted_at', null)
         .maybeSingle();

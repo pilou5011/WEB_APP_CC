@@ -63,10 +63,6 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
   }
 
   try {
-    const companyId = await getCurrentUserCompanyId();
-    if (!companyId) {
-      throw new Error('Non autorisé');
-    }
     // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;
     const autoTable = (await import('jspdf-autotable')).default;
@@ -469,7 +465,12 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const pdfBlobData = doc.output('blob');
 
     // Save PDF to storage
-    const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
+    const invoiceDate = new Date(invoice.created_at);
+    const year = invoiceDate.getFullYear();
+    const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const fileName = `${year}_${month}_${day}.pdf`;
+    const filePath = `invoices/${invoice.id}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('documents')
@@ -478,31 +479,47 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         upsert: false // Never overwrite - factures are immutable
       });
 
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     if (uploadError) {
-      // Check if error is due to file already existing
       if (uploadError.message?.includes('already exists') || 
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
-        console.log('PDF already exists, not overwriting (facture is immutable):', filePath);
+        console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
+        // Si le fichier existe déjà dans le storage mais que invoice_pdf_path est NULL dans la DB,
+        // on peut le définir une seule fois
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ invoice_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId)
+          .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Invoice PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
-      // Update invoice with PDF path ONLY if it doesn't exist yet
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
+      // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ invoice_pdf_path: filePath })
         .eq('id', invoice.id)
         .eq('company_id', companyId)
-        .is('invoice_pdf_path', null); // Only update if invoice_pdf_path is null
+        .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
       
       if (updateError) {
-        console.warn('Error updating invoice with PDF path:', updateError);
+        console.error('Error updating invoice with PDF path:', updateError);
+        throw updateError;
       } else {
         console.log('Invoice PDF saved successfully:', filePath);
       }

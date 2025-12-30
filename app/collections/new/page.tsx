@@ -416,6 +416,52 @@ export default function NewCollectionPage() {
         return;
       }
 
+      // Vérifier que category_id et subcategory_id appartiennent à la même entreprise
+      if (formData.category_id) {
+        const { data: categoryCheck, error: categoryCheckError } = await supabase
+          .from('collection_categories')
+          .select('id, company_id')
+          .eq('id', formData.category_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (categoryCheckError || !categoryCheck) {
+          toast.error('La catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      if (formData.subcategory_id) {
+        const { data: subcategoryCheck, error: subcategoryCheckError } = await supabase
+          .from('collection_subcategories')
+          .select('id, company_id')
+          .eq('id', formData.subcategory_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (subcategoryCheckError || !subcategoryCheck) {
+          toast.error('La sous-catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+
+        // Vérifier que la sous-catégorie appartient bien à la catégorie sélectionnée
+        if (formData.category_id) {
+          const { data: subcategoryRelationCheck, error: relationError } = await supabase
+            .from('collection_subcategories')
+            .select('category_id')
+            .eq('id', formData.subcategory_id)
+            .single();
+
+          if (relationError || !subcategoryRelationCheck || subcategoryRelationCheck.category_id !== formData.category_id) {
+            toast.error('La sous-catégorie sélectionnée n\'appartient pas à la catégorie sélectionnée');
+            setSubmitting(false);
+            return;
+          }
+        }
+      }
+
       // Create collection
       const { data: newCollection, error: collectionError } = await supabase
         .from('collections')
@@ -432,11 +478,21 @@ export default function NewCollectionPage() {
         .single();
 
       if (collectionError) {
-        // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
+        // Gérer les erreurs spécifiques
         if (collectionError.code === '23505') {
+          // Violation de contrainte unique
           toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        } else if (collectionError.code === '23503') {
+          // Violation de clé étrangère
+          toast.error('Erreur : la catégorie ou la sous-catégorie sélectionnée n\'est pas valide');
+        } else if (collectionError.message?.includes('row-level security policy')) {
+          // Erreur RLS
+          toast.error('Erreur de sécurité. Veuillez contacter le support.');
+          console.error('RLS Error:', collectionError);
         } else {
-          throw collectionError;
+          // Autre erreur
+          toast.error(collectionError.message || 'Erreur lors de la création de la collection');
+          console.error('Collection creation error:', collectionError);
         }
         setSubmitting(false);
         return;
@@ -463,9 +519,21 @@ export default function NewCollectionPage() {
 
       toast.success('Collection créée avec succès');
       router.push(`/collections/${newCollection.id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating collection:', error);
-      toast.error('Erreur lors de la création de la collection');
+      
+      // Gestion d'erreur améliorée
+      if (error.message === 'Non autorisé' || error.message?.includes('company_id')) {
+        toast.error('Erreur d\'authentification. Veuillez vous reconnecter.');
+        // Rediriger vers la page d'authentification après un délai
+        setTimeout(() => {
+          router.push('/auth');
+        }, 2000);
+      } else if (error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Erreur lors de la création de la collection');
+      }
     } finally {
       setSubmitting(false);
     }

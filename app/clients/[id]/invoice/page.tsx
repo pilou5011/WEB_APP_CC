@@ -334,6 +334,7 @@ export default function InvoicePage() {
         .from('invoices')
         .insert([{
           client_id: clientId,
+          company_id: companyId,
           total_cards_sold: totalQuantity,
           total_amount: totalHTAfterDiscount,
           discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
@@ -350,6 +351,7 @@ export default function InvoicePage() {
       const stockDirectSoldRows = validRows.map(row => ({
         client_id: clientId,
         invoice_id: invoiceData.id,
+        company_id: companyId,
         collection_id: row.collection_id,
         sub_product_id: null,
         stock_sold: parseInt(row.quantity) || 0,
@@ -410,9 +412,25 @@ export default function InvoicePage() {
       // Navigate to documents page
       router.push(`/clients/${clientId}/documents`);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating invoice:', error);
-      toast.error('Erreur lors de la génération de la facture');
+      
+      // Afficher un message d'erreur plus spécifique
+      if (error.message) {
+        if (error.message.includes('row-level security') || error.message.includes('RLS')) {
+          toast.error('Erreur de sécurité. Veuillez contacter le support.');
+        } else if (error.message.includes('company_id')) {
+          toast.error('Erreur : identifiant entreprise manquant. Veuillez vous reconnecter.');
+        } else if (error.code === '23503') {
+          toast.error('Erreur : référence invalide. Vérifiez que le client existe.');
+        } else if (error.code === '23505') {
+          toast.error('Erreur : cette facture existe déjà.');
+        } else {
+          toast.error(`Erreur lors de la génération de la facture: ${error.message}`);
+        }
+      } else {
+        toast.error('Erreur lors de la génération de la facture');
+      }
     } finally {
       setGeneratingInvoice(false);
     }

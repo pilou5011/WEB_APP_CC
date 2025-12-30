@@ -53,11 +53,18 @@ export default function CreditNotePage() {
     try {
       setLoading(true);
       
+      // Récupérer companyId
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+      
       // Load client
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -134,12 +141,19 @@ export default function CreditNotePage() {
       const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
       const totalAmount = quantity * unitPrice;
 
+      // Récupérer companyId
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Create credit note
       const { data: creditNote, error: creditNoteError } = await supabase
         .from('credit_notes')
         .insert({
           invoice_id: creditNoteForm.invoice_id,
           client_id: clientId,
+          company_id: companyId,
           unit_price: unitPrice,
           quantity: quantity,
           total_amount: totalAmount,
@@ -167,12 +181,12 @@ export default function CreditNotePage() {
       }
 
       // Load user profile
-          const { data: userProfileData } = await supabase
-            .from('user_profile')
-            .select('*')
-            .eq('company_id', companyId)
-            .limit(1)
-            .maybeSingle();
+      const { data: userProfileData } = await supabase
+        .from('user_profile')
+        .select('*')
+        .eq('company_id', companyId)
+        .limit(1)
+        .maybeSingle();
 
       await generateAndSaveCreditNotePDF({
         creditNote: creditNote as CreditNote,

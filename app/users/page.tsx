@@ -30,14 +30,43 @@ export default function UsersPage() {
   }, []);
 
   const checkAccess = async () => {
-    const admin = await isCurrentUserAdmin();
-    if (!admin) {
-      toast.error('Accès refusé. Seuls les administrateurs peuvent accéder à cette page.');
+    try {
+      // Vérifier d'abord que l'utilisateur est connecté
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('Vous devez être connecté pour accéder à cette page.');
+        router.push('/auth');
+        return;
+      }
+
+      console.log('Checking admin access for user:', session.user.id);
+      
+      const currentUser = await getCurrentUser();
+      console.log('Current user from getCurrentUser:', currentUser);
+      
+      if (!currentUser) {
+        console.error('User not found in users table');
+        toast.error('Erreur : votre compte n\'a pas été trouvé. Veuillez vous reconnecter.');
+        router.push('/');
+        return;
+      }
+
+      console.log('User role:', currentUser.role);
+      const admin = await isCurrentUserAdmin();
+      console.log('Is admin?', admin);
+      
+      if (!admin) {
+        toast.error('Accès refusé. Seuls les administrateurs peuvent accéder à cette page.');
+        router.push('/');
+        return;
+      }
+      setIsAdmin(true);
+      loadData();
+    } catch (error) {
+      console.error('Error in checkAccess:', error);
+      toast.error('Erreur lors de la vérification des permissions.');
       router.push('/');
-      return;
     }
-    setIsAdmin(true);
-    loadData();
   };
 
   const loadData = async () => {

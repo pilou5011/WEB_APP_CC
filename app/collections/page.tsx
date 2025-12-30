@@ -382,6 +382,11 @@ export default function CollectionsPage() {
 
   const loadCollections = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('collections')
         .select('*')
