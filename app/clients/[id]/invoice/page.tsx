@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, Collection, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -63,11 +64,17 @@ export default function InvoicePage() {
   const loadData = async () => {
     setLoading(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Load client
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -83,6 +90,7 @@ export default function InvoicePage() {
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -302,6 +310,11 @@ export default function InvoicePage() {
 
     setGeneratingInvoice(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Validate rows
       const validRows = rows.filter(row => row.collection_id && row.quantity && parseInt(row.quantity) > 0);
       if (validRows.length === 0) {
@@ -357,6 +370,7 @@ export default function InvoicePage() {
       const { data: userProfile } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 

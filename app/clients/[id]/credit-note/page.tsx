@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, Invoice, CreditNote } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -75,6 +76,7 @@ export default function CreditNotePage() {
         .from('invoices')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
@@ -85,6 +87,7 @@ export default function CreditNotePage() {
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
@@ -164,11 +167,12 @@ export default function CreditNotePage() {
       }
 
       // Load user profile
-      const { data: userProfileData } = await supabase
-        .from('user_profile')
-        .select('*')
-        .limit(1)
-        .maybeSingle();
+          const { data: userProfileData } = await supabase
+            .from('user_profile')
+            .select('*')
+            .eq('company_id', companyId)
+            .limit(1)
+            .maybeSingle();
 
       await generateAndSaveCreditNotePDF({
         creditNote: creditNote as CreditNote,
@@ -182,6 +186,7 @@ export default function CreditNotePage() {
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Collection, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -73,9 +74,15 @@ export default function CollectionDetailPage() {
 
   const loadCategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('collection_categories')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -88,9 +95,15 @@ export default function CollectionDetailPage() {
 
   const loadSubcategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('collection_subcategories')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -113,11 +126,17 @@ export default function CollectionDetailPage() {
 
     setAddingNewCategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
       const { data: existing } = await supabase
         .from('collection_categories')
         .select('id')
         .eq('name', newCategoryName.trim())
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -129,7 +148,7 @@ export default function CollectionDetailPage() {
 
       const { data, error } = await supabase
         .from('collection_categories')
-        .insert([{ name: newCategoryName.trim() }])
+        .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
 
@@ -158,12 +177,18 @@ export default function CollectionDetailPage() {
 
     setAddingNewSubcategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       const { data: existing } = await supabase
         .from('collection_subcategories')
         .select('id')
         .eq('category_id', formData.category_id)
         .eq('name', newSubcategoryName.trim())
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -177,6 +202,7 @@ export default function CollectionDetailPage() {
         .from('collection_subcategories')
         .insert([{ 
           category_id: formData.category_id,
+          company_id: companyId,
           name: newSubcategoryName.trim() 
         }])
         .select()
@@ -206,12 +232,18 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
           .from('collection_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingCategory.id)
           .maybeSingle();
@@ -225,7 +257,8 @@ export default function CollectionDetailPage() {
       const { error } = await supabase
         .from('collection_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -245,10 +278,16 @@ export default function CollectionDetailPage() {
     if (!deletingCategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_categories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingCategory.id);
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -272,6 +311,11 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
@@ -279,6 +323,7 @@ export default function CollectionDetailPage() {
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingSubcategory.id)
           .maybeSingle();
@@ -292,7 +337,8 @@ export default function CollectionDetailPage() {
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -312,10 +358,16 @@ export default function CollectionDetailPage() {
     if (!deletingSubcategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingSubcategory.id);
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -334,10 +386,16 @@ export default function CollectionDetailPage() {
 
   const loadCollectionData = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: collectionData, error: collectionError } = await supabase
         .from('collections')
         .select('*')
         .eq('id', collectionId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -366,6 +424,7 @@ export default function CollectionDetailPage() {
         .from('sub_products')
         .select('*')
         .eq('collection_id', collectionId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('created_at', { ascending: true });
 
@@ -399,6 +458,11 @@ export default function CollectionDetailPage() {
     setSubmitting(true);
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const price = parseFloat(formData.price);
 
       if (isNaN(price) || price < 0) {
@@ -426,6 +490,7 @@ export default function CollectionDetailPage() {
         .from('collections')
         .select('id, name')
         .eq('name', formData.name.trim())
+        .eq('company_id', companyId)
         .neq('id', collectionId)
         .is('deleted_at', null)
         .maybeSingle();
@@ -449,7 +514,8 @@ export default function CollectionDetailPage() {
           subcategory_id: formData.subcategory_id || null,
           updated_at: new Date().toISOString()
         })
-        .eq('id', collectionId);
+        .eq('id', collectionId)
+        .eq('company_id', companyId);
 
       if (error) {
         // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
@@ -476,7 +542,8 @@ export default function CollectionDetailPage() {
           const { error: deleteError } = await supabase
             .from('sub_products')
             .update({ deleted_at: new Date().toISOString() })
-            .in('id', toDelete);
+            .in('id', toDelete)
+            .eq('company_id', companyId);
           if (deleteError) throw deleteError;
         }
 
@@ -491,7 +558,8 @@ export default function CollectionDetailPage() {
                 name: sp.name.trim(),
                 updated_at: new Date().toISOString()
               })
-              .eq('id', sp.id);
+              .eq('id', sp.id)
+              .eq('company_id', companyId);
             if (updateError) throw updateError;
           } else {
             // Insert new
@@ -499,6 +567,7 @@ export default function CollectionDetailPage() {
               .from('sub_products')
               .insert({
                 collection_id: collectionId,
+                company_id: companyId,
                 name: sp.name.trim()
               })
               .select('id')
@@ -517,6 +586,7 @@ export default function CollectionDetailPage() {
             .from('client_collections')
             .select('client_id')
             .eq('collection_id', collectionId)
+            .eq('company_id', companyId)
             .is('deleted_at', null);
 
           if (clientCollectionsError) throw clientCollectionsError;
@@ -536,9 +606,13 @@ export default function CollectionDetailPage() {
             }
 
             if (clientSubProductsToInsert.length > 0) {
+              const clientSubProductsToInsertWithCompany = clientSubProductsToInsert.map(csp => ({
+                ...csp,
+                company_id: companyId
+              }));
               const { error: insertClientSubProductsError } = await supabase
                 .from('client_sub_products')
-                .insert(clientSubProductsToInsert);
+                .insert(clientSubProductsToInsertWithCompany);
 
               if (insertClientSubProductsError) throw insertClientSubProductsError;
             }
@@ -550,7 +624,8 @@ export default function CollectionDetailPage() {
           const { error: deleteError } = await supabase
             .from('sub_products')
             .update({ deleted_at: new Date().toISOString() })
-            .eq('collection_id', collectionId);
+            .eq('collection_id', collectionId)
+            .eq('company_id', companyId);
           if (deleteError) throw deleteError;
         }
       }
@@ -579,6 +654,11 @@ export default function CollectionDetailPage() {
 
   const handleDelete = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const deletedAt = new Date().toISOString();
 
       // 1. Supprimer (soft delete) toutes les lignes dans client_collections qui référencent cette collection
@@ -586,6 +666,7 @@ export default function CollectionDetailPage() {
         .from('client_collections')
         .update({ deleted_at: deletedAt })
         .eq('collection_id', collectionId)
+        .eq('company_id', companyId)
         .is('deleted_at', null); // Seulement les lignes non supprimées
 
       if (clientCollectionsError) throw clientCollectionsError;
@@ -595,6 +676,7 @@ export default function CollectionDetailPage() {
         .from('sub_products')
         .select('id')
         .eq('collection_id', collectionId)
+        .eq('company_id', companyId)
         .is('deleted_at', null);
 
       if (subProductsError) throw subProductsError;
@@ -606,6 +688,7 @@ export default function CollectionDetailPage() {
           .from('client_sub_products')
           .update({ deleted_at: deletedAt })
           .in('sub_product_id', subProductIds)
+          .eq('company_id', companyId)
           .is('deleted_at', null); // Seulement les lignes non supprimées
 
         if (clientSubProductsError) throw clientSubProductsError;
@@ -615,7 +698,8 @@ export default function CollectionDetailPage() {
       const { error } = await supabase
         .from('collections')
         .update({ deleted_at: deletedAt })
-        .eq('id', collectionId);
+        .eq('id', collectionId)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 

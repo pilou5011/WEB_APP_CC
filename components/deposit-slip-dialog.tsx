@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Client, Collection, ClientCollection, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -126,9 +127,15 @@ export function DepositSlipDialog({
 
   const loadUserProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -152,6 +159,7 @@ export function DepositSlipDialog({
         .from('stock_updates')
         .select('*')
         .eq('client_id', client.id)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (stockUpdatesError) throw stockUpdatesError;
@@ -193,11 +201,17 @@ export function DepositSlipDialog({
 
   const loadLastInvoiceInfos = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Check if there's at least one invoice for this client
       const { data: lastInvoice, error: invoiceError } = await supabase
         .from('invoices')
         .select('id')
         .eq('client_id', client.id)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();

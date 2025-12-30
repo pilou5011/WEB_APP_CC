@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, EstablishmentType, PaymentMethod } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -102,10 +103,16 @@ export default function ClientInfoPage() {
 
   const loadClient = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -125,6 +132,7 @@ export default function ClientInfoPage() {
           .from('establishment_types')
           .select('name')
           .eq('id', data.establishment_type_id)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .single();
         
@@ -141,6 +149,7 @@ export default function ClientInfoPage() {
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .single();
         
@@ -272,9 +281,15 @@ export default function ClientInfoPage() {
 
   const loadPaymentMethods = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -294,9 +309,15 @@ export default function ClientInfoPage() {
     setAddingNewPaymentMethod(true);
     try {
       // Vérifier si une méthode avec le même nom existe déjà (non supprimée)
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: existing } = await supabase
         .from('payment_methods')
         .select('id')
+        .eq('company_id', companyId)
         .eq('name', newPaymentMethodName.trim())
         .is('deleted_at', null)
         .maybeSingle();
@@ -309,7 +330,10 @@ export default function ClientInfoPage() {
 
       const { data, error } = await supabase
         .from('payment_methods')
-        .insert([{ name: newPaymentMethodName.trim() }])
+        .insert([{ 
+          name: newPaymentMethodName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
@@ -339,9 +363,15 @@ export default function ClientInfoPage() {
     setAddingNewType(true);
     try {
       // Vérifier si un type avec le même nom existe déjà (non supprimé)
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: existing } = await supabase
         .from('establishment_types')
         .select('id')
+        .eq('company_id', companyId)
         .eq('name', newTypeName.trim())
         .is('deleted_at', null)
         .maybeSingle();
@@ -354,7 +384,10 @@ export default function ClientInfoPage() {
 
       const { data, error } = await supabase
         .from('establishment_types')
-        .insert([{ name: newTypeName.trim() }])
+        .insert([{ 
+          name: newTypeName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
@@ -382,11 +415,17 @@ export default function ClientInfoPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
       if (editEstablishmentTypeName.trim() !== editingEstablishmentType.name) {
         const { data: existing } = await supabase
           .from('establishment_types')
           .select('id')
+          .eq('company_id', companyId)
           .eq('name', editEstablishmentTypeName.trim())
           .is('deleted_at', null)
           .neq('id', editingEstablishmentType.id)
@@ -401,7 +440,8 @@ export default function ClientInfoPage() {
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editEstablishmentTypeName.trim() })
-        .eq('id', editingEstablishmentType.id);
+        .eq('id', editingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -426,10 +466,16 @@ export default function ClientInfoPage() {
     if (!deletingEstablishmentType) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingEstablishmentType.id);
+        .eq('id', deletingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -469,10 +515,16 @@ export default function ClientInfoPage() {
         }
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editPaymentMethodName.trim() })
-        .eq('id', editingPaymentMethod.id);
+        .eq('id', editingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -497,10 +549,16 @@ export default function ClientInfoPage() {
     if (!deletingPaymentMethod) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingPaymentMethod.id);
+        .eq('id', deletingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -770,6 +828,10 @@ export default function ClientInfoPage() {
         }
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
 
       const { data, error } = await supabase
         .from('clients')
@@ -806,6 +868,7 @@ export default function ClientInfoPage() {
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .select()
         .single();
 
@@ -840,10 +903,11 @@ export default function ClientInfoPage() {
 
       // Recharger le nom de la méthode de paiement
       if (data.payment_method_id) {
-        const { data: methodData } = await supabase
+          const { data: methodData } = await supabase
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .single();
         
@@ -910,10 +974,16 @@ export default function ClientInfoPage() {
 
     setDeleting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('clients')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', clientId);
+        .eq('id', clientId)
+        .eq('company_id', companyId);
 
       if (error) {
         let errorMessage = 'Erreur lors de la suppression du client';

@@ -51,3 +51,15 @@ export async function getSession() {
   return session;
 }
 
+/**
+ * Helper pour obtenir le company_id et lancer une erreur si non disponible
+ * À utiliser au début de chaque fonction qui fait des requêtes Supabase
+ */
+export async function requireCompanyId(): Promise<string> {
+  const companyId = await getCurrentUserCompanyId();
+  if (!companyId) {
+    throw new Error('Non autorisé : company_id manquant');
+  }
+  return companyId;
+}
+

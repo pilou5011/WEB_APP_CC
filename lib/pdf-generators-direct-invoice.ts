@@ -7,6 +7,7 @@
  */
 
 import { Client, Invoice, Collection, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
@@ -379,10 +380,17 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     
     // Mettre à jour l'invoice avec le chemin du PDF
     const { error: updateError } = await supabase
-      .from('invoices')
-      .update({ invoice_pdf_path: filePath })
-      .eq('id', invoice.id)
-      .is('invoice_pdf_path', null);
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
+        .from('invoices')
+        .update({ invoice_pdf_path: filePath })
+        .eq('id', invoice.id)
+        .eq('company_id', companyId)
+        .is('invoice_pdf_path', null);
     
     if (updateError) {
       console.warn('Error updating invoice with PDF path:', updateError);

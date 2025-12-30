@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { CollectionCategory, CollectionSubcategory, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,12 +56,18 @@ export function CategoriesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
           .from('collection_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingCategory.id)
           .maybeSingle();
@@ -75,7 +82,8 @@ export function CategoriesManager({
       const { error } = await supabase
         .from('collection_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -103,10 +111,16 @@ export function CategoriesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_categories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingCategory.id);
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -140,6 +154,11 @@ export function CategoriesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
@@ -147,6 +166,7 @@ export function CategoriesManager({
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingSubcategory.id)
           .maybeSingle();
@@ -161,7 +181,8 @@ export function CategoriesManager({
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -189,10 +210,16 @@ export function CategoriesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingSubcategory.id);
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getCurrentUserCompanyId } from './auth-helpers';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -9,23 +10,37 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 /**
  * Helper pour effectuer une suppression logique (soft delete)
  * Met à jour la colonne deleted_at au lieu de supprimer l'enregistrement
+ * Filtre par company_id pour garantir l'isolation des données
  */
 export async function softDelete(table: string, id: string): Promise<{ error: any }> {
+  const companyId = await getCurrentUserCompanyId();
+  if (!companyId) {
+    return { error: new Error('Non autorisé : company_id manquant') };
+  }
+
   const { error } = await supabase
     .from(table)
     .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('company_id', companyId);
   return { error };
 }
 
 /**
  * Helper pour restaurer un enregistrement supprimé (soft undelete)
+ * Filtre par company_id pour garantir l'isolation des données
  */
 export async function softUndelete(table: string, id: string): Promise<{ error: any }> {
+  const companyId = await getCurrentUserCompanyId();
+  if (!companyId) {
+    return { error: new Error('Non autorisé : company_id manquant') };
+  }
+
   const { error } = await supabase
     .from(table)
     .update({ deleted_at: null })
-    .eq('id', id);
+    .eq('id', id)
+    .eq('company_id', companyId);
   return { error };
 }
 
