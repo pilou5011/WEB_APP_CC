@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
 import type { InvoiceAdjustment } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail } from 'lucide-react';
@@ -50,10 +51,16 @@ export function GlobalInvoiceDialog({
       // Load invoice adjustments for this invoice
       (async () => {
         try {
+          const companyId = await getCurrentUserCompanyId();
+          if (!companyId) {
+            throw new Error('Non autorisé');
+          }
+
           const { data, error } = await supabase
             .from('invoice_adjustments')
             .select('*')
             .eq('invoice_id', invoice.id)
+            .eq('company_id', companyId)
             .order('created_at', { ascending: true });
           if (error) throw error;
           setAdjustments(data || []);
@@ -123,9 +130,15 @@ export function GlobalInvoiceDialog({
 
   const loadUserProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 

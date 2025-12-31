@@ -7,6 +7,7 @@
  */
 
 import { Client, Invoice, Collection, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
@@ -23,11 +24,8 @@ interface GenerateDirectInvoicePDFParams {
 export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvoicePDFParams): Promise<void> {
   const { invoice, client, collections, stockDirectSold, userProfile } = params;
 
-  // Check if PDF already exists
-  if (invoice.invoice_pdf_path) {
-    console.log('Direct invoice PDF already exists, skipping generation:', invoice.invoice_pdf_path);
-    return;
-  }
+  // Note: On génère toujours le PDF et on met toujours à jour invoice_pdf_path
+  // même si le fichier existe déjà, pour s'assurer que la colonne est toujours renseignée
 
   try {
     // Import jsPDF dynamically
@@ -360,9 +358,8 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     // Convertir le PDF en blob
     const pdfBlob = doc.output('blob');
     
-    // Générer un nom de fichier unique
-    const fileName = `invoice_${invoice.id}_${Date.now()}.pdf`;
-    const filePath = `invoices/${fileName}`;
+    // Générer le chemin de fichier : documents/invoices/[id de la facture]/[annee]_[mois]_[jour].pdf
+    const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
     
     // Upload vers Supabase Storage
     const { error: uploadError } = await supabase.storage
@@ -372,22 +369,39 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
         upsert: false
       });
     
-    if (uploadError) {
-      console.error('Error uploading direct invoice PDF:', uploadError);
-      throw uploadError;
+    // Récupérer companyId avant de gérer les erreurs
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
     }
-    
-    // Mettre à jour l'invoice avec le chemin du PDF
+
+    if (uploadError) {
+      // Si le fichier existe déjà, on continue quand même pour mettre à jour invoice_pdf_path
+      if (uploadError.message?.includes('already exists') || 
+          uploadError.message?.includes('duplicate') ||
+          uploadError.message?.includes('409')) {
+        console.log('PDF already exists, but updating invoice_pdf_path:', filePath);
+      } else {
+        console.error('Error uploading direct invoice PDF:', uploadError);
+        throw uploadError;
+      }
+    } else {
+      console.log('Direct invoice PDF uploaded successfully:', filePath);
+    }
+
+    // Mettre à jour invoice_pdf_path UNIQUEMENT si elle est NULL (immuabilité contractuelle)
     const { error: updateError } = await supabase
       .from('invoices')
       .update({ invoice_pdf_path: filePath })
       .eq('id', invoice.id)
-      .is('invoice_pdf_path', null);
+      .eq('company_id', companyId)
+      .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
     
     if (updateError) {
-      console.warn('Error updating invoice with PDF path:', updateError);
+      console.error('Error updating invoice with PDF path:', updateError);
+      throw updateError;
     } else {
-      console.log('Direct invoice PDF saved successfully:', filePath);
+      console.log('Direct invoice PDF path updated successfully:', filePath);
     }
   } catch (error) {
     console.error('Error generating direct invoice PDF:', error);

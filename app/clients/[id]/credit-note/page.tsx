@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, Invoice, CreditNote } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,11 +53,18 @@ export default function CreditNotePage() {
     try {
       setLoading(true);
       
+      // Récupérer companyId
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+      
       // Load client
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -75,6 +83,7 @@ export default function CreditNotePage() {
         .from('invoices')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
@@ -85,6 +94,7 @@ export default function CreditNotePage() {
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
@@ -131,12 +141,19 @@ export default function CreditNotePage() {
       const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
       const totalAmount = quantity * unitPrice;
 
+      // Récupérer companyId
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Create credit note
       const { data: creditNote, error: creditNoteError } = await supabase
         .from('credit_notes')
         .insert({
           invoice_id: creditNoteForm.invoice_id,
           client_id: clientId,
+          company_id: companyId,
           unit_price: unitPrice,
           quantity: quantity,
           total_amount: totalAmount,
@@ -167,6 +184,7 @@ export default function CreditNotePage() {
       const { data: userProfileData } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -182,6 +200,7 @@ export default function CreditNotePage() {
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;

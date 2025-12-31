@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, UserProfile } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -69,9 +70,15 @@ export default function ProfilePage() {
 
   const loadProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -167,12 +174,18 @@ export default function ProfilePage() {
         updated_at: new Date().toISOString()
       };
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       if (profile) {
         // Update existing profile
         const { error } = await supabase
           .from('user_profile')
           .update(profileData)
-          .eq('id', profile.id);
+          .eq('id', profile.id)
+          .eq('company_id', companyId);
 
         if (error) throw error;
         toast.success('Profil mis à jour avec succès');
@@ -180,7 +193,7 @@ export default function ProfilePage() {
         // Create new profile
         const { data, error } = await supabase
           .from('user_profile')
-          .insert([profileData])
+          .insert([{ ...profileData, company_id: companyId }])
           .select()
           .single();
 

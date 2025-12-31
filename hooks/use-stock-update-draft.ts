@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { supabase, DraftStockUpdateData } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes in milliseconds
 const LOCAL_STORAGE_PREFIX = 'stock_update_draft_';
@@ -38,6 +39,11 @@ export function useStockUpdateDraft(clientId: string) {
   // Save to server (upsert)
   const saveDraftToServer = useCallback(async (data: DraftStockUpdateData) => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const dataString = JSON.stringify(data);
       
       // Skip if data hasn't changed
@@ -51,6 +57,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -66,7 +73,8 @@ export function useStockUpdateDraft(clientId: string) {
             draft_data: data,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .eq('company_id', companyId);
 
         if (updateError) throw updateError;
         console.log('[Draft] Updated server draft for client:', clientId);
@@ -76,6 +84,7 @@ export function useStockUpdateDraft(clientId: string) {
           .from('draft_stock_updates')
           .insert([{
             client_id: clientId,
+            company_id: companyId,
             draft_data: data
           }]);
 
@@ -108,10 +117,16 @@ export function useStockUpdateDraft(clientId: string) {
   // Load draft from server
   const loadDraftFromServer = useCallback(async (): Promise<DraftStockUpdateData | null> => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('draft_stock_updates')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -149,10 +164,16 @@ export function useStockUpdateDraft(clientId: string) {
 
     // Check server
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('draft_stock_updates')
         .select('client_id, created_at')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -177,6 +198,11 @@ export function useStockUpdateDraft(clientId: string) {
   // Delete drafts (both local and server)
   const deleteDraft = useCallback(async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       console.log('[Draft] Starting deletion for client:', clientId);
       
       // Delete from localStorage FIRST
@@ -189,6 +215,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .update({ deleted_at: new Date().toISOString() })
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null) // Only update non-deleted drafts
         .select();
 
@@ -207,6 +234,7 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null) // Only check non-deleted drafts
         .maybeSingle();
       
@@ -217,6 +245,7 @@ export function useStockUpdateDraft(clientId: string) {
           .from('draft_stock_updates')
           .update({ deleted_at: new Date().toISOString() })
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .is('deleted_at', null); // Only update non-deleted drafts
         
         if (retryError) {

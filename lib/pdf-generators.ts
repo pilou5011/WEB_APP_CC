@@ -6,6 +6,7 @@
  */
 
 import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
@@ -464,7 +465,12 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const pdfBlobData = doc.output('blob');
 
     // Save PDF to storage
-    const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
+    const invoiceDate = new Date(invoice.created_at);
+    const year = invoiceDate.getFullYear();
+    const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const fileName = `invoice_${year}_${month}_${day}.pdf`;
+    const filePath = `invoices/${invoice.id}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('documents')
@@ -473,25 +479,47 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         upsert: false // Never overwrite - factures are immutable
       });
 
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     if (uploadError) {
-      // Check if error is due to file already existing
       if (uploadError.message?.includes('already exists') || 
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
-        console.log('PDF already exists, not overwriting (facture is immutable):', filePath);
+        console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
+        // Si le fichier existe déjà dans le storage mais que invoice_pdf_path est NULL dans la DB,
+        // on peut le définir une seule fois
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ invoice_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId)
+          .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Invoice PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
-      // Update invoice with PDF path ONLY if it doesn't exist yet
+      // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ invoice_pdf_path: filePath })
         .eq('id', invoice.id)
-        .is('invoice_pdf_path', null); // Only update if invoice_pdf_path is null
+        .eq('company_id', companyId)
+        .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
       
       if (updateError) {
-        console.warn('Error updating invoice with PDF path:', updateError);
+        console.error('Error updating invoice with PDF path:', updateError);
+        throw updateError;
       } else {
         console.log('Invoice PDF saved successfully:', filePath);
       }
@@ -517,27 +545,36 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
   }
 
   try {
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     // Load required data
     const { data: userProfile } = await supabase
       .from('user_profile')
       .select('*')
+      .eq('company_id', companyId)
       .limit(1)
       .maybeSingle();
 
     const { data: subProducts } = await supabase
       .from('sub_products')
-      .select('*');
+      .select('*')
+      .eq('company_id', companyId);
 
     const { data: clientSubProducts } = await supabase
       .from('client_sub_products')
       .select('*')
-      .eq('client_id', client.id);
+      .eq('client_id', client.id)
+      .eq('company_id', companyId);
 
     // Get previous invoice date
     const { data: previousInvoice } = await supabase
       .from('invoices')
       .select('created_at')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .lt('created_at', invoice.created_at)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -550,6 +587,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       .from('stock_updates')
       .select('*')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     // Import jsPDF dynamically
@@ -1056,14 +1094,29 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
         console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour stock_report_pdf_path même si le fichier existe déjà
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ stock_report_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId);
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Stock report PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
+      // Mettre à jour stock_report_pdf_path
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ stock_report_pdf_path: filePath })
         .eq('id', invoice.id)
+        .eq('company_id', companyId)
         .is('stock_report_pdf_path', null);
       
       if (updateError) {
@@ -1093,10 +1146,16 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
   }
 
   try {
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     // Load required data
     const { data: userProfile } = await supabase
       .from('user_profile')
       .select('*')
+      .eq('company_id', companyId)
       .limit(1)
       .maybeSingle();
 
@@ -1106,6 +1165,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .from('stock_updates')
       .select('*')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     // Créer un map pour stocker la dernière collection_info de chaque collection
@@ -1419,10 +1479,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         throw uploadError;
       }
     } else if (uploadData) {
+      // Mettre à jour deposit_slip_pdf_path
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ deposit_slip_pdf_path: filePath })
         .eq('id', invoice.id)
+        .eq('company_id', companyId)
         .is('deposit_slip_pdf_path', null);
       
       if (updateError) {
@@ -1455,9 +1517,15 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     // Load user profile if not provided
     let profile = userProfile;
     if (!profile) {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: userProfileData } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
       profile = userProfileData;
@@ -1761,10 +1829,16 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
       }
     } else if (uploadData) {
       // Update credit note with PDF path ONLY if it doesn't exist yet
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error: updateError } = await supabase
         .from('credit_notes')
         .update({ credit_note_pdf_path: filePath })
         .eq('id', creditNote.id)
+        .eq('company_id', companyId)
         .is('credit_note_pdf_path', null); // Only update if credit_note_pdf_path is null
       
       if (updateError) {

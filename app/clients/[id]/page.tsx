@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, StockUpdate, Collection, ClientCollection, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -523,11 +524,17 @@ export default function ClientDetailPage() {
         }));
 
         // Update all collections in a transaction-like manner
+        const companyId = await getCurrentUserCompanyId();
+        if (!companyId) {
+          throw new Error('Non autorisé');
+        }
+
         for (const update of updates) {
           const { error } = await supabase
             .from('client_collections')
             .update({ display_order: update.display_order })
-            .eq('id', update.id);
+            .eq('id', update.id)
+            .eq('company_id', companyId);
 
           if (error) throw error;
         }
@@ -641,10 +648,16 @@ export default function ClientDetailPage() {
       }
 
       try {
+        const companyId = await getCurrentUserCompanyId();
+        if (!companyId) {
+          throw new Error('Non autorisé');
+        }
+
         const { data, error } = await supabase
           .from('sub_products')
           .select('id')
           .eq('collection_id', associateForm.collection_id)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .limit(1);
 
@@ -686,10 +699,16 @@ export default function ClientDetailPage() {
 
   const loadClientData = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -767,6 +786,7 @@ export default function ClientDetailPage() {
       const { data: collectionsData, error: collectionsError } = await supabase
         .from('collections')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -778,6 +798,7 @@ export default function ClientDetailPage() {
         .from('client_collections')
         .select('*, collection:collections!inner(*)')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('display_order', { ascending: true });
 
@@ -792,6 +813,7 @@ export default function ClientDetailPage() {
           .from('sub_products')
           .select('*')
           .in('collection_id', collectionIds)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .order('created_at', { ascending: true });
 
@@ -813,6 +835,7 @@ export default function ClientDetailPage() {
             .from('client_sub_products')
             .select('*')
             .eq('client_id', clientId)
+            .eq('company_id', companyId)
             .in('sub_product_id', subProductIds)
             .is('deleted_at', null);
 
@@ -840,7 +863,7 @@ export default function ClientDetailPage() {
           if (missingSubProducts.length > 0) {
             const { data: createdSubProducts, error: createError } = await supabase
               .from('client_sub_products')
-              .insert(missingSubProducts)
+              .insert(missingSubProducts.map(csp => ({ ...csp, company_id: companyId })))
               .select('*');
 
             if (createError) throw createError;
@@ -860,6 +883,7 @@ export default function ClientDetailPage() {
         .from('stock_updates')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (updatesError) throw updatesError;
@@ -895,6 +919,7 @@ export default function ClientDetailPage() {
         .from('invoices')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
@@ -905,6 +930,7 @@ export default function ClientDetailPage() {
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
@@ -1184,6 +1210,11 @@ export default function ClientDetailPage() {
     setSubmitting(true);
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const updates = prepareCollectionUpdates();
       
       // Vérifier qu'il y a au moins des mises à jour de stock OU des reprises
@@ -1231,6 +1262,7 @@ export default function ClientDetailPage() {
           .from('invoices')
           .insert([{
             client_id: clientId,
+            company_id: companyId,
             total_cards_sold: totalCardsSold,
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
@@ -1272,6 +1304,7 @@ export default function ClientDetailPage() {
                     .from('client_sub_products')
                     .insert({
                       client_id: clientId,
+                      company_id: companyId,
                       sub_product_id: sp.id,
                       initial_stock: 0,
                       current_stock: 0
@@ -1325,6 +1358,7 @@ export default function ClientDetailPage() {
                 // Create stock update for sub-product (for stock report)
                 updatesToInsert.push({
                   client_id: clientId,
+                  company_id: companyId,
                   sub_product_id: sp.id,
                   invoice_id: invoiceData?.id || null,
                   previous_stock: previousStock,
@@ -1362,6 +1396,7 @@ export default function ClientDetailPage() {
               
               updatesToInsert.push({
                 client_id: clientId,
+                company_id: companyId,
                 collection_id: cc.collection_id, // Parent collection ID for invoice
                 invoice_id: invoiceData?.id || null,
                 previous_stock: totalPreviousStock,
@@ -1399,6 +1434,7 @@ export default function ClientDetailPage() {
 
             updatesToInsert.push({
               client_id: clientId,
+              company_id: companyId,
               collection_id: cc.collection_id,
               invoice_id: invoiceData?.id || null,
               previous_stock: previousStock,
@@ -1465,13 +1501,15 @@ export default function ClientDetailPage() {
           const { data: userProfile } = await supabase
             .from('user_profile')
             .select('*')
+            .eq('company_id', companyId)
             .limit(1)
             .maybeSingle();
 
           const { data: invoiceAdjustments } = await supabase
             .from('invoice_adjustments')
             .select('*')
-            .eq('invoice_id', invoiceData.id);
+            .eq('invoice_id', invoiceData.id)
+            .eq('company_id', companyId);
 
           // Générer les 3 PDFs en parallèle
           await Promise.all([
@@ -1512,7 +1550,8 @@ export default function ClientDetailPage() {
         const { error: cspUpdateError } = await supabase
           .from('client_sub_products')
           .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
-          .eq('id', upd.id);
+          .eq('id', upd.id)
+          .eq('company_id', companyId);
         if (cspUpdateError) throw cspUpdateError;
       }
 
@@ -1521,7 +1560,8 @@ export default function ClientDetailPage() {
         const { error: ccUpdateError } = await supabase
           .from('client_collections')
           .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
-          .eq('id', upd.id);
+          .eq('id', upd.id)
+          .eq('company_id', companyId);
         if (ccUpdateError) throw ccUpdateError;
       }
 
@@ -1541,11 +1581,17 @@ export default function ClientDetailPage() {
       try {
         console.log('[Draft] Attempting to delete draft after successful stock update for client:', clientId);
         
+        const companyId = await getCurrentUserCompanyId();
+        if (!companyId) {
+          throw new Error('Non autorisé');
+        }
+
         // Vérifier d'abord si un brouillon existe
         const { data: existingDraft, error: checkError } = await supabase
           .from('draft_stock_updates')
           .select('id')
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .maybeSingle();
         
         if (checkError) {
@@ -1566,6 +1612,7 @@ export default function ClientDetailPage() {
           .from('draft_stock_updates')
           .select('id')
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .maybeSingle();
         
         if (verifyError) {
@@ -1576,7 +1623,8 @@ export default function ClientDetailPage() {
           const { error: directDeleteError } = await supabase
             .from('draft_stock_updates')
             .update({ deleted_at: new Date().toISOString() })
-            .eq('id', verifyDraft.id);
+            .eq('id', verifyDraft.id)
+            .eq('company_id', companyId);
           
           if (directDeleteError) {
             console.error('[Draft] Direct deletion also failed:', directDeleteError);
@@ -1674,11 +1722,18 @@ export default function ClientDetailPage() {
     
     setDeletingCollection(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Récupérer les IDs des sous-produits de la collection
       const { data: collectionSubProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('id')
-        .eq('collection_id', collectionToDelete.collection_id);
+        .eq('collection_id', collectionToDelete.collection_id)
+        .eq('company_id', companyId)
+        .is('deleted_at', null);
 
       if (subProductsError) throw subProductsError;
 
@@ -1689,6 +1744,7 @@ export default function ClientDetailPage() {
           .from('client_sub_products')
           .update({ deleted_at: new Date().toISOString() })
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .in('sub_product_id', subProductIds);
 
         if (deleteSubProductsError) throw deleteSubProductsError;
@@ -1698,7 +1754,8 @@ export default function ClientDetailPage() {
       const { error } = await supabase
         .from('client_collections')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', collectionToDelete.id);
+        .eq('id', collectionToDelete.id)
+        .eq('company_id', companyId);
       
       if (error) throw error;
 
@@ -1777,6 +1834,11 @@ export default function ClientDetailPage() {
         customRecommendedSalePrice = null;
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('client_collections')
         .update({
@@ -1784,7 +1846,8 @@ export default function ClientDetailPage() {
           custom_recommended_sale_price: customRecommendedSalePrice,
           updated_at: new Date().toISOString()
         })
-        .eq('id', collectionToEdit.id);
+        .eq('id', collectionToEdit.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -1880,13 +1943,19 @@ export default function ClientDetailPage() {
     setConfirmAdjustDialogOpen(false);
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       if (itemToAdjust.type === 'collection') {
         // Update client collection stock
         const { error: updateError } = await supabase
           .from('client_collections')
           .update({ current_stock: newStockValue })
           .eq('id', itemToAdjust.id)
-          .eq('client_id', clientId);
+          .eq('client_id', clientId)
+          .eq('company_id', companyId);
 
         if (updateError) throw updateError;
 
@@ -1895,6 +1964,7 @@ export default function ClientDetailPage() {
           .from('stock_updates')
           .insert({
             client_id: clientId,
+            company_id: companyId,
             collection_id: itemToAdjust.collectionId,
             sub_product_id: null,
             invoice_id: null,
@@ -1913,6 +1983,7 @@ export default function ClientDetailPage() {
           .select('*')
           .eq('sub_product_id', itemToAdjust.id)
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .maybeSingle();
 
         if (checkError) throw checkError;
@@ -1921,7 +1992,8 @@ export default function ClientDetailPage() {
           const { error: updateError } = await supabase
             .from('client_sub_products')
             .update({ current_stock: newStockValue })
-            .eq('id', existingCSP.id);
+            .eq('id', existingCSP.id)
+            .eq('company_id', companyId);
 
           if (updateError) throw updateError;
         } else {
@@ -1930,6 +2002,7 @@ export default function ClientDetailPage() {
             .from('client_sub_products')
             .insert({
               client_id: clientId,
+              company_id: companyId,
               sub_product_id: itemToAdjust.id,
               initial_stock: newStockValue,
               current_stock: newStockValue
@@ -1943,6 +2016,7 @@ export default function ClientDetailPage() {
           .from('stock_updates')
           .insert({
             client_id: clientId,
+            company_id: companyId,
             collection_id: null,
             sub_product_id: itemToAdjust.id,
             invoice_id: null,
@@ -1961,7 +2035,9 @@ export default function ClientDetailPage() {
           const { data: allSubProducts, error: spError } = await supabase
             .from('sub_products')
             .select('id')
-            .eq('collection_id', itemToAdjust.collectionId);
+            .eq('collection_id', itemToAdjust.collectionId)
+            .eq('company_id', companyId)
+            .is('deleted_at', null);
 
           if (spError) throw spError;
 
@@ -1973,7 +2049,9 @@ export default function ClientDetailPage() {
               .from('client_sub_products')
               .select('sub_product_id, current_stock')
               .eq('client_id', clientId)
-              .in('sub_product_id', subProductIds);
+              .eq('company_id', companyId)
+              .in('sub_product_id', subProductIds)
+              .is('deleted_at', null);
 
             if (cspError) throw cspError;
 
@@ -1992,6 +2070,7 @@ export default function ClientDetailPage() {
               .from('client_collections')
               .select('*')
               .eq('client_id', clientId)
+              .eq('company_id', companyId)
               .eq('collection_id', itemToAdjust.collectionId)
               .is('deleted_at', null)
               .maybeSingle();
@@ -2005,7 +2084,8 @@ export default function ClientDetailPage() {
               const { error: updateParentError } = await supabase
                 .from('client_collections')
                 .update({ current_stock: parentStock })
-                .eq('id', clientCollection.id);
+                .eq('id', clientCollection.id)
+                .eq('company_id', companyId);
 
               if (updateParentError) throw updateParentError;
 
@@ -2014,6 +2094,7 @@ export default function ClientDetailPage() {
                 .from('stock_updates')
                 .insert({
                   client_id: clientId,
+                  company_id: companyId,
                   collection_id: itemToAdjust.collectionId,
                   sub_product_id: null,
                   invoice_id: null,
@@ -2110,9 +2191,15 @@ export default function ClientDetailPage() {
       }
 
       // Load user profile
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: userProfileData } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -2313,13 +2400,19 @@ export default function ClientDetailPage() {
         ? vacationPeriods.map(p => p.id === editingVacationPeriod.id ? newPeriod : p)
         : [...vacationPeriods, newPeriod];
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Sauvegarder dans la base de données
       const { error } = await supabase
         .from('clients')
         .update({
           vacation_periods: updatedPeriods.length > 0 ? updatedPeriods : null
         })
-        .eq('id', clientId);
+        .eq('id', clientId)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -2512,6 +2605,11 @@ export default function ClientDetailPage() {
         return;
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       console.log('performAssociation called with:', {
         initialStock,
         customPrice,
@@ -2529,6 +2627,7 @@ export default function ClientDetailPage() {
 
       const insertData: any = {
         client_id: clientId,
+        company_id: companyId,
         collection_id: associateForm.collection_id,
         initial_stock: subProductsStocks ? 0 : initialStock,
         current_stock: subProductsStocks ? 0 : initialStock,
@@ -2572,6 +2671,7 @@ export default function ClientDetailPage() {
           .from('collections')
           .select('*')
           .eq('id', associateForm.collection_id)
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .single();
         
@@ -2585,6 +2685,7 @@ export default function ClientDetailPage() {
       // Créer un stock_update pour la collection lors de l'association
       const stockUpdateForCollection = {
         client_id: clientId,
+        company_id: companyId,
         collection_id: associateForm.collection_id!,
         previous_stock: 0,
         counted_stock: 0,
@@ -2610,6 +2711,7 @@ export default function ClientDetailPage() {
           .from('sub_products')
           .select('*')
           .eq('collection_id', associateForm.collection_id!)
+          .eq('company_id', companyId)
           .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
         if (fetchSubProductsError) throw fetchSubProductsError;
@@ -2617,6 +2719,7 @@ export default function ClientDetailPage() {
         // Créer les client_sub_products pour TOUS les sous-produits
         const clientSubProductsToInsert = (allSubProducts || []).map(sp => ({
           client_id: clientId,
+          company_id: companyId,
           sub_product_id: sp.id,
           initial_stock: subProductsStocks[sp.id] || 0, // Utiliser le stock saisi ou 0 par défaut
           current_stock: subProductsStocks[sp.id] || 0
@@ -2631,6 +2734,7 @@ export default function ClientDetailPage() {
         // Créer un stock_update pour chaque sous-produit lors de l'association
         const stockUpdatesForSubProducts = (allSubProducts || []).map(sp => ({
           client_id: clientId,
+          company_id: companyId,
           sub_product_id: sp.id,
           previous_stock: 0,
           counted_stock: 0,
@@ -2653,7 +2757,8 @@ export default function ClientDetailPage() {
         const { error: updateCollectionError } = await supabase
           .from('client_collections')
           .update({ initial_stock: totalStock, current_stock: totalStock })
-          .eq('id', data.id);
+          .eq('id', data.id)
+          .eq('company_id', companyId);
 
         if (updateCollectionError) throw updateCollectionError;
 
@@ -2663,6 +2768,7 @@ export default function ClientDetailPage() {
           .from('stock_updates')
           .select('id')
           .eq('client_id', clientId)
+          .eq('company_id', companyId)
           .eq('collection_id', associateForm.collection_id!)
           .is('sub_product_id', null)
           .order('created_at', { ascending: false })
@@ -2676,7 +2782,8 @@ export default function ClientDetailPage() {
               cards_added: totalStock,
               new_stock: totalStock
             })
-            .eq('id', lastCollectionStockUpdate.id);
+            .eq('id', lastCollectionStockUpdate.id)
+            .eq('company_id', companyId);
 
           if (updateCollectionStockUpdateError) {
             console.error('Error updating stock_update for collection:', updateCollectionStockUpdateError);

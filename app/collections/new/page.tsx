@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -56,9 +57,15 @@ export default function NewCollectionPage() {
 
   const loadCategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('collection_categories')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -71,9 +78,15 @@ export default function NewCollectionPage() {
 
   const loadSubcategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('collection_subcategories')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -96,11 +109,17 @@ export default function NewCollectionPage() {
 
     setAddingNewCategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
       const { data: existing } = await supabase
         .from('collection_categories')
         .select('id')
         .eq('name', newCategoryName.trim())
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -112,7 +131,7 @@ export default function NewCollectionPage() {
 
       const { data, error } = await supabase
         .from('collection_categories')
-        .insert([{ name: newCategoryName.trim() }])
+        .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
 
@@ -141,12 +160,18 @@ export default function NewCollectionPage() {
 
     setAddingNewSubcategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       const { data: existing } = await supabase
         .from('collection_subcategories')
         .select('id')
         .eq('category_id', formData.category_id)
         .eq('name', newSubcategoryName.trim())
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -160,6 +185,7 @@ export default function NewCollectionPage() {
         .from('collection_subcategories')
         .insert([{ 
           category_id: formData.category_id,
+          company_id: companyId,
           name: newSubcategoryName.trim() 
         }])
         .select()
@@ -189,12 +215,18 @@ export default function NewCollectionPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
           .from('collection_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingCategory.id)
           .maybeSingle();
@@ -208,7 +240,8 @@ export default function NewCollectionPage() {
       const { error } = await supabase
         .from('collection_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -228,10 +261,16 @@ export default function NewCollectionPage() {
     if (!deletingCategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_categories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingCategory.id);
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -255,6 +294,11 @@ export default function NewCollectionPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
@@ -262,6 +306,7 @@ export default function NewCollectionPage() {
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
           .is('deleted_at', null)
           .neq('id', editingSubcategory.id)
           .maybeSingle();
@@ -275,7 +320,8 @@ export default function NewCollectionPage() {
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
         throw error;
@@ -295,10 +341,16 @@ export default function NewCollectionPage() {
     if (!deletingSubcategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('collection_subcategories')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', deletingSubcategory.id);
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -342,11 +394,17 @@ export default function NewCollectionPage() {
         return;
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Vérifier si une collection avec le même nom existe déjà
       const { data: existingCollection, error: checkError } = await supabase
         .from('collections')
         .select('id, name')
         .eq('name', formData.name.trim())
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
@@ -358,11 +416,58 @@ export default function NewCollectionPage() {
         return;
       }
 
+      // Vérifier que category_id et subcategory_id appartiennent à la même entreprise
+      if (formData.category_id) {
+        const { data: categoryCheck, error: categoryCheckError } = await supabase
+          .from('collection_categories')
+          .select('id, company_id')
+          .eq('id', formData.category_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (categoryCheckError || !categoryCheck) {
+          toast.error('La catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      if (formData.subcategory_id) {
+        const { data: subcategoryCheck, error: subcategoryCheckError } = await supabase
+          .from('collection_subcategories')
+          .select('id, company_id')
+          .eq('id', formData.subcategory_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (subcategoryCheckError || !subcategoryCheck) {
+          toast.error('La sous-catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+
+        // Vérifier que la sous-catégorie appartient bien à la catégorie sélectionnée
+        if (formData.category_id) {
+          const { data: subcategoryRelationCheck, error: relationError } = await supabase
+            .from('collection_subcategories')
+            .select('category_id')
+            .eq('id', formData.subcategory_id)
+            .single();
+
+          if (relationError || !subcategoryRelationCheck || subcategoryRelationCheck.category_id !== formData.category_id) {
+            toast.error('La sous-catégorie sélectionnée n\'appartient pas à la catégorie sélectionnée');
+            setSubmitting(false);
+            return;
+          }
+        }
+      }
+
       // Create collection
       const { data: newCollection, error: collectionError } = await supabase
         .from('collections')
         .insert({
           name: formData.name.trim(),
+          company_id: companyId,
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
@@ -373,11 +478,21 @@ export default function NewCollectionPage() {
         .single();
 
       if (collectionError) {
-        // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
+        // Gérer les erreurs spécifiques
         if (collectionError.code === '23505') {
+          // Violation de contrainte unique
           toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+        } else if (collectionError.code === '23503') {
+          // Violation de clé étrangère
+          toast.error('Erreur : la catégorie ou la sous-catégorie sélectionnée n\'est pas valide');
+        } else if (collectionError.message?.includes('row-level security policy')) {
+          // Erreur RLS
+          toast.error('Erreur de sécurité. Veuillez contacter le support.');
+          console.error('RLS Error:', collectionError);
         } else {
-          throw collectionError;
+          // Autre erreur
+          toast.error(collectionError.message || 'Erreur lors de la création de la collection');
+          console.error('Collection creation error:', collectionError);
         }
         setSubmitting(false);
         return;
@@ -390,6 +505,7 @@ export default function NewCollectionPage() {
         if (validSubProducts.length > 0) {
           const subProductsToInsert = validSubProducts.map(sp => ({
             collection_id: newCollection.id,
+            company_id: companyId,
             name: sp.name.trim()
           }));
 
@@ -403,9 +519,21 @@ export default function NewCollectionPage() {
 
       toast.success('Collection créée avec succès');
       router.push(`/collections/${newCollection.id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating collection:', error);
-      toast.error('Erreur lors de la création de la collection');
+      
+      // Gestion d'erreur améliorée
+      if (error.message === 'Non autorisé' || error.message?.includes('company_id')) {
+        toast.error('Erreur d\'authentification. Veuillez vous reconnecter.');
+        // Rediriger vers la page d'authentification après un délai
+        setTimeout(() => {
+          router.push('/auth');
+        }, 2000);
+      } else if (error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Erreur lors de la création de la collection');
+      }
     } finally {
       setSubmitting(false);
     }

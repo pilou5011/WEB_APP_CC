@@ -5,6 +5,7 @@
 
 import { supabase } from './supabase';
 import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment } from './supabase';
+import { getCurrentUserCompanyId } from './auth-helpers';
 
 const STORAGE_BUCKET = 'documents'; // Bucket name in Supabase Storage
 
@@ -131,10 +132,20 @@ export async function generateAndSaveInvoicePDF(
     
     if (url) {
       // Update invoice record with PDF path
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ invoice_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;
@@ -168,10 +179,20 @@ export async function generateAndSaveStockReportPDF(
     const url = await uploadPDF(pdfBlob, filePath);
     
     if (url) {
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ stock_report_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;
@@ -205,10 +226,20 @@ export async function generateAndSaveDepositSlipPDF(
     const url = await uploadPDF(pdfBlob, filePath);
     
     if (url) {
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ deposit_slip_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;

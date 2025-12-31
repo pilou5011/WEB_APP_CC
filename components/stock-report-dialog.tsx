@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Client, Collection, ClientCollection, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2 } from 'lucide-react';
@@ -120,9 +121,15 @@ export function StockReportDialog({
 
   const loadUserProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -141,10 +148,16 @@ export function StockReportDialog({
 
   const loadSubProducts = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Load all sub-products
       const { data: subProductsData, error: subProductsError } = await supabase
         .from('sub_products')
-        .select('*');
+        .select('*')
+        .eq('company_id', companyId);
 
       if (subProductsError) throw subProductsError;
 
@@ -152,7 +165,8 @@ export function StockReportDialog({
       const { data: clientSubProductsData, error: clientSubProductsError } = await supabase
         .from('client_sub_products')
         .select('*')
-        .eq('client_id', client.id);
+        .eq('client_id', client.id)
+        .eq('company_id', companyId);
 
       if (clientSubProductsError) throw clientSubProductsError;
 
@@ -177,11 +191,17 @@ export function StockReportDialog({
             return updateDate > latest ? updateDate : latest;
           }, new Date(0));
           
+          const companyId = await getCurrentUserCompanyId();
+          if (!companyId) {
+            throw new Error('Non autorisé');
+          }
+
           // Find the previous invoice or stock update before this date
           const { data: previousInvoice, error } = await supabase
             .from('invoices')
             .select('created_at')
             .eq('client_id', client.id)
+            .eq('company_id', companyId)
             .lt('created_at', mostRecentDate.toISOString())
             .order('created_at', { ascending: false })
             .limit(1)
@@ -199,11 +219,17 @@ export function StockReportDialog({
         return;
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Récupérer la date de la facture précédente la plus récente avant celle-ci
       const { data: previousInvoice, error } = await supabase
         .from('invoices')
         .select('created_at')
         .eq('client_id', client.id)
+        .eq('company_id', companyId)
         .lt('created_at', invoice.created_at)
         .order('created_at', { ascending: false })
         .limit(1)
