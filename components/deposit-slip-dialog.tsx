@@ -154,6 +154,11 @@ export function DepositSlipDialog({
 
   const loadLastStockUpdateInfos = async (): Promise<void> => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Charger toutes les mises à jour de stock pour ce client
       const { data: allStockUpdates, error: stockUpdatesError } = await supabase
         .from('stock_updates')
