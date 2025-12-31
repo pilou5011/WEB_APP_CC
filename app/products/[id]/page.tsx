@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Collection, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { supabase, Product, ProductCategory, ProductSubcategory } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,12 +18,12 @@ import { SubProduct } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
-export default function CollectionDetailPage() {
+export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const collectionId = params.id as string;
+  const productId = params.id as string;
 
-  const [collection, setCollection] = useState<Collection | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
   const [existingSubProducts, setExistingSubProducts] = useState<SubProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -49,28 +49,28 @@ export default function CollectionDetailPage() {
   const [hasSubProducts, setHasSubProducts] = useState(false);
   const [subProducts, setSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
-  const [categories, setCategories] = useState<CollectionCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newSubcategoryName, setNewSubcategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [showNewSubcategoryInput, setShowNewSubcategoryInput] = useState(false);
   const [addingNewCategory, setAddingNewCategory] = useState(false);
   const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
   useEffect(() => {
-    loadCollectionData();
+    loadProductData();
     loadCategories();
     loadSubcategories();
-  }, [collectionId]);
+  }, [productId]);
 
   const loadCategories = async () => {
     try {
@@ -80,7 +80,7 @@ export default function CollectionDetailPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
@@ -101,7 +101,7 @@ export default function CollectionDetailPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
@@ -133,7 +133,7 @@ export default function CollectionDetailPage() {
 
       // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
       const { data: existing } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('id')
         .eq('name', newCategoryName.trim())
         .eq('company_id', companyId)
@@ -147,7 +147,7 @@ export default function CollectionDetailPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
@@ -184,7 +184,7 @@ export default function CollectionDetailPage() {
 
       // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       const { data: existing } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('id')
         .eq('category_id', formData.category_id)
         .eq('name', newSubcategoryName.trim())
@@ -199,7 +199,7 @@ export default function CollectionDetailPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .insert([{ 
           category_id: formData.category_id,
           company_id: companyId,
@@ -240,7 +240,7 @@ export default function CollectionDetailPage() {
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
-          .from('collection_categories')
+          .from('product_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
           .eq('company_id', companyId)
@@ -255,7 +255,7 @@ export default function CollectionDetailPage() {
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
         .eq('id', editingCategory.id)
         .eq('company_id', companyId);
@@ -284,7 +284,7 @@ export default function CollectionDetailPage() {
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingCategory.id)
         .eq('company_id', companyId);
@@ -319,7 +319,7 @@ export default function CollectionDetailPage() {
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
-          .from('collection_subcategories')
+          .from('product_subcategories')
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
@@ -335,7 +335,7 @@ export default function CollectionDetailPage() {
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
         .eq('id', editingSubcategory.id)
         .eq('company_id', companyId);
@@ -364,7 +364,7 @@ export default function CollectionDetailPage() {
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingSubcategory.id)
         .eq('company_id', companyId);
@@ -384,37 +384,37 @@ export default function CollectionDetailPage() {
     }
   };
 
-  const loadCollectionData = async () => {
+  const loadProductData = async () => {
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
         throw new Error('Non autorisé');
       }
 
-      const { data: collectionData, error: collectionError } = await supabase
-        .from('collections')
+      const { data: productData, error: productError } = await supabase
+        .from('products')
         .select('*')
-        .eq('id', collectionId)
+        .eq('id', productId)
         .eq('company_id', companyId)
         .is('deleted_at', null)
         .maybeSingle();
 
-      if (collectionError) throw collectionError;
+      if (productError) throw productError;
 
-      if (!collectionData) {
-        toast.error('Collection non trouvée');
-        router.push('/collections');
+      if (!productData) {
+        toast.error('Product non trouvée');
+        router.push('/products');
         return;
       }
 
-      setCollection(collectionData);
+      setProduct(productData);
       const initialFormData = {
-        name: collectionData.name,
-        price: collectionData.price.toString(),
-        recommended_sale_price: collectionData.recommended_sale_price?.toString() || '',
-        barcode: collectionData.barcode || '',
-        category_id: collectionData.category_id || '',
-        subcategory_id: collectionData.subcategory_id || ''
+        name: productData.name,
+        price: productData.price.toString(),
+        recommended_sale_price: productData.recommended_sale_price?.toString() || '',
+        barcode: productData.barcode || '',
+        category_id: productData.category_id || '',
+        subcategory_id: productData.subcategory_id || ''
       };
       setFormData(initialFormData);
       setOriginalFormData(initialFormData);
@@ -423,7 +423,7 @@ export default function CollectionDetailPage() {
       const { data: subProductsData, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
-        .eq('collection_id', collectionId)
+        .eq('product_id', productId)
         .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('created_at', { ascending: true });
@@ -444,7 +444,7 @@ export default function CollectionDetailPage() {
         setOriginalSubProducts([{ id: null, name: '' }]);
       }
     } catch (error) {
-      console.error('Error loading collection data:', error);
+      console.error('Error loading product data:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -453,7 +453,7 @@ export default function CollectionDetailPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!collection) return;
+    if (!product) return;
     
     setSubmitting(true);
 
@@ -485,26 +485,26 @@ export default function CollectionDetailPage() {
         return;
       }
 
-      // Vérifier si une autre collection avec le même nom existe déjà (sauf celle en cours de modification)
-      const { data: existingCollection, error: checkError } = await supabase
-        .from('collections')
+      // Vérifier si une autre product avec le même nom existe déjà (sauf celle en cours de modification)
+      const { data: existingProduct, error: checkError } = await supabase
+        .from('products')
         .select('id, name')
         .eq('name', formData.name.trim())
         .eq('company_id', companyId)
-        .neq('id', collectionId)
+        .neq('id', productId)
         .is('deleted_at', null)
         .maybeSingle();
 
       if (checkError) throw checkError;
 
-      if (existingCollection) {
-        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+      if (existingProduct) {
+        toast.error(`Une product avec le nom "${formData.name.trim()}" existe déjà. Les noms de products doivent être uniques.`);
         setSubmitting(false);
         return;
       }
 
       const { error } = await supabase
-        .from('collections')
+        .from('products')
         .update({
           name: formData.name.trim(),
           price: price,
@@ -514,13 +514,13 @@ export default function CollectionDetailPage() {
           subcategory_id: formData.subcategory_id || null,
           updated_at: new Date().toISOString()
         })
-        .eq('id', collectionId)
+        .eq('id', productId)
         .eq('company_id', companyId);
 
       if (error) {
         // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
         if (error.code === '23505') {
-          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+          toast.error(`Une product avec le nom "${formData.name.trim()}" existe déjà. Les noms de products doivent être uniques.`);
         } else {
           throw error;
         }
@@ -566,7 +566,7 @@ export default function CollectionDetailPage() {
             const { data: newSubProduct, error: insertError } = await supabase
               .from('sub_products')
               .insert({
-                collection_id: collectionId,
+                product_id: productId,
                 company_id: companyId,
                 name: sp.name.trim()
               })
@@ -579,22 +579,22 @@ export default function CollectionDetailPage() {
           }
         }
 
-        // Ajouter les nouveaux sous-produits à tous les clients ayant cette collection
+        // Ajouter les nouveaux sous-produits à tous les clients ayant cette product
         if (newlyCreatedSubProductIds.length > 0) {
-          // Récupérer tous les clients ayant cette collection
-          const { data: clientCollections, error: clientCollectionsError } = await supabase
-            .from('client_collections')
+          // Récupérer tous les clients ayant cette product
+          const { data: clientProducts, error: clientProductsError } = await supabase
+            .from('client_products')
             .select('client_id')
-            .eq('collection_id', collectionId)
+            .eq('product_id', productId)
             .eq('company_id', companyId)
             .is('deleted_at', null);
 
-          if (clientCollectionsError) throw clientCollectionsError;
+          if (clientProductsError) throw clientProductsError;
 
           // Pour chaque client, ajouter les nouveaux sous-produits avec stock 0
-          if (clientCollections && clientCollections.length > 0) {
+          if (clientProducts && clientProducts.length > 0) {
             const clientSubProductsToInsert: any[] = [];
-            for (const cc of clientCollections) {
+            for (const cc of clientProducts) {
               for (const subProductId of newlyCreatedSubProductIds) {
                 clientSubProductsToInsert.push({
                   client_id: cc.client_id,
@@ -624,18 +624,18 @@ export default function CollectionDetailPage() {
           const { error: deleteError } = await supabase
             .from('sub_products')
             .update({ deleted_at: new Date().toISOString() })
-            .eq('collection_id', collectionId)
+            .eq('product_id', productId)
             .eq('company_id', companyId);
           if (deleteError) throw deleteError;
         }
       }
 
-      toast.success('Collection modifiée avec succès');
-      await loadCollectionData();
+      toast.success('Product modifiée avec succès');
+      await loadProductData();
       setIsEditing(false);
     } catch (error) {
-      console.error('Error updating collection:', error);
-      toast.error('Erreur lors de la modification de la collection');
+      console.error('Error updating product:', error);
+      toast.error('Erreur lors de la modification de la product');
     } finally {
       setSubmitting(false);
     }
@@ -661,27 +661,27 @@ export default function CollectionDetailPage() {
 
       const deletedAt = new Date().toISOString();
 
-      // 1. Supprimer (soft delete) toutes les lignes dans client_collections qui référencent cette collection
-      const { error: clientCollectionsError } = await supabase
-        .from('client_collections')
+      // 1. Supprimer (soft delete) toutes les lignes dans client_products qui référencent cette product
+      const { error: clientProductsError } = await supabase
+        .from('client_products')
         .update({ deleted_at: deletedAt })
-        .eq('collection_id', collectionId)
+        .eq('product_id', productId)
         .eq('company_id', companyId)
         .is('deleted_at', null); // Seulement les lignes non supprimées
 
-      if (clientCollectionsError) throw clientCollectionsError;
+      if (clientProductsError) throw clientProductsError;
 
-      // 2. Récupérer tous les sous-produits de cette collection (non supprimés)
+      // 2. Récupérer tous les sous-produits de cette product (non supprimés)
       const { data: subProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('id')
-        .eq('collection_id', collectionId)
+        .eq('product_id', productId)
         .eq('company_id', companyId)
         .is('deleted_at', null);
 
       if (subProductsError) throw subProductsError;
 
-      // 3. Si la collection a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
+      // 3. Si la product a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
       if (subProducts && subProducts.length > 0) {
         const subProductIds = subProducts.map(sp => sp.id);
         const { error: clientSubProductsError } = await supabase
@@ -694,20 +694,20 @@ export default function CollectionDetailPage() {
         if (clientSubProductsError) throw clientSubProductsError;
       }
 
-      // 4. Supprimer (soft delete) la collection elle-même
+      // 4. Supprimer (soft delete) la product elle-même
       const { error } = await supabase
-        .from('collections')
+        .from('products')
         .update({ deleted_at: deletedAt })
-        .eq('id', collectionId)
+        .eq('id', productId)
         .eq('company_id', companyId);
 
       if (error) throw error;
 
-      toast.success('Collection supprimée avec succès');
-      router.push('/collections');
+      toast.success('Product supprimée avec succès');
+      router.push('/products');
     } catch (error) {
-      console.error('Error deleting collection:', error);
-      toast.error('Erreur lors de la suppression de la collection');
+      console.error('Error deleting product:', error);
+      toast.error('Erreur lors de la suppression de la product');
     }
   };
 
@@ -725,7 +725,7 @@ export default function CollectionDetailPage() {
     );
   }
 
-  if (!collection) {
+  if (!product) {
     return null;
   }
 
@@ -735,10 +735,10 @@ export default function CollectionDetailPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => router.push('/collections')}
+            onClick={() => router.push('/products')}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux collections
+            Retour aux products
           </Button>
           <Button
             variant="outline"
@@ -753,10 +753,10 @@ export default function CollectionDetailPage() {
             <CardHeader>
               <div className="flex justify-between items-start">
                 <div>
-                  <CardTitle className="text-3xl">{collection.name}</CardTitle>
+                  <CardTitle className="text-3xl">{product.name}</CardTitle>
                   <CardDescription className="flex items-center gap-1.5 mt-2 text-base">
                     <Euro className="h-5 w-5" />
-                    <span>{collection.price.toFixed(2)} €</span>
+                    <span>{product.price.toFixed(2)} €</span>
                   </CardDescription>
                 </div>
                 {!isEditing && (
@@ -764,7 +764,7 @@ export default function CollectionDetailPage() {
                     onClick={handleEdit}
                   >
                     <Edit className="mr-2 h-4 w-4" />
-                    Modifier la collection
+                    Modifier la product
                   </Button>
                 )}
               </div>
@@ -776,7 +776,7 @@ export default function CollectionDetailPage() {
                     <Euro className="h-5 w-5" />
                     <span className="text-sm font-medium">Prix de cession (HT)</span>
                   </div>
-                  <p className="text-3xl font-bold text-green-900">{collection.price.toFixed(2)} €</p>
+                  <p className="text-3xl font-bold text-green-900">{product.price.toFixed(2)} €</p>
                 </div>
 
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
@@ -785,7 +785,7 @@ export default function CollectionDetailPage() {
                     <span className="text-sm font-medium">Date de création</span>
                   </div>
                   <p className="text-lg font-bold text-blue-900">
-                    {new Date(collection.created_at).toLocaleDateString('fr-FR', {
+                    {new Date(product.created_at).toLocaleDateString('fr-FR', {
                       day: 'numeric',
                       month: 'long',
                       year: 'numeric'
@@ -798,23 +798,23 @@ export default function CollectionDetailPage() {
 
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle>Informations de la collection</CardTitle>
+              <CardTitle>Informations de la product</CardTitle>
               <CardDescription>
-                {isEditing ? 'Modifiez les informations de la collection' : 'Détails de la collection'}
+                {isEditing ? 'Modifiez les informations de la product' : 'Détails de la product'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="name">Nom de la collection</Label>
+                    <Label htmlFor="name">Nom de la product</Label>
                     {isEditing ? (
                       <Input
                         id="name"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         required
-                        placeholder="Ex: Collection Hiver 2024"
+                        placeholder="Ex: Product Hiver 2024"
                         className="mt-1.5"
                       />
                     ) : (
@@ -1250,12 +1250,12 @@ export default function CollectionDetailPage() {
                           }}
                         />
                         <Label htmlFor="has-sub-products-edit" className="font-normal cursor-pointer">
-                          Cette collection contient des sous-produits
+                          Cette product contient des sous-produits
                         </Label>
                       </>
                     ) : (
                       <Label className="font-normal">
-                        Cette collection {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
+                        Cette product {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
                       </Label>
                     )}
                   </div>
@@ -1322,14 +1322,14 @@ export default function CollectionDetailPage() {
                           variant="destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Supprimer collection
+                          Supprimer product
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Cette action ne peut pas être annulée. Cela supprimera définitivement la collection "{collection.name}".
+                            Cette action ne peut pas être annulée. Cela supprimera définitivement la product "{product.name}".
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -1371,7 +1371,7 @@ export default function CollectionDetailPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
                 Toutes les sous-catégories associées seront également supprimées.
-                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les products utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1393,7 +1393,7 @@ export default function CollectionDetailPage() {
               <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les products utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

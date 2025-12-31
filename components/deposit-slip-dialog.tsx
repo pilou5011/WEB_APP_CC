@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ interface DepositSlipDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { product?: Product })[];
   stockUpdates?: StockUpdate[];
   invoice?: Invoice | null;
   generateMode?: boolean; // Si true, génère un nouveau PDF à chaque fois sans le sauvegarder
@@ -24,7 +24,7 @@ export function DepositSlipDialog({
   open,
   onOpenChange,
   client,
-  clientCollections,
+  clientProducts,
   stockUpdates = [],
   invoice = null,
   generateMode = false
@@ -33,7 +33,7 @@ export function DepositSlipDialog({
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingInfos, setLoadingInfos] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [collectionInfos, setCollectionInfos] = useState<Record<string, string>>({});
+  const [productInfos, setProductInfos] = useState<Record<string, string>>({});
   const [needsInfoInput, setNeedsInfoInput] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
@@ -53,7 +53,7 @@ export function DepositSlipDialog({
       if (!generateMode) {
         loadLastInvoiceInfos();
       } else {
-        // En mode génération, charger les collection_info depuis la dernière mise à jour de stock
+        // En mode génération, charger les product_info depuis la dernière mise à jour de stock
         setLoadingInfos(true);
         loadLastStockUpdateInfos().finally(() => {
           setLoadingInfos(false);
@@ -61,7 +61,7 @@ export function DepositSlipDialog({
         setNeedsInfoInput(false); // Ne pas demander les infos en mode génération
       }
     }
-  }, [open, stockUpdates, clientCollections, generateMode]);
+  }, [open, stockUpdates, clientProducts, generateMode]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -169,38 +169,38 @@ export function DepositSlipDialog({
 
       if (stockUpdatesError) throw stockUpdatesError;
 
-      // Créer un map pour stocker la dernière collection_info de chaque collection
+      // Créer un map pour stocker la dernière product_info de chaque produit
       const infos: Record<string, string> = {};
-      const processedCollections = new Set<string>();
+      const processedProducts = new Set<string>();
 
       // Parcourir les stock_updates triés par date décroissante
-      // Pour chaque collection, prendre la première occurrence (la plus récente)
-      // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+      // Pour chaque produit, prendre la première occurrence (la plus récente)
+      // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
       (allStockUpdates || []).forEach((update: StockUpdate) => {
-        if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
-          infos[update.collection_id] = update.collection_info || '';
-          processedCollections.add(update.collection_id);
+        if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+          infos[update.product_id] = update.product_info || '';
+          processedProducts.add(update.product_id);
         }
       });
 
-      // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
-      clientCollections.forEach(cc => {
-        if (cc.collection_id && !infos[cc.collection_id]) {
-          infos[cc.collection_id] = '';
+      // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
+      clientProducts.forEach(cp => {
+        if (cp.product_id && !infos[cp.product_id]) {
+          infos[cp.product_id] = '';
         }
       });
 
-      setCollectionInfos(infos);
+      setProductInfos(infos);
     } catch (error) {
       console.error('Error loading last stock update infos:', error);
       // En cas d'erreur, initialiser avec des infos vides
       const infos: Record<string, string> = {};
-      clientCollections.forEach(cc => {
-        if (cc.collection_id) {
-          infos[cc.collection_id] = '';
+      clientProducts.forEach(cp => {
+        if (cp.product_id) {
+          infos[cp.product_id] = '';
         }
       });
-      setCollectionInfos(infos);
+      setProductInfos(infos);
     }
   };
 
@@ -224,32 +224,32 @@ export function DepositSlipDialog({
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
       if (lastInvoice && stockUpdates.length > 0) {
-        // If invoice exists, get collection_info from last stock update for each collection
+        // If invoice exists, get product_info from last stock update for each product
         // (same logic as in the client page)
         const infos: Record<string, string> = {};
-        clientCollections.forEach((cc) => {
-          // Find the last stock update for this collection (most recent, regardless of collection_info)
+        clientProducts.forEach((cp) => {
+          // Find the last stock update for this product (most recent, regardless of product_info)
           const lastUpdate = stockUpdates.find(
             (update: StockUpdate) => 
-              update.collection_id === cc.collection_id
+              update.product_id === cp.product_id
           );
           
-          if (cc.collection_id) {
-            infos[cc.collection_id] = lastUpdate?.collection_info || '';
+          if (cp.product_id) {
+            infos[cp.product_id] = lastUpdate?.product_info || '';
           }
         });
-        setCollectionInfos(infos);
+        setProductInfos(infos);
         setNeedsInfoInput(false);
       } else {
         // No invoice yet or no stock updates, user needs to input infos
         setNeedsInfoInput(true);
         const infos: Record<string, string> = {};
-        clientCollections.forEach(cc => {
-          if (cc.collection_id) {
-            infos[cc.collection_id] = '';
+        clientProducts.forEach(cp => {
+          if (cp.product_id) {
+            infos[cp.product_id] = '';
           }
         });
-        setCollectionInfos(infos);
+        setProductInfos(infos);
       }
     } catch (error) {
       console.error('Error loading last invoice infos:', error);
@@ -427,28 +427,28 @@ export function DepositSlipDialog({
       doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
-      // Tableau des collections
-      const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      // Tableau des produits
+      const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
       const stockUpdatesMap = new Map<string, StockUpdate>();
       stockUpdates.forEach((update) => {
-        if (update.collection_id) {
-          stockUpdatesMap.set(update.collection_id, update);
+        if (update.product_id) {
+          stockUpdatesMap.set(update.product_id, update);
         }
       });
-      
-      const tableData = sortedCollections.map((cc) => {
-        const collectionName = cc.collection?.name || 'Collection';
-        const info = collectionInfos[cc.collection_id || ''] || '';
-        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-        const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+
+      const tableData = sortedProducts.map((cp) => {
+        const productName = cp.product?.name || 'Produit';
+        const info = productInfos[cp.product_id || ''] || '';
+        const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
+        const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.product?.recommended_sale_price ?? null;
         
         // Use new_stock from stock update if available, otherwise use current_stock
-        const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
-        const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
+        const stockUpdate = stockUpdatesMap.get(cp.product_id || '');
+        const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
         
         return [
-          collectionName,
+          productName,
           info,
           `${effectivePrice.toFixed(2)} €`,
           effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
@@ -471,7 +471,7 @@ export function DepositSlipDialog({
       autoTable(doc, {
         startY: yPosition,
         head: [[
-          'Collection', 
+          'Produit', 
           'Infos', 
           { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
           { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
@@ -565,20 +565,20 @@ export function DepositSlipDialog({
           <div className="flex-1 overflow-y-auto p-6">
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque collection :
+                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque produit :
               </p>
-              {clientCollections.map((cc) => (
-                <div key={cc.id}>
-                  <Label htmlFor={`info-${cc.id}`}>
-                    Infos pour {cc.collection?.name || 'Collection'}
+              {clientProducts.map((cp) => (
+                <div key={cp.id}>
+                  <Label htmlFor={`info-${cp.id}`}>
+                    Infos pour {cp.product?.name || 'Produit'}
                   </Label>
                   <Input
-                    id={`info-${cc.id}`}
+                    id={`info-${cp.id}`}
                     type="text"
-                    value={collectionInfos[cc.collection_id || ''] || ''}
-                    onChange={(e) => setCollectionInfos(prev => ({
+                    value={productInfos[cp.product_id || ''] || ''}
+                    onChange={(e) => setProductInfos(prev => ({
                       ...prev,
-                      [cc.collection_id || '']: e.target.value
+                      [cp.product_id || '']: e.target.value
                     }))}
                     placeholder="Ex: Livraison partielle, Retour prévu..."
                     className="mt-1.5"

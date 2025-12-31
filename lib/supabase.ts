@@ -49,13 +49,13 @@ export async function softUndelete(table: string, id: string): Promise<{ error: 
  */
 const SOFT_DELETE_TABLES = [
   'clients',
-  'client_collections',
+  'client_products',
   'client_sub_products',
   'establishment_types',
   'payment_methods',
-  'collection_categories',
-  'collection_subcategories',
-  'collections',
+  'product_categories',
+  'product_subcategories',
+  'products',
   'sub_products',
   'draft_stock_updates'
 ];
@@ -125,7 +125,7 @@ export type PaymentMethod = {
 export type StockUpdate = {
   id: string;
   client_id: string;
-  collection_id?: string | null;
+  product_id?: string | null;
   sub_product_id?: string | null;
   invoice_id?: string | null;
   previous_stock: number;
@@ -133,8 +133,8 @@ export type StockUpdate = {
   cards_sold: number;
   cards_added: number;
   new_stock: number;
-  collection_info?: string | null;
-  unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu la collection
+  product_info?: string | null;
+  unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu le produit
   total_amount_ht?: number | null; // Montant total HT : cards_sold x unit_price_ht
   created_at: string;
 };
@@ -163,7 +163,7 @@ export type Invoice = {
   created_at: string;
 };
 
-export type Collection = {
+export type Product = {
   id: string;
   name: string;
   price: number;
@@ -176,14 +176,14 @@ export type Collection = {
   updated_at: string;
 };
 
-export type CollectionCategory = {
+export type ProductCategory = {
   id: string;
   name: string;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
 };
 
-export type CollectionSubcategory = {
+export type ProductSubcategory = {
   id: string;
   category_id: string;
   name: string;
@@ -193,7 +193,7 @@ export type CollectionSubcategory = {
 
 export type SubProduct = {
   id: string;
-  collection_id: string;
+  product_id: string;
   name: string;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
@@ -211,10 +211,10 @@ export type ClientSubProduct = {
   updated_at: string;
 };
 
-export type ClientCollection = {
+export type ClientProduct = {
   id: string;
   client_id: string;
-  collection_id: string;
+  product_id: string;
   initial_stock: number;
   current_stock: number;
   custom_price: number | null;
@@ -247,7 +247,7 @@ export type UserProfile = {
 };
 
 export type DraftStockUpdateData = {
-  perCollectionForm: Record<string, { counted_stock: string; cards_added: string; collection_info: string }>;
+  perProductForm: Record<string, { counted_stock: string; cards_added: string; product_info: string }>;
   perSubProductForm?: Record<string, { counted_stock: string; cards_added: string }>;
   pendingAdjustments: { operation_name: string; unit_price: string; quantity: string }[];
 };
@@ -278,7 +278,7 @@ export type StockDirectSold = {
   id: string;
   client_id: string;
   invoice_id: string;
-  collection_id: string | null;
+  product_id: string | null;
   sub_product_id: string | null;
   stock_sold: number;
   unit_price_ht: number;

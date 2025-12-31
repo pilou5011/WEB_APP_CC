@@ -1,18 +1,18 @@
-/**
+﻿/**
  * PDF Generators Utility
  * 
  * This file contains functions to generate and save PDFs for invoices, stock reports, and deposit slips.
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
-  collections: Collection[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
+  Produits: Product[];
   stockUpdates: StockUpdate[];
   adjustments: InvoiceAdjustment[];
   userProfile: UserProfile | null;
@@ -21,14 +21,14 @@ interface GenerateInvoicePDFParams {
 interface GenerateStockReportPDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
 }
 
 interface GenerateDepositSlipPDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
   userProfile: UserProfile | null;
 }
@@ -43,7 +43,7 @@ interface GenerateCreditNotePDFParams {
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  collections: Collection[];
+  Produits: Product[];
   stockDirectSold: StockDirectSold[];
   userProfile: UserProfile | null;
 }
@@ -54,7 +54,7 @@ interface GenerateDirectInvoicePDFParams {
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams): Promise<void> {
-  const { invoice, client, clientCollections, collections, stockUpdates, adjustments, userProfile } = params;
+  const { invoice, client, clientProducts, Produits, stockUpdates, adjustments, userProfile } = params;
 
   // Check if PDF already exists
   if (invoice.invoice_pdf_path) {
@@ -253,16 +253,16 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.text(`Facture N°${invoiceNumber}`, pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
 
-    // 3) Tableau des collections
-    // Filter out sub-products: only include stock updates with collection_id and no sub_product_id
-    const collectionStockUpdates = stockUpdates.filter(update => 
-      update.collection_id && !update.sub_product_id
+    // 3) Tableau des produits
+    // Filter out sub-products: only include stock updates with product_id and no sub_product_id
+    const productStockUpdates = stockUpdates.filter(update => 
+      update.product_id && !update.sub_product_id
     );
     
-    // Sort stock updates by collection display_order
-    const sortedStockUpdates = [...collectionStockUpdates].sort((a, b) => {
-      const aCC = clientCollections.find(cc => cc.collection_id === a.collection_id);
-      const bCC = clientCollections.find(cc => cc.collection_id === b.collection_id);
+    // Sort stock updates by Product display_order
+    const sortedStockUpdates = [...productStockUpdates].sort((a, b) => {
+      const aCC = clientProducts.find(cc => cc.product_id === a.product_id);
+      const bCC = clientProducts.find(cc => cc.product_id === b.product_id);
       const aOrder = aCC?.display_order || 0;
       const bOrder = bCC?.display_order || 0;
       return aOrder - bOrder;
@@ -275,17 +275,17 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     
     // Appliquer la remise proportionnellement à chaque ligne de facture
     const stockRows = sortedStockUpdates.map((update) => {
-      const collection = collections.find(c => c.id === update.collection_id);
-      const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
-      const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
+      const Product = Produits.find(c => c.id === update.product_id);
+      const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
+      const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       const totalHTBeforeDiscount = update.cards_sold * effectivePrice;
       // Appliquer la remise proportionnellement à chaque ligne (conforme fiscalement)
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
-        collection?.name || 'Collection',
-        update.collection_info || '', // Infos optionnelles
-        collection?.barcode || '', // Code barre produit
+        Product?.name || 'Product',
+        update.product_info || '', // Infos optionnelles
+        Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
         update.counted_stock.toString(),
         update.cards_sold.toString(),
@@ -321,7 +321,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Collection', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
+      head: [['Product', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -348,13 +348,13 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       margin: { left: globalLeftMargin, right: globalRightMargin }
     });
 
-    // Calculer les totaux (uniquement pour les collections, pas les sous-produits)
+    // Calculer les totaux (uniquement pour les produits, pas les sous-produits)
     // Note: discountPercentage et discountRatio sont déjà définis plus haut
     const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
-    const totalHTBeforeDiscount = collectionStockUpdates.reduce((sum, update) => {
-      const collection = collections.find(c => c.id === update.collection_id);
-      const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
-      const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
+    const totalHTBeforeDiscount = productStockUpdates.reduce((sum, update) => {
+      const Product = Produits.find(c => c.id === update.product_id);
+      const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
+      const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       return sum + (update.cards_sold * effectivePrice);
     }, 0) + adjustmentsTotal;
     
@@ -536,7 +536,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveStockReportPDF(params: GenerateStockReportPDFParams): Promise<void> {
-  const { invoice, client, clientCollections, stockUpdates } = params;
+  const { invoice, client, clientProducts, stockUpdates } = params;
 
   // Check if PDF already exists
   if (invoice.stock_report_pdf_path) {
@@ -762,11 +762,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     yPosition += 10;
 
     // Create maps for stock updates
-    const stockUpdatesByCollectionId = new Map<string, StockUpdate>();
+    const stockUpdatesByProductId = new Map<string, StockUpdate>();
     const stockUpdatesBySubProductId = new Map<string, StockUpdate>();
     stockUpdates.forEach(update => {
-      if (update.collection_id) {
-        stockUpdatesByCollectionId.set(update.collection_id, update);
+      if (update.product_id) {
+        stockUpdatesByProductId.set(update.product_id, update);
       }
       if (update.sub_product_id) {
         stockUpdatesBySubProductId.set(update.sub_product_id, update);
@@ -774,13 +774,13 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     });
 
     // Create maps for last new_stock
-    const lastNewStockByCollectionId = new Map<string, number>();
+    const lastNewStockByProductId = new Map<string, number>();
     const lastNewStockBySubProductId = new Map<string, number>();
     
     (historicalStockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.collection_id && !update.sub_product_id) {
-        if (!lastNewStockByCollectionId.has(update.collection_id)) {
-          lastNewStockByCollectionId.set(update.collection_id, update.new_stock);
+      if (update.product_id && !update.sub_product_id) {
+        if (!lastNewStockByProductId.has(update.product_id)) {
+          lastNewStockByProductId.set(update.product_id, update.new_stock);
         }
       }
       if (update.sub_product_id) {
@@ -790,27 +790,27 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       }
     });
 
-    // Create map of sub-products by collection
-    const subProductsByCollectionId = new Map<string, SubProduct[]>();
+    // Create map of sub-products by Product
+    const subProductsByProductId = new Map<string, SubProduct[]>();
     (subProducts || []).forEach(sp => {
-      if (!subProductsByCollectionId.has(sp.collection_id)) {
-        subProductsByCollectionId.set(sp.collection_id, []);
+      if (!subProductsByProductId.has(sp.product_id)) {
+        subProductsByProductId.set(sp.product_id, []);
       }
-      subProductsByCollectionId.get(sp.collection_id)!.push(sp);
+      subProductsByProductId.get(sp.product_id)!.push(sp);
     });
 
     const tableData: any[] = [];
-    const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
-    sortedCollections.forEach((cc) => {
-      const collectionName = cc.collection?.name || 'Collection';
+    sortedProducts.forEach((cc) => {
+      const productName = cc.Product?.name || 'Product';
       const info = '';
-      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+      const effectivePrice = cc.custom_price ?? cc.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesByCollectionId.get(cc.collection_id || '');
-      const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
-      const hasSubProducts = collectionSubProducts.length > 0;
+      const stockUpdate = stockUpdatesByProductId.get(cc.product_id || '');
+      const productSubProducts = subProductsByProductId.get(cc.product_id || '') || [];
+      const hasSubProducts = productSubProducts.length > 0;
       
       let previousStock: number;
       let countedStock: number;
@@ -823,7 +823,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         let totalSubProductNewDeposit = 0;
         let totalSubProductReassort = 0;
         
-        collectionSubProducts.forEach(sp => {
+        productSubProducts.forEach(sp => {
           const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
           
           let subProductPreviousStock: number;
@@ -879,7 +879,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                                  stockUpdate.counted_stock !== undefined;
           
           if (hasCountedStock && !hasNewDeposit) {
-            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
@@ -890,14 +890,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             reassort = stockUpdate.cards_added;
             newDeposit = stockUpdate.new_stock;
           } else {
-            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
             newDeposit = lastNewStock;
           }
         } else {
-          const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+          const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
           previousStock = lastNewStock;
           countedStock = lastNewStock;
           reassort = 0;
@@ -905,8 +905,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         }
       }
       
-      const collectionRow = [
-        collectionName,
+      const productRow = [
+        productName,
         info,
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
@@ -916,11 +916,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         newDeposit.toString()
       ];
       
-      tableData.push(collectionRow);
+      tableData.push(productRow);
 
       // Add sub-products
       if (hasSubProducts) {
-        collectionSubProducts.forEach(sp => {
+        productSubProducts.forEach(sp => {
           const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
           
           let subProductPreviousStock: number;
@@ -981,10 +981,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const fixedColumnsWidth = tableWidth * (0.15 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08);
-    const collectionColumnWidth = tableWidth - fixedColumnsWidth;
+    const productColumnWidth = tableWidth - fixedColumnsWidth;
     
     const columnWidths = [
-      collectionColumnWidth,
+      productColumnWidth,
       tableWidth * 0.15,
       tableWidth * 0.08,
       tableWidth * 0.08,
@@ -997,7 +997,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Collection', 
+        'Product', 
         'Infos', 
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
         { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1137,7 +1137,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<void> {
-  const { invoice, client, clientCollections, stockUpdates, userProfile } = params;
+  const { invoice, client, clientProducts, stockUpdates, userProfile } = params;
 
   // Check if PDF already exists
   if (invoice.deposit_slip_pdf_path) {
@@ -1159,7 +1159,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .limit(1)
       .maybeSingle();
 
-    // Charger les collection_info depuis la dernière mise à jour de stock de chaque collection
+    // Charger les product_info depuis la dernière mise à jour de stock de chaque Product
     // (même logique que dans le dialog "Générer un bon de dépôt")
     const { data: allStockUpdates } = await supabase
       .from('stock_updates')
@@ -1168,24 +1168,24 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
-    // Créer un map pour stocker la dernière collection_info de chaque collection
-    const collectionInfos: Record<string, string> = {};
-    const processedCollections = new Set<string>();
+    // Créer un map pour stocker la dernière product_info de chaque Product
+    const productInfos: Record<string, string> = {};
+    const processedProducts = new Set<string>();
 
     // Parcourir les stock_updates triés par date décroissante
-    // Pour chaque collection, prendre la première occurrence (la plus récente)
-    // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+    // Pour chaque Product, prendre la première occurrence (la plus récente)
+    // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
     (allStockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
-        collectionInfos[update.collection_id] = update.collection_info || '';
-        processedCollections.add(update.collection_id);
+      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+        productInfos[update.product_id] = update.product_info || '';
+        processedProducts.add(update.product_id);
       }
     });
 
-    // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
-    clientCollections.forEach(cc => {
-      if (cc.collection_id && !collectionInfos[cc.collection_id]) {
-        collectionInfos[cc.collection_id] = '';
+    // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
+    clientProducts.forEach(cc => {
+      if (cc.product_id && !productInfos[cc.product_id]) {
+        productInfos[cc.product_id] = '';
       }
     });
 
@@ -1352,28 +1352,28 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
 
-    // Tableau des collections
-    const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    // Tableau des produits
+    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
     const stockUpdatesMap = new Map<string, StockUpdate>();
     stockUpdates.forEach((update) => {
-      if (update.collection_id) {
-        stockUpdatesMap.set(update.collection_id, update);
+      if (update.product_id) {
+        stockUpdatesMap.set(update.product_id, update);
       }
     });
     
-    const tableData = sortedCollections.map((cc) => {
-      const collectionName = cc.collection?.name || 'Collection';
-      const info = collectionInfos[cc.collection_id || ''] || '';
-      const barcode = cc.collection?.barcode || ''; // Code barre produit
-      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+    const tableData = sortedProducts.map((cc) => {
+      const productName = cc.Product?.name || 'Product';
+      const info = productInfos[cc.product_id || ''] || '';
+      const barcode = cc.Product?.barcode || ''; // Code barre produit
+      const effectivePrice = cc.custom_price ?? cc.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
+      const stockUpdate = stockUpdatesMap.get(cc.product_id || '');
       const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
       
       return [
-        collectionName,
+        productName,
         info,
         barcode, // Code barre produit
         `${effectivePrice.toFixed(2)} €`,
@@ -1387,7 +1387,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const columnWidths = [
-      tableWidth * 0.20, // Collection
+      tableWidth * 0.20, // Product
       tableWidth * 0.25, // Infos
       tableWidth * 0.25, // Code barre produit
       tableWidth * 0.10, // Prix cession HT
@@ -1398,7 +1398,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Collection', 
+        'Product', 
         'Infos',
         { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
@@ -1425,7 +1425,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] }, // Collection
+        0: { halign: 'left', cellWidth: columnWidths[0] }, // Product
         1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
         2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
         3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT

@@ -424,7 +424,7 @@ export default function Home() {
             Gestion Dépôts-Ventes
           </h1>
           <p className="text-slate-500">
-            Gérez vos clients et collections facilement
+            Gérez vos clients et produits facilement
           </p>
         </div>
 
@@ -451,18 +451,18 @@ export default function Home() {
           <Card className="cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-[1.02] border-slate-200">
             <CardHeader className="text-center">
               <Package className="h-12 w-12 text-green-600 mx-auto mb-4" />
-              <CardTitle className="text-2xl">Gestion des Collections</CardTitle>
+              <CardTitle className="text-2xl">Gestion des Produits</CardTitle>
               <CardDescription className="text-base">
-                Gérez vos collections de cartes et leurs prix
+                Gérez vos produits de cartes et leurs prix
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
               <Button 
                 size="lg" 
                 className="w-full"
-                onClick={() => router.push('/collections')}
+                onClick={() => router.push('/products')}
               >
-                Accéder aux Collections
+                Accéder aux Produits
               </Button>
             </CardContent>
           </Card>

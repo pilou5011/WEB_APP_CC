@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
+import { Client, Product, ClientProduct, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ interface StockReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
   invoice: Invoice | null;
 }
@@ -21,7 +21,7 @@ export function StockReportDialog({
   open,
   onOpenChange,
   client,
-  clientCollections,
+  clientProducts,
   stockUpdates,
   invoice
 }: StockReportDialogProps) {

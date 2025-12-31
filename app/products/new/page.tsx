@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { supabase, ProductCategory, ProductSubcategory } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-export default function NewCollectionPage() {
+export default function NewProductPage() {
   const router = useRouter();
 
   const [formData, setFormData] = useState({
@@ -31,20 +31,20 @@ export default function NewCollectionPage() {
   const [subProducts, setSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [categories, setCategories] = useState<CollectionCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newSubcategoryName, setNewSubcategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [showNewSubcategoryInput, setShowNewSubcategoryInput] = useState(false);
   const [addingNewCategory, setAddingNewCategory] = useState(false);
   const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
@@ -63,7 +63,7 @@ export default function NewCollectionPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
@@ -84,7 +84,7 @@ export default function NewCollectionPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
@@ -116,7 +116,7 @@ export default function NewCollectionPage() {
 
       // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
       const { data: existing } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('id')
         .eq('name', newCategoryName.trim())
         .eq('company_id', companyId)
@@ -130,7 +130,7 @@ export default function NewCollectionPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
@@ -167,7 +167,7 @@ export default function NewCollectionPage() {
 
       // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       const { data: existing } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('id')
         .eq('category_id', formData.category_id)
         .eq('name', newSubcategoryName.trim())
@@ -182,7 +182,7 @@ export default function NewCollectionPage() {
       }
 
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .insert([{ 
           category_id: formData.category_id,
           company_id: companyId,
@@ -223,7 +223,7 @@ export default function NewCollectionPage() {
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
-          .from('collection_categories')
+          .from('product_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
           .eq('company_id', companyId)
@@ -238,7 +238,7 @@ export default function NewCollectionPage() {
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
         .eq('id', editingCategory.id)
         .eq('company_id', companyId);
@@ -267,7 +267,7 @@ export default function NewCollectionPage() {
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingCategory.id)
         .eq('company_id', companyId);
@@ -302,7 +302,7 @@ export default function NewCollectionPage() {
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
-          .from('collection_subcategories')
+          .from('product_subcategories')
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
@@ -318,7 +318,7 @@ export default function NewCollectionPage() {
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
         .eq('id', editingSubcategory.id)
         .eq('company_id', companyId);
@@ -347,7 +347,7 @@ export default function NewCollectionPage() {
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingSubcategory.id)
         .eq('company_id', companyId);
@@ -399,9 +399,9 @@ export default function NewCollectionPage() {
         throw new Error('Non autorisé');
       }
 
-      // Vérifier si une collection avec le même nom existe déjà
-      const { data: existingCollection, error: checkError } = await supabase
-        .from('collections')
+      // Vérifier si un produit avec le même nom existe déjà
+      const { data: existingProduct, error: checkError } = await supabase
+        .from('products')
         .select('id, name')
         .eq('name', formData.name.trim())
         .eq('company_id', companyId)
@@ -410,8 +410,8 @@ export default function NewCollectionPage() {
 
       if (checkError) throw checkError;
 
-      if (existingCollection) {
-        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+      if (existingProduct) {
+        toast.error(`Un produit avec le nom "${formData.name.trim()}" existe déjà. Les noms de produits doivent être uniques.`);
         setSubmitting(false);
         return;
       }
@@ -419,7 +419,7 @@ export default function NewCollectionPage() {
       // Vérifier que category_id et subcategory_id appartiennent à la même entreprise
       if (formData.category_id) {
         const { data: categoryCheck, error: categoryCheckError } = await supabase
-          .from('collection_categories')
+          .from('product_categories')
           .select('id, company_id')
           .eq('id', formData.category_id)
           .eq('company_id', companyId)
@@ -434,7 +434,7 @@ export default function NewCollectionPage() {
 
       if (formData.subcategory_id) {
         const { data: subcategoryCheck, error: subcategoryCheckError } = await supabase
-          .from('collection_subcategories')
+          .from('product_subcategories')
           .select('id, company_id')
           .eq('id', formData.subcategory_id)
           .eq('company_id', companyId)
@@ -449,7 +449,7 @@ export default function NewCollectionPage() {
         // Vérifier que la sous-catégorie appartient bien à la catégorie sélectionnée
         if (formData.category_id) {
           const { data: subcategoryRelationCheck, error: relationError } = await supabase
-            .from('collection_subcategories')
+            .from('product_subcategories')
             .select('category_id')
             .eq('id', formData.subcategory_id)
             .single();
@@ -462,9 +462,9 @@ export default function NewCollectionPage() {
         }
       }
 
-      // Create collection
-      const { data: newCollection, error: collectionError } = await supabase
-        .from('collections')
+      // Create product
+      const { data: newProduct, error: productError } = await supabase
+        .from('products')
         .insert({
           name: formData.name.trim(),
           company_id: companyId,
@@ -477,34 +477,34 @@ export default function NewCollectionPage() {
         .select()
         .single();
 
-      if (collectionError) {
+      if (productError) {
         // Gérer les erreurs spécifiques
-        if (collectionError.code === '23505') {
+        if (productError.code === '23505') {
           // Violation de contrainte unique
-          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
-        } else if (collectionError.code === '23503') {
+          toast.error(`Un produit avec le nom "${formData.name.trim()}" existe déjà. Les noms de produits doivent être uniques.`);
+        } else if (productError.code === '23503') {
           // Violation de clé étrangère
           toast.error('Erreur : la catégorie ou la sous-catégorie sélectionnée n\'est pas valide');
-        } else if (collectionError.message?.includes('row-level security policy')) {
+        } else if (productError.message?.includes('row-level security policy')) {
           // Erreur RLS
           toast.error('Erreur de sécurité. Veuillez contacter le support.');
-          console.error('RLS Error:', collectionError);
+          console.error('RLS Error:', productError);
         } else {
           // Autre erreur
-          toast.error(collectionError.message || 'Erreur lors de la création de la collection');
-          console.error('Collection creation error:', collectionError);
+          toast.error(productError.message || 'Erreur lors de la création du produit');
+          console.error('Product creation error:', productError);
         }
         setSubmitting(false);
         return;
       }
 
       // Handle sub-products if hasSubProducts is true
-      if (hasSubProducts && newCollection) {
+      if (hasSubProducts && newProduct) {
         const validSubProducts = subProducts.filter(sp => sp.name.trim() !== '');
         
         if (validSubProducts.length > 0) {
           const subProductsToInsert = validSubProducts.map(sp => ({
-            collection_id: newCollection.id,
+            product_id: newProduct.id,
             company_id: companyId,
             name: sp.name.trim()
           }));
@@ -517,10 +517,10 @@ export default function NewCollectionPage() {
         }
       }
 
-      toast.success('Collection créée avec succès');
-      router.push(`/collections/${newCollection.id}`);
+      toast.success('Produit créé avec succès');
+      router.push(`/products/${newProduct.id}`);
     } catch (error: any) {
-      console.error('Error creating collection:', error);
+      console.error('Error creating product:', error);
       
       // Gestion d'erreur améliorée
       if (error.message === 'Non autorisé' || error.message?.includes('company_id')) {
@@ -532,7 +532,7 @@ export default function NewCollectionPage() {
       } else if (error.message) {
         toast.error(error.message);
       } else {
-        toast.error('Erreur lors de la création de la collection');
+        toast.error('Erreur lors de la création du produit');
       }
     } finally {
       setSubmitting(false);
@@ -545,10 +545,10 @@ export default function NewCollectionPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => router.push('/collections')}
+            onClick={() => router.push('/products')}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux collections
+            Retour aux produits
           </Button>
           <Button
             variant="outline"
@@ -561,22 +561,22 @@ export default function NewCollectionPage() {
         <div className="space-y-6">
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle className="text-3xl">Créer une nouvelle collection</CardTitle>
+              <CardTitle className="text-3xl">Créer un nouveau produit</CardTitle>
               <CardDescription>
-                Renseignez les informations de la nouvelle collection
+                Renseignez les informations du nouveau produit
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="name">Nom de la collection *</Label>
+                    <Label htmlFor="name">Nom du produit *</Label>
                     <Input
                       id="name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
-                      placeholder="Ex: Collection Hiver 2024"
+                      placeholder="Ex: Produit Hiver 2024"
                       className="mt-1.5"
                     />
                   </div>
@@ -975,7 +975,7 @@ export default function NewCollectionPage() {
                       }}
                     />
                     <Label htmlFor="has-sub-products" className="font-normal cursor-pointer">
-                      Cette collection contient des sous-produits
+                      Ce produit contient des sous-produits
                     </Label>
                   </div>
 
@@ -1026,12 +1026,12 @@ export default function NewCollectionPage() {
 
                 <div className="flex gap-3">
                   <Button type="submit" disabled={submitting} className="w-full md:w-auto">
-                    {submitting ? 'Création en cours...' : 'Créer la collection'}
+                    {submitting ? 'Création en cours...' : 'Créer le produit'}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => router.push('/collections')}
+                    onClick={() => router.push('/products')}
                     disabled={submitting}
                   >
                     Annuler
@@ -1050,7 +1050,7 @@ export default function NewCollectionPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
                 Toutes les sous-catégories associées seront également supprimées.
-                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les produits utilisant cette catégorie ne seront pas supprimés, mais leur catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1072,7 +1072,7 @@ export default function NewCollectionPage() {
               <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les produits utilisant cette sous-catégorie ne seront pas supprimés, mais leur sous-catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
