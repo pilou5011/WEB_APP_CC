@@ -12,7 +12,7 @@ import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  Produits: Product[];
+  products: Product[];
   stockDirectSold: StockDirectSold[];
   userProfile: UserProfile | null;
 }
@@ -22,7 +22,7 @@ interface GenerateDirectInvoicePDFParams {
  * This function generates the invoice PDF for direct sales and saves it to Supabase storage.
  */
 export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvoicePDFParams): Promise<void> {
-  const { invoice, client, Produits, stockDirectSold, userProfile } = params;
+  const { invoice, client, products, stockDirectSold, userProfile } = params;
 
   // Note: On génère toujours le PDF et on met toujours à jour invoice_pdf_path
   // même si le fichier existe déjà, pour s'assurer que la colonne est toujours renseignée
@@ -226,7 +226,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     
     // Créer les lignes du tableau
     const invoiceRows = stockDirectSold.map((item) => {
-      const Product = Produits.find(c => c.id === item.product_id);
+      const Product = products.find(c => c.id === item.product_id);
       const totalHTBeforeDiscount = item.total_amount_ht;
       // Appliquer la remise proportionnellement à chaque ligne
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;

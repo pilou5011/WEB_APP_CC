@@ -106,7 +106,7 @@ export async function generateAndSaveInvoicePDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  Produits: Product[],
+  products: Product[],
   clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null,
   adjustments: InvoiceAdjustment[]
@@ -162,7 +162,7 @@ export async function generateAndSaveStockReportPDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  Produits: Product[],
+  products: Product[],
   clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null
 ): Promise<string | null> {

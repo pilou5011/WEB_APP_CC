@@ -15,7 +15,7 @@ interface GlobalInvoiceDialogProps {
   client: Client;
   invoice: Invoice;
   stockUpdates: StockUpdate[];
-  Produits: Product[];
+  products: Product[];
   clientProducts?: (ClientProduct & { Product?: Product })[];
 }
 
@@ -25,7 +25,7 @@ export function GlobalInvoiceDialog({
   client,
   invoice,
   stockUpdates,
-  Produits,
+  products,
   clientProducts = []
 }: GlobalInvoiceDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);

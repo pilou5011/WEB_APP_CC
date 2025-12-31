@@ -12,7 +12,7 @@ interface GenerateInvoicePDFParams {
   invoice: Invoice;
   client: Client;
   clientProducts: (ClientProduct & { Product?: Product })[];
-  Produits: Product[];
+  products: Product[];
   stockUpdates: StockUpdate[];
   adjustments: InvoiceAdjustment[];
   userProfile: UserProfile | null;
@@ -43,7 +43,7 @@ interface GenerateCreditNotePDFParams {
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  Produits: Product[];
+  products: Product[];
   stockDirectSold: StockDirectSold[];
   userProfile: UserProfile | null;
 }
@@ -54,7 +54,7 @@ interface GenerateDirectInvoicePDFParams {
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams): Promise<void> {
-  const { invoice, client, clientProducts, Produits, stockUpdates, adjustments, userProfile } = params;
+  const { invoice, client, clientProducts, products, stockUpdates, adjustments, userProfile } = params;
 
   // Check if PDF already exists
   if (invoice.invoice_pdf_path) {
@@ -275,7 +275,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     
     // Appliquer la remise proportionnellement à chaque ligne de facture
     const stockRows = sortedStockUpdates.map((update) => {
-      const Product = Produits.find(c => c.id === update.product_id);
+      const Product = products.find(c => c.id === update.product_id);
       const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       const totalHTBeforeDiscount = update.stock_sold * effectivePrice;
@@ -352,7 +352,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     // Note: discountPercentage et discountRatio sont déjà définis plus haut
     const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
     const totalHTBeforeDiscount = productStockUpdates.reduce((sum, update) => {
-      const Product = Produits.find(c => c.id === update.product_id);
+      const Product = products.find(c => c.id === update.product_id);
       const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       return sum + (update.stock_sold * effectivePrice);
