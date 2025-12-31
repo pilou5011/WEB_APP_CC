@@ -272,7 +272,6 @@ export default function CollectionsPage() {
   const handleDeleteCategory = async () => {
     if (!deletingCategory) return;
 
-    setDeletingCategory(true);
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
