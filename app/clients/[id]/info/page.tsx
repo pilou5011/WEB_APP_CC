@@ -1007,7 +1007,7 @@ export default function ClientInfoPage() {
         let errorMessage = 'Erreur lors de la suppression du client';
         
         if (error.code === '23503') {
-          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements (collections, factures, etc.)';
+          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements (produits, factures, etc.)';
         } else if (error.message) {
           errorMessage = `Erreur : ${error.message}`;
         }
@@ -2138,7 +2138,7 @@ export default function ClientInfoPage() {
               <AlertDialogDescription>
                 Cette action est irréversible. Le client "{client?.name}" et toutes ses données associées seront définitivement supprimés :
                 <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li>Toutes les collections associées à ce client</li>
+                  <li>Tous les produits associés à ce client</li>
                   <li>Tous les historiques de stock</li>
                   <li>Toutes les factures et ajustements</li>
                   <li>Toutes les informations personnalisées (horaires, jours de marché, etc.)</li>

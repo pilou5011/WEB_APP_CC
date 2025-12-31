@@ -278,7 +278,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const Product = Produits.find(c => c.id === update.product_id);
       const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
-      const totalHTBeforeDiscount = update.cards_sold * effectivePrice;
+      const totalHTBeforeDiscount = update.stock_sold * effectivePrice;
       // Appliquer la remise proportionnellement à chaque ligne (conforme fiscalement)
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
@@ -288,7 +288,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
         update.counted_stock.toString(),
-        update.cards_sold.toString(),
+        update.stock_sold.toString(),
         effectivePrice.toFixed(2) + ' €',
         totalHTBeforeDiscount.toFixed(2) + ' €' // Afficher le prix HT avant remise
       ];
@@ -355,7 +355,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const Product = Produits.find(c => c.id === update.product_id);
       const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
-      return sum + (update.cards_sold * effectivePrice);
+      return sum + (update.stock_sold * effectivePrice);
     }, 0) + adjustmentsTotal;
     
     // Appliquer la remise commerciale sur le HT (conforme fiscalement)
@@ -832,7 +832,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           let subProductReassort: number;
           
           if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
             const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
                                    subProductStockUpdate.counted_stock !== undefined;
             
@@ -845,7 +845,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             } else if (hasCountedStock && hasNewDeposit) {
               subProductPreviousStock = subProductStockUpdate.previous_stock;
               subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.cards_added;
+              subProductReassort = subProductStockUpdate.stock_added;
               subProductNewDeposit = subProductStockUpdate.new_stock;
             } else {
               const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
@@ -874,7 +874,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         newDeposit = totalSubProductNewDeposit;
       } else {
         if (stockUpdate) {
-          const hasNewDeposit = stockUpdate.cards_added > 0;
+          const hasNewDeposit = stockUpdate.stock_added > 0;
           const hasCountedStock = stockUpdate.counted_stock !== null && 
                                  stockUpdate.counted_stock !== undefined;
           
@@ -887,7 +887,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           } else if (hasCountedStock && hasNewDeposit) {
             previousStock = stockUpdate.previous_stock;
             countedStock = stockUpdate.counted_stock;
-            reassort = stockUpdate.cards_added;
+            reassort = stockUpdate.stock_added;
             newDeposit = stockUpdate.new_stock;
           } else {
             const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
@@ -929,7 +929,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           let subProductReassort: number;
 
           if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
             const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
                                    subProductStockUpdate.counted_stock !== undefined;
             
@@ -942,7 +942,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             } else if (hasCountedStock && hasNewDeposit) {
               subProductPreviousStock = subProductStockUpdate.previous_stock;
               subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.cards_added;
+              subProductReassort = subProductStockUpdate.stock_added;
               subProductNewDeposit = subProductStockUpdate.new_stock;
             } else {
               const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;

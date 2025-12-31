@@ -13,8 +13,8 @@ interface ProductUpdate {
   Product: Product;
   previousStock: number;
   countedStock: number;
-  cardsSold: number;
-  cardsAdded: number;
+  stockSold: number;
+  stockAdded: number;
   newStock: number;
   amount: number;
   effectivePrice: number;
@@ -53,7 +53,7 @@ export function StockUpdateConfirmationDialog({
     }
   }, [open]);
   
-  const totalCardsSold = productUpdates.reduce((sum, item) => sum + item.cardsSold, 0);
+  const totalStockSold = productUpdates.reduce((sum, item) => sum + item.stockSold, 0);
   const productsAmount = productUpdates.reduce((sum, item) => sum + item.amount, 0);
   
   // Calcul du total des ajustements (reprises de stock)
@@ -95,9 +95,9 @@ export function StockUpdateConfirmationDialog({
             <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
               <div className="flex items-center gap-2 text-orange-600 mb-2">
                 <TrendingDown className="h-5 w-5" />
-                <span className="text-sm font-medium">Total cartes vendues</span>
+                <span className="text-sm font-medium">Total stock vendu</span>
               </div>
-              <p className="text-3xl font-bold text-orange-900">{totalCardsSold}</p>
+              <p className="text-3xl font-bold text-orange-900">{totalStockSold}</p>
             </div>
 
             <div className={`rounded-lg p-4 border ${totalAmount < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
@@ -197,16 +197,16 @@ export function StockUpdateConfirmationDialog({
                           <span className="font-semibold">{update.countedStock}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block mb-1">Cartes vendues</span>
-                          <span className="font-semibold text-orange-600">{update.cardsSold}</span>
+                          <span className="text-slate-500 block mb-1">Stock vendu</span>
+                          <span className="font-semibold text-orange-600">{update.stockSold}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 block mb-1">Nouveau dépôt</span>
                           <span className="font-semibold text-blue-600">{update.newStock}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block mb-1">Cartes ajoutées</span>
-                          <span className="font-semibold text-green-600">+{update.cardsAdded}</span>
+                          <span className="text-slate-500 block mb-1">Stock ajouté</span>
+                          <span className="font-semibold text-green-600">+{update.stockAdded}</span>
                         </div>
                       </div>
                     </div>
@@ -239,7 +239,7 @@ export function StockUpdateConfirmationDialog({
                           <div>
                             <p className="font-semibold text-slate-900">{adj.operation_name}</p>
                             <p className="text-sm text-slate-600 mt-1">
-                              {quantity} carte{quantity > 1 ? 's' : ''} × {unitPrice.toFixed(2)} €
+                              {quantity} unité{quantity > 1 ? 's' : ''} × {unitPrice.toFixed(2)} €
                             </p>
                           </div>
                           <div className="text-right">
@@ -272,8 +272,8 @@ export function StockUpdateConfirmationDialog({
                     <span className="font-medium">{productUpdates.length}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-700">
-                    <span>Total cartes vendues</span>
-                    <span className="font-medium">{totalCardsSold}</span>
+                    <span>Total stock vendu</span>
+                    <span className="font-medium">{totalStockSold}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-700">
                     <span>Montant ventes</span>

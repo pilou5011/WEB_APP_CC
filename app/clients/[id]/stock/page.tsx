@@ -147,8 +147,8 @@ function SortableProductRow({
   parentCountedStock: number;
   parentCardsAdded: number;
   parentCurrentStock: number;
-  perProductForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }>;
-  setPerProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }>>>;
+  perProductForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>;
+  setPerProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>>;
   clientSubProducts: Record<string, ClientSubProduct>;
   perSubProductForm: Record<string, { counted_stock: string; cards_added: string }>;
   setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; cards_added: string }>>>;
@@ -954,8 +954,8 @@ export default function ClientDetailPage() {
       product: Product;
       previousStock: number;
       countedStock: number;
-      cardsSold: number;
-      cardsAdded: number;
+      stockSold: number;
+      stockAdded: number;
       newStock: number;
       amount: number;
       effectivePrice: number;
@@ -1024,22 +1024,22 @@ export default function ClientDetailPage() {
         const previousStock = totalPreviousStock;
         const countedStock = totalCountedStock;
         const newDeposit = totalCardsAdded;
-        const cardsSold = Math.max(0, previousStock - countedStock);
+        const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const cardsAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = Math.max(0, newStock - countedStock);
         const productInfo = perProductForm[cp.id]?.product_info || '';
 
         const effectivePrice = cc.custom_price ?? cc.product?.price ?? 0;
         const isCustomPrice = cc.custom_price !== null;
-        const amount = cardsSold * effectivePrice;
+        const amount = stockSold * effectivePrice;
 
         if (cc.product) {
           updates.push({
             product: cp.product,
             previousStock,
             countedStock,
-            cardsSold,
-            cardsAdded,
+            stockSold,
+            stockAdded,
             newStock,
             amount,
             effectivePrice,
@@ -1085,22 +1085,22 @@ export default function ClientDetailPage() {
         }
 
         const previousStock = cc.current_stock;
-        const cardsSold = Math.max(0, previousStock - countedStock);
+        const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const cardsAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = Math.max(0, newStock - countedStock);
         const productInfo = form.product_info || '';
 
         const effectivePrice = cc.custom_price ?? cc.product?.price ?? 0;
         const isCustomPrice = cc.custom_price !== null;
-        const amount = cardsSold * effectivePrice;
+        const amount = stockSold * effectivePrice;
 
         if (cc.product) {
           updates.push({
             product: cp.product,
             previousStock,
             countedStock,
-            cardsSold,
-            cardsAdded,
+            stockSold,
+            stockAdded,
             newStock,
             amount,
             effectivePrice,
@@ -1227,7 +1227,7 @@ export default function ClientDetailPage() {
       }
 
       // Calculate totals
-      const totalCardsSold = hasStockUpdates ? updates.reduce((sum, u) => sum + u.cardsSold, 0) : 0;
+      const totalStockSold = hasStockUpdates ? updates.reduce((sum, u) => sum + u.stockSold, 0) : 0;
       const totalAmount = hasStockUpdates ? updates.reduce((sum, u) => sum + u.amount, 0) : 0;
       const adjustmentsTotal = (pendingAdjustments || []).reduce((sum, a) => {
         const unitPrice = parseFloat(a.unit_price);
@@ -1262,7 +1262,7 @@ export default function ClientDetailPage() {
           .insert([{
             client_id: clientId,
             company_id: companyId,
-            total_cards_sold: totalCardsSold,
+            total_stock_sold: totalStockSold,
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
           }])
@@ -1290,7 +1290,7 @@ export default function ClientDetailPage() {
             let totalCountedStock = 0;
             let totalPreviousStock = 0;
             let totalCardsAdded = 0;
-            let totalCardsSold = 0;
+            let totalStockSold = 0;
 
             // D'abord, s'assurer que tous les sous-produits existent et calculer le stock total
             for (const sp of productSubProducts) {
@@ -1348,11 +1348,11 @@ export default function ClientDetailPage() {
                   countedStock = previousStock;
                 }
                 
-                const cardsSold = Math.max(0, previousStock - countedStock);
-                const cardsAdded = Math.max(0, newStock - countedStock);
+                const stockSold = Math.max(0, previousStock - countedStock);
+                const stockAdded = Math.max(0, newStock - countedStock);
 
-                totalCardsAdded += cardsAdded;
-                totalCardsSold += cardsSold;
+                totalStockAdded += stockAdded;
+                totalStockSold += stockSold;
 
                 // Create stock update for sub-product (for stock report)
                 updatesToInsert.push({
@@ -1362,8 +1362,8 @@ export default function ClientDetailPage() {
                   invoice_id: invoiceData?.id || null,
                   previous_stock: previousStock,
                   counted_stock: countedStock,
-                  cards_sold: cardsSold,
-                  cards_added: cardsAdded,
+                  stock_sold: stockSold,
+                  stock_added: stockAdded,
                   new_stock: newStock
                 });
 
@@ -1383,15 +1383,15 @@ export default function ClientDetailPage() {
             }
 
             // Create stock update for the parent product (for invoice)
-            // IMPORTANT: Ne créer le stock_update pour le produit parent QUE si des cartes ont été vendues
-            // (totalCardsSold > 0). Si aucune carte n'est vendue, pas de ligne dans stock_updates.
-            if (totalCardsSold > 0) {
+            // IMPORTANT: Ne créer le stock_update pour le produit parent QUE si du stock a été vendu
+            // (totalStockSold > 0). Si aucun stock n'est vendu, pas de ligne dans stock_updates.
+            if (totalStockSold > 0) {
               const productInfo = perProductForm[cp.id]?.product_info || '';
               // Calculer le prix effectif du produit
               const effectivePrice = cc.custom_price ?? cc.product?.price ?? 0;
               // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée
               const unitPriceHt = invoiceData ? effectivePrice : null;
-              const totalAmountHt = invoiceData && unitPriceHt ? totalCardsSold * unitPriceHt : null;
+              const totalAmountHt = invoiceData && unitPriceHt ? totalStockSold * unitPriceHt : null;
               
               updatesToInsert.push({
                 client_id: clientId,
@@ -1400,7 +1400,7 @@ export default function ClientDetailPage() {
                 invoice_id: invoiceData?.id || null,
                 previous_stock: totalPreviousStock,
                 counted_stock: totalCountedStock,
-                cards_sold: totalCardsSold,
+                stock_sold: totalStockSold,
                 cards_added: totalCardsAdded,
                 new_stock: totalNewStock,
                 product_info: productInfo,
@@ -1421,15 +1421,15 @@ export default function ClientDetailPage() {
             const countedStock = parseInt(form.counted_stock);
             const newDeposit = parseInt(form.cards_added);
             const previousStock = cc.current_stock;
-            const cardsSold = Math.max(0, previousStock - countedStock);
+            const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
-            const cardsAdded = Math.max(0, newStock - countedStock);
+            const stockAdded = Math.max(0, newStock - countedStock);
             const productInfo = form.product_info || '';
             // Calculer le prix effectif du produit
             const effectivePrice = cc.custom_price ?? cc.product?.price ?? 0;
-            // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et des cartes sont vendues
-            const unitPriceHt = invoiceData && cardsSold > 0 ? effectivePrice : null;
-            const totalAmountHt = invoiceData && cardsSold > 0 && unitPriceHt ? cardsSold * unitPriceHt : null;
+            // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et du stock est vendu
+            const unitPriceHt = invoiceData && stockSold > 0 ? effectivePrice : null;
+            const totalAmountHt = invoiceData && stockSold > 0 && unitPriceHt ? stockSold * unitPriceHt : null;
 
             updatesToInsert.push({
               client_id: clientId,
@@ -1658,7 +1658,7 @@ export default function ClientDetailPage() {
       } else {
         // No invoice created (no cards sold and no adjustments)
         if (hasStockUpdates) {
-          toast.success('Stock mis à jour (aucune carte vendue, aucune facture créée)');
+          toast.success('Stock mis à jour (aucun stock vendu, aucune facture créée)');
         }
       }
       
@@ -2837,11 +2837,11 @@ export default function ClientDetailPage() {
   }
 
   // Calculate total cards sold from client_products
-  const cardsSold = clientProducts.reduce((sum, cc) => {
+  const stockSold = clientProducts.reduce((sum, cc) => {
     const sold = (cc.initial_stock || 0) - (cc.current_stock || 0);
     return sum + Math.max(0, sold);
   }, 0);
-  const amountDue = cardsSold * 2;
+  const amountDue = stockSold * 2;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -3259,7 +3259,7 @@ export default function ClientDetailPage() {
           <CardHeader>
             <CardTitle>Reprise de stock</CardTitle>
             <CardDescription>
-              Ajoutez une opération de reprise de stock avec le prix unitaire et le nombre de cartes reprises
+              Ajoutez une opération de reprise de stock avec le prix unitaire et la quantité reprise
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -3281,7 +3281,7 @@ export default function ClientDetailPage() {
                         <div>
                           <p className="text-sm font-medium text-slate-900">{a.operation_name}</p>
                           <p className="text-xs text-slate-500">      
-                            {a.quantity} carte(s) × {displayPrice.toFixed(2)} € = {totalAmount} €
+                            {a.quantity} unité(s) × {displayPrice.toFixed(2)} € = {totalAmount} €
                           </p>
                         </div>
                         <Button
@@ -3309,7 +3309,7 @@ export default function ClientDetailPage() {
               <DialogHeader>
                 <DialogTitle>Ajouter une reprise de stock</DialogTitle>
                 <DialogDescription>
-                  Saisissez le nom de l'opération, le prix unitaire par carte et le nombre de cartes reprises
+                  Saisissez le nom de l'opération, le prix unitaire par unité et la quantité reprise
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -3325,7 +3325,7 @@ export default function ClientDetailPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="adj-unit-price">Prix unitaire par carte (€)</Label>
+                  <Label htmlFor="adj-unit-price">Prix unitaire (€)</Label>
                   <Input
                     id="adj-unit-price"
                     type="text"
@@ -3344,7 +3344,7 @@ export default function ClientDetailPage() {
                   <p className="text-xs text-slate-500 mt-1">Saisissez un prix positif (le montant sera négatif dans la facture)</p>
                 </div>
                 <div>
-                  <Label htmlFor="adj-quantity">Nombre de cartes reprises</Label>
+                  <Label htmlFor="adj-quantity">Quantité reprise</Label>
                   <Input
                     id="adj-quantity"
                     type="number"
@@ -3558,7 +3558,7 @@ export default function ClientDetailPage() {
             <CardHeader>
               <CardTitle>Mise à jour du stock</CardTitle>
               <CardDescription>
-                Comptez le stock restant et ajoutez les nouvelles cartes pour chaque produit
+                Comptez le stock restant et ajoutez le nouveau stock pour chaque produit
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -3604,7 +3604,7 @@ export default function ClientDetailPage() {
                 Cette action est irréversible.
                 {productToDelete && productToDelete.current_stock > 0 && (
                   <span className="block mt-2 text-orange-600 font-medium">
-                    ⚠️ Attention : Ce produit a encore {productToDelete.current_stock} cartes en stock.
+                    ⚠️ Attention : Ce produit a encore {productToDelete.current_stock} unité(s) en stock.
                   </span>
                 )}
               </AlertDialogDescription>

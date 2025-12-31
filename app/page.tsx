@@ -424,7 +424,7 @@ export default function Home() {
             Gestion Dépôts-Ventes
           </h1>
           <p className="text-slate-500">
-            Gérez vos clients et produits facilement
+            Gérez vos clients et vos produits facilement
           </p>
         </div>
 
@@ -453,7 +453,7 @@ export default function Home() {
               <Package className="h-12 w-12 text-green-600 mx-auto mb-4" />
               <CardTitle className="text-2xl">Gestion des Produits</CardTitle>
               <CardDescription className="text-base">
-                Gérez vos produits de cartes et leurs prix
+                Gérez vos produits et leurs prix
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">

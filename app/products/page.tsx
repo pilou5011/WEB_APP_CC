@@ -577,7 +577,7 @@ export default function ProductsPage() {
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold text-slate-900 mb-2">Gestion des Produits</h1>
-            <p className="text-slate-600">Produits de cartes de vœux</p>
+            <p className="text-slate-600">Produits</p>
           </div>
 
           <div className="flex gap-3">

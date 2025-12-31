@@ -130,12 +130,12 @@ export type StockUpdate = {
   invoice_id?: string | null;
   previous_stock: number;
   counted_stock: number;
-  cards_sold: number;
-  cards_added: number;
+  stock_sold: number;
+  stock_added: number;
   new_stock: number;
   product_info?: string | null;
   unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu le produit
-  total_amount_ht?: number | null; // Montant total HT : cards_sold x unit_price_ht
+  total_amount_ht?: number | null; // Montant total HT : stock_sold x unit_price_ht
   created_at: string;
 };
 
@@ -153,7 +153,7 @@ export type InvoiceAdjustment = {
 export type Invoice = {
   id: string;
   client_id: string;
-  total_cards_sold: number;
+  total_stock_sold: number;
   total_amount: number;
   invoice_number: string | null;
   discount_percentage: number | null; // Pourcentage de remise commerciale (0-100)
@@ -247,8 +247,8 @@ export type UserProfile = {
 };
 
 export type DraftStockUpdateData = {
-  perProductForm: Record<string, { counted_stock: string; cards_added: string; product_info: string }>;
-  perSubProductForm?: Record<string, { counted_stock: string; cards_added: string }>;
+  perProductForm: Record<string, { counted_stock: string; stock_added: string; product_info: string }>;
+  perSubProductForm?: Record<string, { counted_stock: string; stock_added: string }>;
   pendingAdjustments: { operation_name: string; unit_price: string; quantity: string }[];
 };
 
