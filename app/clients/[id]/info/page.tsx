@@ -833,6 +833,24 @@ export default function ClientInfoPage() {
         throw new Error('Non autorisé');
       }
 
+      // Vérifier si un autre client avec le même numéro existe déjà (non supprimé) dans cette entreprise
+      if (formData.client_number?.trim()) {
+        const { data: existing } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('client_number', formData.client_number.trim())
+          .neq('id', clientId) // Exclure le client actuel
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce numéro de client existe déjà pour un autre client dans votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .update({

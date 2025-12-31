@@ -10,6 +10,7 @@
   - collection_categories (company_id, name)
   - collection_subcategories (company_id, category_id, name)
   - sub_products (company_id, collection_id, name)
+  - clients (company_id, client_number)
   
   Note: client_collections et client_sub_products n'ont pas besoin de company_id dans leur contrainte
   car client_id est déjà scoped par company_id via RLS.
@@ -93,7 +94,24 @@ COMMENT ON INDEX sub_products_company_id_collection_id_name_unique_not_deleted I
   'Contrainte UNIQUE partielle sur (company_id, collection_id, name) pour les enregistrements non supprimés. Permet à différentes entreprises d''avoir des sous-produits avec le même nom dans la même collection.';
 
 -- ============================================
--- 6. Note sur client_collections et client_sub_products
+-- 6. clients (client_number)
+-- ============================================
+
+-- Supprimer l'ancienne contrainte UNIQUE globale
+ALTER TABLE clients
+  DROP CONSTRAINT IF EXISTS unique_client_number;
+
+-- Créer une nouvelle contrainte UNIQUE partielle scoped par company_id
+-- Note: client_number peut être NULL, donc on exclut les NULL de la contrainte unique
+CREATE UNIQUE INDEX clients_company_id_client_number_unique_not_deleted
+  ON clients(company_id, client_number)
+  WHERE deleted_at IS NULL AND client_number IS NOT NULL;
+
+COMMENT ON INDEX clients_company_id_client_number_unique_not_deleted IS 
+  'Contrainte UNIQUE partielle sur (company_id, client_number) pour les enregistrements non supprimés avec client_number non NULL. Permet à différentes entreprises d''avoir des clients avec le même numéro de client.';
+
+-- ============================================
+-- 7. Note sur client_collections et client_sub_products
 -- ============================================
 -- Ces tables n'ont pas besoin de company_id dans leur contrainte unique car :
 -- - client_id est déjà scoped par company_id via RLS

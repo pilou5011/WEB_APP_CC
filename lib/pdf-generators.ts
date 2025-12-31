@@ -469,7 +469,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const year = invoiceDate.getFullYear();
     const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
     const day = String(invoiceDate.getDate()).padStart(2, '0');
-    const fileName = `${year}_${month}_${day}.pdf`;
+    const fileName = `invoice_${year}_${month}_${day}.pdf`;
     const filePath = `invoices/${invoice.id}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -1094,15 +1094,24 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
         console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour stock_report_pdf_path même si le fichier existe déjà
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ stock_report_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId);
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Stock report PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
+      // Mettre à jour stock_report_pdf_path
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ stock_report_pdf_path: filePath })
@@ -1470,11 +1479,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         throw uploadError;
       }
     } else if (uploadData) {
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
+      // Mettre à jour deposit_slip_pdf_path
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ deposit_slip_pdf_path: filePath })
