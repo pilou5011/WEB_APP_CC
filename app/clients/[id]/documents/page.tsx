@@ -188,7 +188,7 @@ function SortableProductRow({
           >
             <GripVertical className="h-5 w-5" />
           </button>
-          <p className={cn("font-medium text-slate-900", hasSubProducts && "font-semibold")}>
+          <p className={cn("font-medium text-[#0B1F33]", hasSubProducts && "font-semibold")}>
             {cp.product?.name || 'Product'}
           </p>
         </div>
@@ -202,7 +202,7 @@ function SortableProductRow({
             className="h-8 w-8 p-0"
             title="Ajuster le stock"
           >
-            <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+            <Pencil className="h-4 w-4 text-slate-600 hover:text-[#0B1F33]" />
           </Button>
         )}
       </TableCell>
@@ -287,7 +287,7 @@ function SortableProductRow({
       </TableCell>
       <TableCell className="align-top py-3 text-right">
         <div>
-          <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+          <p className="text-sm font-medium text-[#0B1F33]">{effectivePrice.toFixed(2)} €</p>
           {isCustomPrice && (
             <p className="text-xs text-blue-600">Personnalisé</p>
           )}
@@ -300,7 +300,7 @@ function SortableProductRow({
         <div>
           {effectiveRecommendedSalePrice !== null ? (
             <>
-              <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+              <p className="text-sm font-medium text-[#0B1F33]">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
               {isCustomRecommendedSalePrice && (
                 <p className="text-xs text-blue-600">Personnalisé</p>
               )}
@@ -2850,16 +2850,10 @@ export default function ClientDetailPage() {
           <div className="flex gap-3">
             <Button
               variant="ghost"
-              onClick={() => router.push('/clients')}
+              onClick={() => router.push(`/clients/${clientId}`)}
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour aux clients
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-            >
-              Retour à l'accueil
+              Retour à la page client
             </Button>
           </div>
           <Button
@@ -3201,14 +3195,14 @@ export default function ClientDetailPage() {
                   <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
                     <p className="text-sm text-slate-600">
                       Prix par défaut du produit : 
-                      <span className="font-semibold text-slate-900 ml-2">
+                      <span className="font-semibold text-[#0B1F33] ml-2">
                         {productToEdit.product.price.toFixed(2)} €
                       </span>
                     </p>
                     {productToEdit.product.recommended_sale_price !== null && (
                       <p className="text-sm text-slate-600">
                         Prix de vente conseillé par défaut : 
-                        <span className="font-semibold text-slate-900 ml-2">
+                        <span className="font-semibold text-[#0B1F33] ml-2">
                           {productToEdit.product.recommended_sale_price.toFixed(2)} €
                         </span>
                       </p>
@@ -3350,7 +3344,7 @@ export default function ClientDetailPage() {
                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                   <p className="text-sm text-slate-600">
                     Stock actuel : 
-                    <span className="font-semibold text-slate-900 ml-2">
+                    <span className="font-semibold text-[#0B1F33] ml-2">
                       {itemToAdjust?.currentStock}
                     </span>
                   </p>

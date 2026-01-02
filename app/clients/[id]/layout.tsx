@@ -38,7 +38,7 @@ export default function ClientLayout({
   ];
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-[calc(100vh-4rem)]">
       {/* Sidebar */}
       <aside className="w-64 border-r border-slate-200 bg-slate-50 p-4">
         <nav className="space-y-2">
@@ -50,10 +50,10 @@ export default function ClientLayout({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors',
+                  'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200',
                   isActive
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-700 hover:bg-slate-100'
+                    ? 'bg-[#0B1F33] text-white'
+                    : 'text-slate-700 hover:bg-slate-200 hover:shadow-md hover:scale-[1.02]'
                 )}
               >
                 <Icon className="h-5 w-5" />

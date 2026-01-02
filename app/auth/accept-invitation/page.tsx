@@ -172,7 +172,7 @@ export default function AcceptInvitationPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Building2 className="h-16 w-16 text-blue-600 mx-auto mb-4" />
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">
+          <h1 className="text-4xl font-bold text-[#0B1F33] mb-2">
             Accepter l'invitation
           </h1>
           <p className="text-slate-500">

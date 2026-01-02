@@ -230,16 +230,6 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <div className="container mx-auto py-8 px-4 max-w-4xl">
-          <div className="flex gap-3 mb-6">
-            <Button
-              variant="ghost"
-              onClick={() => router.push('/')}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour à l'accueil
-            </Button>
-          </div>
-
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
               <div className="flex justify-between items-start">

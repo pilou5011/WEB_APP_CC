@@ -161,7 +161,7 @@ export function StockUpdateConfirmationDialog({
           {productUpdates.length > 0 && (
             <>
               <div>
-                <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <Package className="h-5 w-5" />
                   Détail par Product
                 </h3>
@@ -173,7 +173,7 @@ export function StockUpdateConfirmationDialog({
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-semibold text-slate-900">{update.Product.name}</p>
+                          <p className="font-semibold text-[#0B1F33]">{update.Product.name}</p>
                           <p className="text-sm text-slate-500">
                             Prix unitaire : {update.effectivePrice.toFixed(2)} €
                             {update.isCustomPrice && <span className="ml-1 text-blue-600">(personnalisé)</span>}
@@ -181,7 +181,7 @@ export function StockUpdateConfirmationDialog({
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-slate-500">Montant</p>
-                          <p className="text-xl font-bold text-slate-900">
+                          <p className="text-xl font-bold text-[#0B1F33]">
                             {update.amount.toFixed(2)} €
                           </p>
                         </div>
@@ -221,7 +221,7 @@ export function StockUpdateConfirmationDialog({
           {pendingAdjustments.length > 0 && (
             <>
               <div>
-                <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <TrendingDown className="h-5 w-5 text-red-600" />
                   Reprises de stock
                 </h3>
@@ -237,7 +237,7 @@ export function StockUpdateConfirmationDialog({
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div>
-                            <p className="font-semibold text-slate-900">{adj.operation_name}</p>
+                            <p className="font-semibold text-[#0B1F33]">{adj.operation_name}</p>
                             <p className="text-sm text-slate-600 mt-1">
                               {quantity} unité{quantity > 1 ? 's' : ''} × {unitPrice.toFixed(2)} €
                             </p>
@@ -260,7 +260,7 @@ export function StockUpdateConfirmationDialog({
 
           {/* Total summary */}
           <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
               <Euro className="h-5 w-5" />
               Récapitulatif de facturation
             </h3>
@@ -307,8 +307,8 @@ export function StockUpdateConfirmationDialog({
                 </>
               )}
               <div className="flex justify-between items-center pt-2">
-                <span className="text-xl font-bold text-slate-900">Montant total à facturer</span>
-                <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-slate-900'}`}>
+                <span className="text-xl font-bold text-[#0B1F33]">Montant total à facturer</span>
+                <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-[#0B1F33]'}`}>
                   {totalAmount.toFixed(2)} €
                 </span>
               </div>
