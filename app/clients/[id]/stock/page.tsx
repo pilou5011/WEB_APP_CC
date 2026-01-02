@@ -365,7 +365,7 @@ export default function ClientDetailPage() {
   const [stockUpdatesWithoutInvoice, setStockUpdatesWithoutInvoice] = useState<Array<{
     id: string;
     created_at: string;
-    total_cards_sold: number;
+    total_stock_sold: number;
     total_amount: number;
     stockUpdates: StockUpdate[];
   }>>([]);
@@ -951,7 +951,7 @@ export default function ClientDetailPage() {
 
   const prepareProductUpdates = (validate: boolean = false) => {
     const updates: {
-      product: Product;
+      Product: Product;
       previousStock: number;
       countedStock: number;
       stockSold: number;
@@ -970,7 +970,7 @@ export default function ClientDetailPage() {
       if (hasSubProducts) {
         // For products with sub-products, validate and calculate from sub-products
         let totalCountedStock = 0;
-        let totalCardsAdded = 0;
+        let totalStockAdded = 0;
         let totalPreviousStock = 0;
         let hasAnySubProductData = false;
 
@@ -1011,19 +1011,19 @@ export default function ClientDetailPage() {
           if (!hasCountedStock || !hasNewDeposit) continue;
 
           totalCountedStock += parseInt(formData.counted_stock) || 0;
-          totalCardsAdded += parseInt(formData.stock_added) || 0;
+          totalStockAdded += parseInt(formData.stock_added) || 0;
           totalPreviousStock += csp.current_stock || 0;
         }
 
         if (!hasAnySubProductData) continue;
 
-        if (validate && (totalCountedStock === 0 && totalCardsAdded === 0)) {
+        if (validate && (totalCountedStock === 0 && totalStockAdded === 0)) {
           continue; // Skip if no data entered
         }
 
         const previousStock = totalPreviousStock;
         const countedStock = totalCountedStock;
-        const newDeposit = totalCardsAdded;
+        const newDeposit = totalStockAdded;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
         const stockAdded = Math.max(0, newStock - countedStock);
@@ -1035,7 +1035,7 @@ export default function ClientDetailPage() {
 
         if (cp.product) {
           updates.push({
-            product: cp.product,
+            Product: cp.product,
             previousStock,
             countedStock,
             stockSold,
@@ -1096,7 +1096,7 @@ export default function ClientDetailPage() {
 
         if (cp.product) {
           updates.push({
-            product: cp.product,
+            Product: cp.product,
             previousStock,
             countedStock,
             stockSold,
@@ -1289,7 +1289,7 @@ export default function ClientDetailPage() {
             let totalNewStock = 0;
             let totalCountedStock = 0;
             let totalPreviousStock = 0;
-            let totalCardsAdded = 0;
+            let totalStockAdded = 0;
             let totalStockSold = 0;
 
             // D'abord, s'assurer que tous les sous-produits existent et calculer le stock total
@@ -1401,7 +1401,7 @@ export default function ClientDetailPage() {
                 previous_stock: totalPreviousStock,
                 counted_stock: totalCountedStock,
                 stock_sold: totalStockSold,
-                stock_added: totalCardsAdded,
+                stock_added: totalStockAdded,
                 new_stock: totalNewStock,
                 product_info: productInfo,
                 unit_price_ht: unitPriceHt,
@@ -1438,8 +1438,8 @@ export default function ClientDetailPage() {
               invoice_id: invoiceData?.id || null,
               previous_stock: previousStock,
               counted_stock: countedStock,
-              cards_sold: cardsSold,
-              stock_added: cardsAdded,
+              stock_sold: stockSold,
+              stock_added: stockAdded,
               new_stock: newStock,
               product_info: productInfo,
               unit_price_ht: unitPriceHt,
@@ -1671,9 +1671,13 @@ export default function ClientDetailPage() {
         const tempInvoiceForDialogs: Invoice | null = invoiceData || {
           id: '', // Will not be used for filtering, but needed for dialog
           client_id: clientId,
-          total_cards_sold: totalCardsSold,
+          total_stock_sold: totalStockSold,
           total_amount: 0,
           invoice_number: null, // No invoice number when amount is 0
+          discount_percentage: null,
+          invoice_pdf_path: null,
+          stock_report_pdf_path: null,
+          deposit_slip_pdf_path: null,
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -1961,7 +1965,7 @@ export default function ClientDetailPage() {
             invoice_id: null,
             previous_stock: itemToAdjust.currentStock,
             counted_stock: newStockValue,
-            cards_sold: 0,
+            stock_sold: 0,
             stock_added: newStockValue - itemToAdjust.currentStock,
             new_stock: newStockValue
           });
@@ -2013,7 +2017,7 @@ export default function ClientDetailPage() {
             invoice_id: null,
             previous_stock: itemToAdjust.currentStock,
             counted_stock: newStockValue,
-            cards_sold: 0,
+            stock_sold: 0,
             stock_added: newStockValue - itemToAdjust.currentStock,
             new_stock: newStockValue
           });
@@ -2091,7 +2095,7 @@ export default function ClientDetailPage() {
                   invoice_id: null,
                   previous_stock: previousParentStock,
                   counted_stock: parentStock,
-                  cards_sold: 0,
+                  stock_sold: 0,
                   stock_added: parentStock - previousParentStock,
                   new_stock: parentStock
                 });
@@ -2674,7 +2678,7 @@ export default function ClientDetailPage() {
         product_id: associateForm.product_id!,
         previous_stock: 0,
         counted_stock: 0,
-        cards_sold: 0,
+        stock_sold: 0,
         stock_added: subProductsStocks ? 0 : initialStock,
         new_stock: subProductsStocks ? 0 : initialStock
       };
@@ -2723,7 +2727,7 @@ export default function ClientDetailPage() {
           sub_product_id: sp.id,
           previous_stock: 0,
           counted_stock: 0,
-          cards_sold: 0,
+          stock_sold: 0,
           stock_added: subProductsStocks[sp.id] || 0,
           new_stock: subProductsStocks[sp.id] || 0
         }));

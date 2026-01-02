@@ -2681,7 +2681,7 @@ export default function ClientDetailPage() {
         product_id: associateForm.product_id!,
         previous_stock: 0,
         counted_stock: 0,
-        cards_sold: 0,
+        stock_sold: 0,
         stock_added: subProductsStocks ? 0 : initialStock,
         new_stock: subProductsStocks ? 0 : initialStock
       };
@@ -2730,7 +2730,7 @@ export default function ClientDetailPage() {
           sub_product_id: sp.id,
           previous_stock: 0,
           counted_stock: 0,
-          cards_sold: 0,
+          stock_sold: 0,
           stock_added: subProductsStocks[sp.id] || 0,
           new_stock: subProductsStocks[sp.id] || 0
         }));
