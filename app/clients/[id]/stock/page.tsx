@@ -150,8 +150,8 @@ function SortableProductRow({
   perProductForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>;
   setPerProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>>;
   clientSubProducts: Record<string, ClientSubProduct>;
-  perSubProductForm: Record<string, { counted_stock: string; cards_added: string }>;
-  setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; cards_added: string }>>>;
+  perSubProductForm: Record<string, { counted_stock: string; stock_added: string }>;
+  setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string }>>>;
   onEditPrice: () => void;
   onDelete: () => void;
   subProducts: Record<string, SubProduct[]>;
@@ -226,7 +226,7 @@ function SortableProductRow({
             onChange={(e) => {
               const value = e.target.value;
               if (value === '' || /^\d+$/.test(value)) {
-                const current = perProductForm[cp.id] || { counted_stock: '', cards_added: '', reassort: '', product_info: '' };
+                const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
                 setPerProductForm(p => ({ ...p, [cp.id]: { ...current, counted_stock: value } }));
               }
             }}
@@ -242,9 +242,9 @@ function SortableProductRow({
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {(() => {
-              const current = perProductForm[cp.id] || { counted_stock: '', cards_added: '', reassort: '', product_info: '' };
+              const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
               const counted = parseInt(current.counted_stock) || 0;
-              const added = parseInt(current.cards_added) || 0;
+              const added = parseInt(current.stock_added) || 0;
               // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
               return added - counted;
             })()}
@@ -258,13 +258,13 @@ function SortableProductRow({
           <Input
             type="text"
             inputMode="numeric"
-            value={perProductForm[cp.id]?.cards_added || ''}
+            value={perProductForm[cp.id]?.stock_added || ''}
             onChange={(e) => {
               const value = e.target.value;
               if (value === '' || /^\d+$/.test(value)) {
-                const current = perProductForm[cp.id] || { counted_stock: '', cards_added: '', reassort: '', product_info: '' };
-                // Just update cards_added, reassort will be calculated automatically in the display
-                setPerProductForm(p => ({ ...p, [cp.id]: { ...current, cards_added: value } }));
+                const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+                // Just update stock_added, reassort will be calculated automatically in the display
+                setPerProductForm(p => ({ ...p, [cp.id]: { ...current, stock_added: value } }));
               }
             }}
             onWheel={(e) => e.currentTarget.blur()}
@@ -278,7 +278,7 @@ function SortableProductRow({
           type="text"
           value={perProductForm[cp.id]?.product_info || ''}
           onChange={(e) => {
-            const current = perProductForm[cp.id] || { counted_stock: '', cards_added: '', reassort: '', product_info: '' };
+            const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
             setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
           }}
           placeholder="......"
@@ -452,10 +452,10 @@ export default function ClientDetailPage() {
   const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
   const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
-  // Form per product: { [clientProductId]: { counted_stock, cards_added, product_info } }
-  const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }>>({});
-  // Form per sub-product: { [subProductId]: { counted_stock, cards_added } }
-  const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; cards_added: string }>>({});
+  // Form per product: { [clientProductId]: { counted_stock, stock_added, product_info } }
+  const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>({});
+  // Form per sub-product: { [subProductId]: { counted_stock, stock_added } }
+  const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string }>>({});
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -591,7 +591,7 @@ export default function ClientDetailPage() {
             setDraftRecoveryOpen(true);
             // Immediately restore draft data to prevent it from being overwritten
             // Add reassort field to existing draft data if missing
-            const draftFormWithReassort: Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }> = {};
+            const draftFormWithReassort: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
             if (draftData.perProductForm) {
               const perProductForm = draftData.perProductForm;
               Object.keys(perProductForm).forEach(key => {
@@ -624,11 +624,11 @@ export default function ClientDetailPage() {
   // Initialize sub-product forms when subProducts data is loaded
   useEffect(() => {
     if (!loading && Object.keys(subProducts).length > 0) {
-      const initialSubProductForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
       Object.values(subProducts).flat().forEach((sp) => {
         initialSubProductForm[sp.id] = {
           counted_stock: perSubProductForm[sp.id]?.counted_stock || '',
-          cards_added: perSubProductForm[sp.id]?.cards_added || ''
+          stock_added: perSubProductForm[sp.id]?.stock_added || ''
         };
       });
       // Only update if there are new sub-products not yet in the form
@@ -889,8 +889,8 @@ export default function ClientDetailPage() {
       setStockUpdates(updatesData || []);
 
       // Initialize per-product form defaults with last product_info
-      const initialForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }> = {};
-      const initialSubProductForm: Record<string, { counted_stock: string; cards_added: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
+      const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
       
       cpWithTyped.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
@@ -901,7 +901,7 @@ export default function ClientDetailPage() {
         
         initialForm[cp.id] = { 
           counted_stock: '', 
-          cards_added: '', 
+          stock_added: '', 
           reassort: '',
           product_info: lastUpdate?.product_info || '' 
         };
@@ -980,7 +980,7 @@ export default function ClientDetailPage() {
 
           const formData = perSubProductForm[sp.id];
           const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
-          const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
+          const hasNewDeposit = formData?.stock_added && formData.stock_added.trim() !== '';
 
           if (!hasCountedStock && !hasNewDeposit) continue;
           hasAnySubProductData = true;
@@ -996,7 +996,7 @@ export default function ClientDetailPage() {
             }
 
             const countedStock = parseInt(formData.counted_stock);
-            const newDeposit = parseInt(formData.cards_added);
+            const newDeposit = parseInt(formData.stock_added);
 
             if (isNaN(countedStock) || countedStock < 0) {
               toast.error(`Le stock compté doit être un nombre positif pour « ${sp.name} »`);
@@ -1011,7 +1011,7 @@ export default function ClientDetailPage() {
           if (!hasCountedStock || !hasNewDeposit) continue;
 
           totalCountedStock += parseInt(formData.counted_stock) || 0;
-          totalCardsAdded += parseInt(formData.cards_added) || 0;
+          totalCardsAdded += parseInt(formData.stock_added) || 0;
           totalPreviousStock += csp.current_stock || 0;
         }
 
@@ -1053,7 +1053,7 @@ export default function ClientDetailPage() {
         if (!form) continue;
         
         const hasCountedStock = form.counted_stock && form.counted_stock.trim() !== '';
-        const hasNewDeposit = form.cards_added && form.cards_added.trim() !== '';
+        const hasNewDeposit = form.stock_added && form.stock_added.trim() !== '';
         
         if (!hasCountedStock && !hasNewDeposit) continue;
 
@@ -1071,7 +1071,7 @@ export default function ClientDetailPage() {
         if (!hasCountedStock || !hasNewDeposit) continue;
 
         const countedStock = parseInt(form.counted_stock);
-        const newDeposit = parseInt(form.cards_added);
+        const newDeposit = parseInt(form.stock_added);
 
         if (validate) {
           if (isNaN(countedStock) || countedStock < 0) {
@@ -1161,7 +1161,7 @@ export default function ClientDetailPage() {
       console.log('[Draft] Draft deleted successfully, reinitializing form');
       
       // Reinitialize form with default values (from last invoice)
-      const initialForm: Record<string, { counted_stock: string; cards_added: string; reassort: string; product_info: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
       clientProducts.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
           const lastUpdate = stockUpdates.find(
@@ -1171,7 +1171,7 @@ export default function ClientDetailPage() {
         
         initialForm[cp.id] = { 
           counted_stock: '', 
-          cards_added: '', 
+          stock_added: '', 
           reassort: '',
           product_info: lastUpdate?.product_info || '' 
         };
@@ -1328,7 +1328,7 @@ export default function ClientDetailPage() {
 
               const formData = perSubProductForm[sp.id];
               const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
-              const hasNewDeposit = formData?.cards_added && formData.cards_added.trim() !== '';
+              const hasNewDeposit = formData?.stock_added && formData.stock_added.trim() !== '';
 
               const previousStock = csp.current_stock;
               
@@ -1339,7 +1339,7 @@ export default function ClientDetailPage() {
               if (hasCountedStock || hasNewDeposit) {
                 // Sous-produit mis à jour : utiliser les valeurs du formulaire
                 countedStock = parseInt(formData.counted_stock || '0');
-                const newDeposit = parseInt(formData.cards_added || '0');
+                const newDeposit = parseInt(formData.stock_added || '0');
                 // Si newDeposit n'est pas renseigné, utiliser countedStock comme nouveau stock
                 newStock = hasNewDeposit ? newDeposit : countedStock;
                 
@@ -1401,7 +1401,7 @@ export default function ClientDetailPage() {
                 previous_stock: totalPreviousStock,
                 counted_stock: totalCountedStock,
                 stock_sold: totalStockSold,
-                cards_added: totalCardsAdded,
+                stock_added: totalCardsAdded,
                 new_stock: totalNewStock,
                 product_info: productInfo,
                 unit_price_ht: unitPriceHt,
@@ -1415,11 +1415,11 @@ export default function ClientDetailPage() {
             // Normal product without sub-products
             const form = perProductForm[cp.id];
             if (!form) continue;
-            const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.cards_added && form.cards_added.trim() !== '');
+            const hasAny = (form.counted_stock && form.counted_stock.trim() !== '') || (form.stock_added && form.stock_added.trim() !== '');
             if (!hasAny) continue;
 
             const countedStock = parseInt(form.counted_stock);
-            const newDeposit = parseInt(form.cards_added);
+            const newDeposit = parseInt(form.stock_added);
             const previousStock = cp.current_stock;
             const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
@@ -1439,7 +1439,7 @@ export default function ClientDetailPage() {
               previous_stock: previousStock,
               counted_stock: countedStock,
               cards_sold: cardsSold,
-              cards_added: cardsAdded,
+              stock_added: cardsAdded,
               new_stock: newStock,
               product_info: productInfo,
               unit_price_ht: unitPriceHt,
@@ -1962,7 +1962,7 @@ export default function ClientDetailPage() {
             previous_stock: itemToAdjust.currentStock,
             counted_stock: newStockValue,
             cards_sold: 0,
-            cards_added: newStockValue - itemToAdjust.currentStock,
+            stock_added: newStockValue - itemToAdjust.currentStock,
             new_stock: newStockValue
           });
 
@@ -2014,7 +2014,7 @@ export default function ClientDetailPage() {
             previous_stock: itemToAdjust.currentStock,
             counted_stock: newStockValue,
             cards_sold: 0,
-            cards_added: newStockValue - itemToAdjust.currentStock,
+            stock_added: newStockValue - itemToAdjust.currentStock,
             new_stock: newStockValue
           });
 
@@ -2092,7 +2092,7 @@ export default function ClientDetailPage() {
                   previous_stock: previousParentStock,
                   counted_stock: parentStock,
                   cards_sold: 0,
-                  cards_added: parentStock - previousParentStock,
+                  stock_added: parentStock - previousParentStock,
                   new_stock: parentStock
                 });
 
@@ -2675,7 +2675,7 @@ export default function ClientDetailPage() {
         previous_stock: 0,
         counted_stock: 0,
         cards_sold: 0,
-        cards_added: subProductsStocks ? 0 : initialStock,
+        stock_added: subProductsStocks ? 0 : initialStock,
         new_stock: subProductsStocks ? 0 : initialStock
       };
 
@@ -2724,7 +2724,7 @@ export default function ClientDetailPage() {
           previous_stock: 0,
           counted_stock: 0,
           cards_sold: 0,
-          cards_added: subProductsStocks[sp.id] || 0,
+          stock_added: subProductsStocks[sp.id] || 0,
           new_stock: subProductsStocks[sp.id] || 0
         }));
 
@@ -2764,7 +2764,7 @@ export default function ClientDetailPage() {
           const { error: updateProductStockUpdateError } = await supabase
             .from('stock_updates')
             .update({ 
-              cards_added: totalStock,
+              stock_added: totalStock,
               new_stock: totalStock
             })
             .eq('id', lastProductStockUpdate.id)
@@ -3126,7 +3126,7 @@ export default function ClientDetailPage() {
                             const formData = perSubProductForm[sp.id];
                             if (formData) {
                               parentCountedStock += parseInt(formData.counted_stock) || 0;
-                              parentCardsAdded += parseInt(formData.cards_added) || 0;
+                              parentCardsAdded += parseInt(formData.stock_added) || 0;
                             }
                           });
                         }
@@ -3189,7 +3189,7 @@ export default function ClientDetailPage() {
                                       onChange={(e) => {
                                         const value = e.target.value;
                                         if (value === '' || /^\d+$/.test(value)) {
-                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), counted_stock: value } }));
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', stock_added: '' }), counted_stock: value } }));
                                         }
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
@@ -3200,9 +3200,9 @@ export default function ClientDetailPage() {
                                   <TableCell className="align-middle py-2 text-center">
                                     <p className="text-xs font-medium text-slate-600">
                                       {(() => {
-                                        const formData = perSubProductForm[sp.id] || { counted_stock: '', cards_added: '' };
+                                        const formData = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '' };
                                         const counted = parseInt(formData.counted_stock) || 0;
-                                        const added = parseInt(formData.cards_added) || 0;
+                                        const added = parseInt(formData.stock_added) || 0;
                                         // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
                                         return added - counted;
                                       })()}
@@ -3212,11 +3212,11 @@ export default function ClientDetailPage() {
                                     <Input
                                       type="text"
                                       inputMode="numeric"
-                                      value={perSubProductForm[sp.id]?.cards_added || ''}
+                                      value={perSubProductForm[sp.id]?.stock_added || ''}
                                       onChange={(e) => {
                                         const value = e.target.value;
                                         if (value === '' || /^\d+$/.test(value)) {
-                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', cards_added: '' }), cards_added: value } }));
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', stock_added: '' }), stock_added: value } }));
                                         }
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
