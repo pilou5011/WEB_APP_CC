@@ -116,7 +116,7 @@ function periodsOverlap(p1: VacationPeriod, p2: VacationPeriod): boolean {
 
 // Component for sortable product row
 function SortableProductRow({
-  cc,
+  cp,
   effectivePrice,
   isCustomPrice,
   effectiveRecommendedSalePrice,
@@ -211,7 +211,7 @@ function SortableProductRow({
           <></>
         ) : (
           <p className="text-sm font-medium text-slate-600">
-            {cc.current_stock}
+            {cp.current_stock}
           </p>
         )}
       </TableCell>
@@ -510,8 +510,8 @@ export default function ClientDetailPage() {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const oldIndex = clientProducts.findIndex(cc => cp.id === active.id);
-      const newIndex = clientProducts.findIndex(cc => cp.id === over.id);
+      const oldIndex = clientProducts.findIndex(cp => cp.id === active.id);
+      const newIndex = clientProducts.findIndex(cp => cp.id === over.id);
 
       const reorderedProducts = arrayMove(clientProducts, oldIndex, newIndex);
       setClientProducts(reorderedProducts);
@@ -807,7 +807,7 @@ export default function ClientDetailPage() {
       setClientProducts(ccWithTyped);
 
       // Load sub-products for all products
-      const productIds = ccWithTyped.map(cc => cp.product_id);
+      const productIds = ccWithTyped.map(cp => cp.product_id);
       if (productIds.length > 0) {
         const { data: subProductsData, error: subProductsError } = await supabase
           .from('sub_products')
