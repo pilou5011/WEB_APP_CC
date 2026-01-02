@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2, Check, ChevronsUpDown, Pencil, Download } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2, Check, ChevronsUpDown, Pencil } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -24,7 +24,6 @@ import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatV
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { cn } from '@/lib/utils';
-import { generateClientInfoPDF } from '@/lib/pdf-generators';
 
 // Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
@@ -1027,43 +1026,6 @@ export default function ClientInfoPage() {
     }
   };
 
-  const handleExportClientInfo = async () => {
-    if (!client) return;
-
-    try {
-      // Récupérer le type d'établissement et la méthode de paiement
-      const establishmentType = client.establishment_type_id
-        ? establishmentTypes.find(t => t.id === client.establishment_type_id) || null
-        : null;
-      
-      const paymentMethod = client.payment_method_id
-        ? paymentMethods.find(m => m.id === client.payment_method_id) || null
-        : null;
-
-      // Générer le PDF
-      const pdfBlob = await generateClientInfoPDF({
-        client,
-        establishmentType,
-        paymentMethod,
-      });
-
-      // Télécharger le PDF
-      const url = URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Fiche_Client_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      toast.success('Fiche client exportée avec succès');
-    } catch (error: any) {
-      console.error('Error exporting client info:', error);
-      toast.error('Erreur lors de l\'export de la fiche client');
-    }
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -1108,16 +1070,10 @@ export default function ClientInfoPage() {
                     Détails complets du client
                   </CardDescription>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleExportClientInfo}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Exporter la fiche
-                  </Button>
-                  <Button onClick={() => setIsEditing(true)}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    Modifier infos client
-                  </Button>
-                </div>
+                <Button onClick={() => setIsEditing(true)}>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Modifier infos client
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
