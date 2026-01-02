@@ -594,10 +594,10 @@ export default function ProductDetailPage() {
           // Pour chaque client, ajouter les nouveaux sous-produits avec stock 0
           if (clientProducts && clientProducts.length > 0) {
             const clientSubProductsToInsert: any[] = [];
-            for (const cc of clientProducts) {
+            for (const cp of clientProducts) {
               for (const subProductId of newlyCreatedSubProductIds) {
                 clientSubProductsToInsert.push({
-                  client_id: cc.client_id,
+                  client_id: cp.client_id,
                   sub_product_id: subProductId,
                   initial_stock: 0,
                   current_stock: 0

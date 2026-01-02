@@ -518,7 +518,7 @@ export default function ClientDetailPage() {
 
       // Update display_order in database
       try {
-        const updates = reorderedProducts.map((cc, index) => ({
+        const updates = reorderedProducts.map((cp, index) => ({
           id: cp.id,
           display_order: index + 1
         }));
@@ -794,7 +794,7 @@ export default function ClientDetailPage() {
       setAllProducts(productsData || []);
 
       // Load client products with related product
-      const { data: ccData, error: ccError } = await supabase
+      const { data: cpData, error: cpError } = await supabase
         .from('client_products')
         .select('*, product:products!inner(*)')
         .eq('client_id', clientId)
@@ -802,12 +802,12 @@ export default function ClientDetailPage() {
         .is('deleted_at', null)
         .order('display_order', { ascending: true });
 
-      if (ccError) throw ccError;
-      const ccWithTyped = (ccData || []).map((row: any) => ({ ...row, product: row.product as Product }));
-      setClientProducts(ccWithTyped);
+      if (cpError) throw cpError;
+      const cpWithTyped = (cpData || []).map((row: any) => ({ ...row, product: row.product as Product }));
+      setClientProducts(cpWithTyped);
 
       // Load sub-products for all products
-      const productIds = ccWithTyped.map(cp => cp.product_id);
+      const productIds = cpWithTyped.map(cp => cp.product_id);
       if (productIds.length > 0) {
         const { data: subProductsData, error: subProductsError } = await supabase
           .from('sub_products')
@@ -893,7 +893,7 @@ export default function ClientDetailPage() {
       const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
       const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
       
-      ccWithTyped.forEach((cc) => {
+      cpWithTyped.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
         const lastUpdate = (updatesData || []).find(
           (update: StockUpdate) => 
@@ -952,7 +952,7 @@ export default function ClientDetailPage() {
 
   const prepareProductUpdates = (validate: boolean = false) => {
     const updates: {
-      product: Product;
+      Product: Product;
       previousStock: number;
       countedStock: number;
       stockSold: number;
@@ -964,7 +964,7 @@ export default function ClientDetailPage() {
       productInfo: string;
     }[] = [];
 
-    for (const cc of clientProducts) {
+    for (const cp of clientProducts) {
       const productSubProducts = subProducts[cp.product_id] || [];
       const hasSubProducts = productSubProducts.length > 0;
 
@@ -1030,13 +1030,13 @@ export default function ClientDetailPage() {
         const stockAdded = Math.max(0, newStock - countedStock);
         const productInfo = perProductForm[cp.id]?.product_info || '';
 
-        const effectivePrice = cc.custom_price ?? cp.product?.price ?? 0;
-        const isCustomPrice = cc.custom_price !== null;
+        const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
+        const isCustomPrice = cp.custom_price !== null;
         const amount = stockSold * effectivePrice;
 
         if (cp.product) {
           updates.push({
-            product: cp.product,
+            Product: cp.product,
             previousStock,
             countedStock,
             stockSold,
@@ -1085,19 +1085,19 @@ export default function ClientDetailPage() {
           }
         }
 
-        const previousStock = cc.current_stock;
+        const previousStock = cp.current_stock;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
         const stockAdded = Math.max(0, newStock - countedStock);
         const productInfo = form.product_info || '';
 
-        const effectivePrice = cc.custom_price ?? cp.product?.price ?? 0;
-        const isCustomPrice = cc.custom_price !== null;
+        const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
+        const isCustomPrice = cp.custom_price !== null;
         const amount = stockSold * effectivePrice;
 
         if (cp.product) {
           updates.push({
-            product: cp.product,
+            Product: cp.product,
             previousStock,
             countedStock,
             stockSold,
@@ -1163,7 +1163,7 @@ export default function ClientDetailPage() {
       
       // Reinitialize form with default values (from last invoice)
       const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
-      clientProducts.forEach((cc) => {
+      clientProducts.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
         const lastUpdate = stockUpdates.find(
           (update: StockUpdate) => 
@@ -1276,11 +1276,11 @@ export default function ClientDetailPage() {
 
       // Prepare stock updates with invoice_id
       const updatesToInsert: any[] = [];
-      const ccUpdates: { id: string; new_stock: number }[] = [];
+      const cpUpdates: { id: string; new_stock: number }[] = [];
       const cspUpdates: { id: string; new_stock: number }[] = []; // Sub-product updates
 
       if (hasStockUpdates) {
-        for (const cc of clientProducts) {
+        for (const cp of clientProducts) {
           const productSubProducts = subProducts[cp.product_id] || [];
           const hasSubProducts = productSubProducts.length > 0;
 
@@ -1389,7 +1389,7 @@ export default function ClientDetailPage() {
             if (totalStockSold > 0) {
               const productInfo = perProductForm[cp.id]?.product_info || '';
               // Calculer le prix effectif du produit
-              const effectivePrice = cc.custom_price ?? cp.product?.price ?? 0;
+              const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
               // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée
               const unitPriceHt = invoiceData ? effectivePrice : null;
               const totalAmountHt = invoiceData && unitPriceHt ? totalStockSold * unitPriceHt : null;
@@ -1411,7 +1411,7 @@ export default function ClientDetailPage() {
             }
 
             // Update parent product stock (sum of ALL sub-products)
-            ccUpdates.push({ id: cp.id, new_stock: totalNewStock });
+            cpUpdates.push({ id: cp.id, new_stock: totalNewStock });
           } else {
             // Normal product without sub-products
             const form = perProductForm[cp.id];
@@ -1421,13 +1421,13 @@ export default function ClientDetailPage() {
 
             const countedStock = parseInt(form.counted_stock);
             const newDeposit = parseInt(form.stock_added);
-            const previousStock = cc.current_stock;
+            const previousStock = cp.current_stock;
             const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
             const stockAdded = Math.max(0, newStock - countedStock);
             const productInfo = form.product_info || '';
             // Calculer le prix effectif du produit
-            const effectivePrice = cc.custom_price ?? cp.product?.price ?? 0;
+            const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
             // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et du stock est vendu
             const unitPriceHt = invoiceData && stockSold > 0 ? effectivePrice : null;
             const totalAmountHt = invoiceData && stockSold > 0 && unitPriceHt ? stockSold * unitPriceHt : null;
@@ -1446,7 +1446,7 @@ export default function ClientDetailPage() {
               unit_price_ht: unitPriceHt,
               total_amount_ht: totalAmountHt
             });
-            ccUpdates.push({ id: cp.id, new_stock: newStock });
+            cpUpdates.push({ id: cp.id, new_stock: newStock });
           }
         }
       }
@@ -1556,13 +1556,13 @@ export default function ClientDetailPage() {
       }
 
       // Apply per-product stock (will be sum of sub-products for products with sub-products)
-      for (const upd of ccUpdates) {
-        const { error: ccUpdateError } = await supabase
+      for (const upd of cpUpdates) {
+        const { error: cpUpdateError } = await supabase
           .from('client_products')
           .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
           .eq('id', upd.id)
           .eq('company_id', companyId);
-        if (ccUpdateError) throw ccUpdateError;
+        if (cpUpdateError) throw cpUpdateError;
       }
 
       // Stock is now managed at client_products and client_sub_products level
@@ -1712,8 +1712,8 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleDeleteProductClick = (cc: ClientProduct & { product?: Product }) => {
-    setProductToDelete(cc);
+  const handleDeleteProductClick = (cp: ClientProduct & { product?: Product }) => {
+    setProductToDelete(cp);
     setDeleteProductDialogOpen(true);
   };
 
@@ -1774,20 +1774,20 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleEditPriceClick = (cc: ClientProduct & { product?: Product }) => {
-    setProductToEdit(cc);
+  const handleEditPriceClick = (cp: ClientProduct & { product?: Product }) => {
+    setProductToEdit(cp);
     
     // Initialiser le prix de cession
-    const priceType = cc.custom_price !== null ? 'custom' : 'default';
-    const customPrice = cc.custom_price !== null ? cc.custom_price.toString() : '';
+    const priceType = cp.custom_price !== null ? 'custom' : 'default';
+    const customPrice = cp.custom_price !== null ? cp.custom_price.toString() : '';
     
     // Initialiser le prix de vente conseillé
     let recommendedSalePriceType: 'default' | 'custom' = 'default';
     let customRecommendedSalePrice = '';
     
-    if (cc.custom_recommended_sale_price !== null) {
+    if (cp.custom_recommended_sale_price !== null) {
       recommendedSalePriceType = 'custom';
-      customRecommendedSalePrice = cc.custom_recommended_sale_price.toString();
+      customRecommendedSalePrice = cp.custom_recommended_sale_price.toString();
     } else {
       recommendedSalePriceType = 'default';
     }
@@ -1872,8 +1872,8 @@ export default function ClientDetailPage() {
   const handleAdjustStockClick = async (type: 'product' | 'sub-product', id: string) => {
     try {
       if (type === 'product') {
-        const cc = clientProducts.find(c => c.id === id);
-        if (!cc) {
+        const cp = clientProducts.find(c => c.id === id);
+        if (!cp) {
           toast.error('Produit non trouvée');
           return;
         }
@@ -1881,7 +1881,7 @@ export default function ClientDetailPage() {
           type: 'product',
           id: cp.id,
           name: cp.product?.name || 'Product',
-          currentStock: cc.current_stock || 0,
+          currentStock: cp.current_stock || 0,
           productId: cp.product_id
         });
       } else if (type === 'sub-product') {
@@ -2066,7 +2066,7 @@ export default function ClientDetailPage() {
             });
 
             // Get current client product
-            const { data: clientProduct, error: ccError } = await supabase
+            const { data: clientProduct, error: cpError } = await supabase
               .from('client_products')
               .select('*')
               .eq('client_id', clientId)
@@ -2075,7 +2075,7 @@ export default function ClientDetailPage() {
               .is('deleted_at', null)
               .maybeSingle();
 
-            if (ccError) throw ccError;
+            if (cpError) throw cpError;
 
             if (clientProduct) {
               const previousParentStock = clientProduct.current_stock || 0;
@@ -2621,7 +2621,7 @@ export default function ClientDetailPage() {
 
       // Calculate display_order: max + 1 to add at the bottom
       const maxOrder = clientProducts.length > 0 
-        ? Math.max(...clientProducts.map(cc => cc.display_order || 0))
+        ? Math.max(...clientProducts.map(cp => cp.display_order || 0))
         : 0;
       const newDisplayOrder = maxOrder + 1;
 
@@ -2852,8 +2852,8 @@ export default function ClientDetailPage() {
   }
 
   // Calculate total cards sold from client_products
-  const stockSold = clientProducts.reduce((sum, cc) => {
-    const sold = (cc.initial_stock || 0) - (cc.current_stock || 0);
+  const stockSold = clientProducts.reduce((sum, cp) => {
+    const sold = (cp.initial_stock || 0) - (cp.current_stock || 0);
     return sum + Math.max(0, sold);
   }, 0);
   const amountDue = stockSold * 2;

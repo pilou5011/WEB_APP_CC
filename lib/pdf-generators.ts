@@ -261,8 +261,8 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     
     // Sort stock updates by Product display_order
     const sortedStockUpdates = [...productStockUpdates].sort((a, b) => {
-      const aCC = clientProducts.find(cc => cc.product_id === a.product_id);
-      const bCC = clientProducts.find(cc => cc.product_id === b.product_id);
+      const aCC = clientProducts.find(cp => cp.product_id === a.product_id);
+      const bCC = clientProducts.find(cp => cp.product_id === b.product_id);
       const aOrder = aCC?.display_order || 0;
       const bOrder = bCC?.display_order || 0;
       return aOrder - bOrder;
@@ -276,7 +276,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     // Appliquer la remise proportionnellement à chaque ligne de facture
     const stockRows = sortedStockUpdates.map((update) => {
       const Product = products.find(c => c.id === update.product_id);
-      const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
+      const ClientProduct = clientProducts.find(cp => cp.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       const totalHTBeforeDiscount = update.stock_sold * effectivePrice;
       // Appliquer la remise proportionnellement à chaque ligne (conforme fiscalement)
@@ -353,7 +353,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
     const totalHTBeforeDiscount = productStockUpdates.reduce((sum, update) => {
       const Product = products.find(c => c.id === update.product_id);
-      const ClientProduct = clientProducts.find(cc => cc.product_id === update.product_id);
+      const ClientProduct = clientProducts.find(cp => cp.product_id === update.product_id);
       const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
       return sum + (update.stock_sold * effectivePrice);
     }, 0) + adjustmentsTotal;
@@ -802,14 +802,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     const tableData: any[] = [];
     const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
-    sortedProducts.forEach((cc) => {
-      const productName = cc.Product?.name || 'Product';
+    sortedProducts.forEach((cp) => {
+      const productName = cp.Product?.name || 'Product';
       const info = '';
-      const effectivePrice = cc.custom_price ?? cc.Product?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.Product?.recommended_sale_price ?? null;
+      const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesByProductId.get(cc.product_id || '');
-      const productSubProducts = subProductsByProductId.get(cc.product_id || '') || [];
+      const stockUpdate = stockUpdatesByProductId.get(cp.product_id || '');
+      const productSubProducts = subProductsByProductId.get(cp.product_id || '') || [];
       const hasSubProducts = productSubProducts.length > 0;
       
       let previousStock: number;
@@ -879,7 +879,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                                  stockUpdate.counted_stock !== undefined;
           
           if (hasCountedStock && !hasNewDeposit) {
-            const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
@@ -890,14 +890,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             reassort = stockUpdate.stock_added;
             newDeposit = stockUpdate.new_stock;
           } else {
-            const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
             newDeposit = lastNewStock;
           }
         } else {
-          const lastNewStock = lastNewStockByProductId.get(cc.product_id || '') || 0;
+          const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
           previousStock = lastNewStock;
           countedStock = lastNewStock;
           reassort = 0;
@@ -1183,9 +1183,9 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     });
 
     // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
-    clientProducts.forEach(cc => {
-      if (cc.product_id && !productInfos[cc.product_id]) {
-        productInfos[cc.product_id] = '';
+    clientProducts.forEach(cp => {
+      if (cp.product_id && !productInfos[cp.product_id]) {
+        productInfos[cp.product_id] = '';
       }
     });
 
@@ -1362,15 +1362,15 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       }
     });
     
-    const tableData = sortedProducts.map((cc) => {
-      const productName = cc.Product?.name || 'Product';
-      const info = productInfos[cc.product_id || ''] || '';
-      const barcode = cc.Product?.barcode || ''; // Code barre produit
-      const effectivePrice = cc.custom_price ?? cc.Product?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.Product?.recommended_sale_price ?? null;
+    const tableData = sortedProducts.map((cp) => {
+      const productName = cp.Product?.name || 'Product';
+      const info = productInfos[cp.product_id || ''] || '';
+      const barcode = cp.Product?.barcode || ''; // Code barre produit
+      const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesMap.get(cc.product_id || '');
-      const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
+      const stockUpdate = stockUpdatesMap.get(cp.product_id || '');
+      const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
       
       return [
         productName,
