@@ -951,7 +951,7 @@ export default function ClientDetailPage() {
 
   const prepareProductUpdates = (validate: boolean = false) => {
     const updates: {
-      product: Product;
+      Product: Product;
       previousStock: number;
       countedStock: number;
       stockSold: number;
@@ -1035,7 +1035,7 @@ export default function ClientDetailPage() {
 
         if (cc.product) {
           updates.push({
-            product: cc.product,
+            Product: cc.product,
             previousStock,
             countedStock,
             stockSold,
@@ -1096,7 +1096,7 @@ export default function ClientDetailPage() {
 
         if (cc.product) {
           updates.push({
-            product: cc.product,
+            Product: cc.product,
             previousStock,
             countedStock,
             stockSold,
@@ -3059,7 +3059,7 @@ export default function ClientDetailPage() {
                               </div>
                             </div>
                             <div className="flex items-center gap-4 text-sm text-slate-600">
-                              <span>{stockUpdate.stock_sold} unité{stockUpdate.stock_sold > 1 ? 's' : ''} vendue{stockUpdate.stock_sold > 1 ? 's' : ''}</span>
+                              <span>{stockUpdate.total_stock_sold} unité{stockUpdate.total_stock_sold > 1 ? 's' : ''} vendue{stockUpdate.total_stock_sold > 1 ? 's' : ''}</span>
                               <span>•</span>
                               <span>{stockUpdate.total_amount.toFixed(2)} €</span>
                             </div>
