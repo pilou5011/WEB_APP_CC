@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Gestion Dépôts-Ventes',
-  description: 'Application de gestion de dépôts-ventes de cartes de vœux',
+  description: 'Application de gestion dépôts-ventes',
 };
 
 export default function RootLayout({

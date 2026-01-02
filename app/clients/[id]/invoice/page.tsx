@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, Collection, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
+import { supabase, Client, Product, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -22,8 +22,8 @@ import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 
 interface InvoiceRow {
   id: string;
-  collection_id: string | null;
-  collection_name: string;
+  product_id: string | null;
+  product_name: string;
   barcode: string;
   quantity: string;
   unit_price_ht: number;
@@ -37,10 +37,10 @@ export default function InvoicePage() {
   const clientId = params.id as string;
 
   const [client, setClient] = useState<Client | null>(null);
-  const [allCollections, setAllCollections] = useState<Collection[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<InvoiceRow[]>([
-    { id: '1', collection_id: null, collection_name: '', barcode: '', quantity: '', unit_price_ht: 0, total_ht: 0, custom_price: null }
+    { id: '1', product_id: null, product_name: '', barcode: '', quantity: '', unit_price_ht: 0, total_ht: 0, custom_price: null }
   ]);
   const [discountPercentage, setDiscountPercentage] = useState<number | null>(null);
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
@@ -86,16 +86,16 @@ export default function InvoicePage() {
       }
       setClient(clientData);
 
-      // Load all collections
-      const { data: collectionsData, error: collectionsError } = await supabase
-        .from('collections')
+      // Load all products
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
-      if (collectionsError) throw collectionsError;
-      setAllCollections(collectionsData || []);
+      if (productsError) throw productsError;
+      setAllProducts(productsData || []);
 
     } catch (error) {
       console.error('Error loading data:', error);
@@ -137,8 +137,8 @@ export default function InvoicePage() {
     const newId = Date.now().toString();
     setRows(prevRows => [...prevRows, {
       id: newId,
-      collection_id: null,
-      collection_name: '',
+      product_id: null,
+      product_name: '',
       barcode: '',
       quantity: '',
       unit_price_ht: 0,
@@ -155,22 +155,22 @@ export default function InvoicePage() {
     setRows(prevRows => prevRows.filter(row => row.id !== rowId));
   };
 
-  const handleSelectCollection = (rowId: string, collectionId: string) => {
-    const collection = allCollections.find(c => c.id === collectionId);
-    if (!collection) return;
+  const handleSelectProduct = (rowId: string, productId: string) => {
+    const product = allProducts.find(c => c.id === productId);
+    if (!product) return;
 
-    // Vérifier si la collection a déjà un prix personnalisé pour ce client
+    // Vérifier si le produit a déjà un prix personnalisé pour ce client
     // Pour l'instant, on utilise toujours le prix par défaut
     // L'utilisateur pourra modifier le prix via un dialog si nécessaire
-    const selectedPrice = collection.price;
+    const selectedPrice = product.price;
 
     setRows(prevRows => prevRows.map(row => {
       if (row.id === rowId) {
         const newRow = {
           ...row,
-          collection_id: collectionId,
-          collection_name: collection.name,
-          barcode: collection.barcode || '',
+          product_id: productId,
+          product_name: product.name,
+          barcode: product.barcode || '',
           unit_price_ht: selectedPrice,
           custom_price: null
         };
@@ -187,7 +187,7 @@ export default function InvoicePage() {
   const handleOpenPriceDialog = (rowId: string) => {
     setPriceDialogRowId(rowId);
     const row = rows.find(r => r.id === rowId);
-    if (row?.collection_id) {
+    if (row?.product_id) {
       setPriceType(row.custom_price !== null ? 'custom' : 'default');
       setCustomPriceInput(row.custom_price?.toString() || '');
     } else {
@@ -201,14 +201,14 @@ export default function InvoicePage() {
     if (!priceDialogRowId) return;
 
     const row = rows.find(r => r.id === priceDialogRowId);
-    if (!row?.collection_id) return;
+    if (!row?.product_id) return;
 
-    const collection = allCollections.find(c => c.id === row.collection_id);
-    if (!collection) return;
+    const product = allProducts.find(c => c.id === row.product_id);
+    if (!product) return;
 
     const selectedPrice = priceType === 'custom' && customPriceInput
       ? parseFloat(customPriceInput.replace(',', '.'))
-      : collection.price;
+      : product.price;
 
     if (isNaN(selectedPrice) || selectedPrice < 0) {
       toast.error('Prix invalide');
@@ -269,9 +269,9 @@ export default function InvoicePage() {
 
   const handleGenerateInvoice = async () => {
     // Validate rows
-    const validRows = rows.filter(row => row.collection_id && row.quantity && parseInt(row.quantity) > 0);
+    const validRows = rows.filter(row => row.product_id && row.quantity && parseInt(row.quantity) > 0);
     if (validRows.length === 0) {
-      toast.error('Veuillez ajouter au moins une ligne avec une collection et une quantité');
+      toast.error('Veuillez ajouter au moins une ligne avec un produit et une quantité');
       return;
     }
 
@@ -291,7 +291,7 @@ export default function InvoicePage() {
     const previewInvoiceData: Invoice = {
       id: '',
       client_id: clientId,
-      total_cards_sold: totalQuantity,
+      total_stock_sold: totalQuantity,
       total_amount: totalHTAfterDiscount,
       invoice_number: null, // Will be generated by trigger
       discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
@@ -316,9 +316,9 @@ export default function InvoicePage() {
       }
 
       // Validate rows
-      const validRows = rows.filter(row => row.collection_id && row.quantity && parseInt(row.quantity) > 0);
+      const validRows = rows.filter(row => row.product_id && row.quantity && parseInt(row.quantity) > 0);
       if (validRows.length === 0) {
-        toast.error('Veuillez ajouter au moins une ligne avec une collection et une quantité');
+        toast.error('Veuillez ajouter au moins une ligne avec un produit et une quantité');
         return;
       }
 
@@ -335,7 +335,7 @@ export default function InvoicePage() {
         .insert([{
           client_id: clientId,
           company_id: companyId,
-          total_cards_sold: totalQuantity,
+          total_stock_sold: totalQuantity,
           total_amount: totalHTAfterDiscount,
           discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
         }])
@@ -352,7 +352,7 @@ export default function InvoicePage() {
         client_id: clientId,
         invoice_id: invoiceData.id,
         company_id: companyId,
-        collection_id: row.collection_id,
+        product_id: row.product_id,
         sub_product_id: null,
         stock_sold: parseInt(row.quantity) || 0,
         unit_price_ht: row.unit_price_ht,
@@ -387,7 +387,7 @@ export default function InvoicePage() {
       await generateAndSaveDirectInvoicePDF({
         invoice: invoiceData,
         client,
-        collections: allCollections,
+        products: allProducts,
         stockDirectSold: stockDirectSoldData || [],
         userProfile: userProfile || null
       });
@@ -399,8 +399,8 @@ export default function InvoicePage() {
       // Reset form
       setRows([{
         id: '1',
-        collection_id: null,
-        collection_name: '',
+        product_id: null,
+        product_name: '',
         barcode: '',
         quantity: '',
         unit_price_ht: 0,
@@ -496,7 +496,7 @@ export default function InvoicePage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[25%]">Collection</TableHead>
+                      <TableHead className="w-[25%]">Produit</TableHead>
                       <TableHead className="w-[15%]">Code barre</TableHead>
                       <TableHead className="w-[15%]">Quantité</TableHead>
                       <TableHead className="w-[15%]">PU HT</TableHead>
@@ -519,29 +519,29 @@ export default function InvoicePage() {
                                 className="w-full justify-between"
                                 type="button"
                               >
-                                {row.collection_name || 'Sélectionner une collection...'}
+                                {row.product_name || 'Sélectionner un produit...'}
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                               </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[400px] p-0" align="start">
                               <Command>
-                                <CommandInput placeholder="Rechercher une collection..." />
+                                <CommandInput placeholder="Rechercher un produit..." />
                                 <CommandList className="max-h-[300px] overflow-y-auto">
-                                  <CommandEmpty>Aucune collection trouvée</CommandEmpty>
+                                  <CommandEmpty>Aucun produit trouvé</CommandEmpty>
                                   <CommandGroup>
-                                    {allCollections.map((collection) => (
+                                    {allProducts.map((product) => (
                                       <CommandItem
-                                        key={collection.id}
-                                        value={collection.name}
-                                        onSelect={() => handleSelectCollection(row.id, collection.id)}
+                                        key={product.id}
+                                        value={product.name}
+                                        onSelect={() => handleSelectProduct(row.id, product.id)}
                                       >
                                         <Check
                                           className={cn(
                                             'mr-2 h-4 w-4',
-                                            row.collection_id === collection.id ? 'opacity-100' : 'opacity-0'
+                                            row.product_id === product.id ? 'opacity-100' : 'opacity-0'
                                           )}
                                         />
-                                        {collection.name} — {collection.price.toFixed(2)} €
+                                        {product.name} — {product.price.toFixed(2)} €
                                       </CommandItem>
                                     ))}
                                   </CommandGroup>
@@ -572,7 +572,7 @@ export default function InvoicePage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex justify-end gap-2">
-                            {row.collection_id && (
+                            {row.product_id && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -667,7 +667,7 @@ export default function InvoicePage() {
                 </Button>
                 <Button
                   onClick={handleGenerateInvoice}
-                  disabled={rows.filter(r => r.collection_id && r.quantity && parseInt(r.quantity) > 0).length === 0}
+                  disabled={rows.filter(r => r.product_id && r.quantity && parseInt(r.quantity) > 0).length === 0}
                   className="bg-black text-white hover:bg-black/90"
                 >
                   <Calculator className="mr-2 h-4 w-4" />
@@ -684,14 +684,14 @@ export default function InvoicePage() {
             <DialogHeader>
               <DialogTitle>Modifier le prix</DialogTitle>
               <DialogDescription>
-                Choisissez le prix de cession pour cette collection
+                Choisissez le prix de cession pour ce produit
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               {priceDialogRowId && (() => {
                 const row = rows.find(r => r.id === priceDialogRowId);
-                const collection = row?.collection_id ? allCollections.find(c => c.id === row.collection_id) : null;
-                return collection ? (
+                const product = row?.product_id ? allProducts.find(c => c.id === row.product_id) : null;
+                return product ? (
                   <div>
                     <Label>Prix de cession (HT)</Label>
                     <RadioGroup
@@ -709,7 +709,7 @@ export default function InvoicePage() {
                         <Label htmlFor="price-default" className="font-normal cursor-pointer">
                           Utiliser le prix par défaut
                           <span className="ml-2 text-sm text-slate-600">
-                            ({collection.price.toFixed(2)} €)
+                            ({product.price.toFixed(2)} €)
                           </span>
                         </Label>
                       </div>
@@ -821,7 +821,7 @@ export default function InvoicePage() {
                     <div>
                       <p className="text-sm font-medium text-slate-700">Nombre d'articles</p>
                       <p className="text-sm text-slate-900">
-                        {rows.filter(r => r.collection_id && r.quantity && parseInt(r.quantity) > 0).length}
+                        {rows.filter(r => r.product_id && r.quantity && parseInt(r.quantity) > 0).length}
                       </p>
                     </div>
                   </div>
@@ -829,9 +829,9 @@ export default function InvoicePage() {
                   <div>
                     <p className="text-sm font-medium text-slate-700 mb-2">Détail des lignes</p>
                     <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {rows.filter(r => r.collection_id && r.quantity && parseInt(r.quantity) > 0).map((row) => (
+                      {rows.filter(r => r.product_id && r.quantity && parseInt(r.quantity) > 0).map((row) => (
                         <div key={row.id} className="flex justify-between text-sm">
-                          <span>{row.collection_name} × {row.quantity}</span>
+                          <span>{row.product_name} × {row.quantity}</span>
                           <span className="font-medium">{row.total_ht.toFixed(2)} €</span>
                         </div>
                       ))}
@@ -910,8 +910,8 @@ export default function InvoicePage() {
             client={client}
             invoice={selectedGlobalInvoice}
             stockUpdates={[]}
-            collections={allCollections}
-            clientCollections={[]}
+            products={allProducts}
+            clientProducts={[]}
           />
         )}
       </div>

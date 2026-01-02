@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, supabase } from '@/lib/supabase';
 import type { InvoiceAdjustment } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -15,8 +15,8 @@ interface GlobalInvoiceDialogProps {
   client: Client;
   invoice: Invoice;
   stockUpdates: StockUpdate[];
-  collections: Collection[];
-  clientCollections?: (ClientCollection & { collection?: Collection })[];
+  products: Product[];
+  clientProducts?: (ClientProduct & { Product?: Product })[];
 }
 
 export function GlobalInvoiceDialog({
@@ -25,8 +25,8 @@ export function GlobalInvoiceDialog({
   client,
   invoice,
   stockUpdates,
-  collections,
-  clientCollections = []
+  products,
+  clientProducts = []
 }: GlobalInvoiceDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);

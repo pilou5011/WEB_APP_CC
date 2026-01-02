@@ -598,7 +598,7 @@ export default function AuthPage() {
             Gestion Dépôts-Ventes
           </h1>
           <p className="text-slate-500">
-            Gérez vos clients et collections facilement
+            Gérez vos clients et vos produits facilement
           </p>
         </div>
 

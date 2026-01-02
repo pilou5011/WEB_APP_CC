@@ -1,18 +1,18 @@
-/**
+﻿/**
  * PDF Generator for Direct Invoices
  * 
  * This file contains a function to generate and save PDFs for direct invoices
  * (invoices generated from the "Facturer" tab without stock updates).
- * The table format is simplified: Collection, Infos, Code-barres, Quantité, PU HT, Total HT
+ * The table format is simplified: Product, Infos, Code-barres, Quantité, PU HT, Total HT
  */
 
-import { Client, Invoice, Collection, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
+import { Client, Invoice, Product, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  collections: Collection[];
+  products: Product[];
   stockDirectSold: StockDirectSold[];
   userProfile: UserProfile | null;
 }
@@ -22,7 +22,7 @@ interface GenerateDirectInvoicePDFParams {
  * This function generates the invoice PDF for direct sales and saves it to Supabase storage.
  */
 export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvoicePDFParams): Promise<void> {
-  const { invoice, client, collections, stockDirectSold, userProfile } = params;
+  const { invoice, client, products, stockDirectSold, userProfile } = params;
 
   // Note: On génère toujours le PDF et on met toujours à jour invoice_pdf_path
   // même si le fichier existe déjà, pour s'assurer que la colonne est toujours renseignée
@@ -218,7 +218,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     doc.text(`Facture N°${invoiceNumber}`, pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
 
-    // 3) Tableau des collections (format simplifié pour facture directe)
+    // 3) Tableau des produits (format simplifié pour facture directe)
     const discountPercentage = invoice.discount_percentage || 0;
     const discountRatio = discountPercentage > 0 && discountPercentage <= 100 
       ? (1 - discountPercentage / 100)
@@ -226,15 +226,15 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     
     // Créer les lignes du tableau
     const invoiceRows = stockDirectSold.map((item) => {
-      const collection = collections.find(c => c.id === item.collection_id);
+      const Product = products.find(c => c.id === item.product_id);
       const totalHTBeforeDiscount = item.total_amount_ht;
       // Appliquer la remise proportionnellement à chaque ligne
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
-        collection?.name || 'Collection',
+        Product?.name || 'Product',
         '', // Infos (vide pour facture directe)
-        collection?.barcode || '', // Code barre
+        Product?.barcode || '', // Code barre
         item.stock_sold.toString(), // Quantité
         item.unit_price_ht.toFixed(2) + ' €', // PU HT
         totalHTBeforeDiscount.toFixed(2) + ' €' // Total HT (avant remise)
@@ -243,7 +243,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Collection', 'Infos', 'Code-barres', 'Quantité', 'PU HT', 'Total HT']],
+      head: [['Product', 'Infos', 'Code-barres', 'Quantité', 'PU HT', 'Total HT']],
       body: invoiceRows,
       theme: 'grid',
       headStyles: {

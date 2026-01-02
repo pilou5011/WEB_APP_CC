@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CollectionCategory, CollectionSubcategory, supabase } from '@/lib/supabase';
+import { ProductCategory, ProductSubcategory, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -14,8 +14,8 @@ import { toast } from 'sonner';
 interface CategoriesManagerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  categories: CollectionCategory[];
-  subcategories: CollectionSubcategory[];
+  categories: ProductCategory[];
+  subcategories: ProductSubcategory[];
   onCategoriesUpdated: () => void;
 }
 
@@ -26,19 +26,19 @@ export function CategoriesManager({
   subcategories,
   onCategoriesUpdated
 }: CategoriesManagerProps) {
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
   
   const [submitting, setSubmitting] = useState(false);
 
-  const handleEditCategoryClick = (category: CollectionCategory) => {
+  const handleEditCategoryClick = (category: ProductCategory) => {
     setEditingCategory(category);
     setEditCategoryName(category.name);
   };
@@ -64,7 +64,7 @@ export function CategoriesManager({
       // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
       if (editCategoryName.trim() !== editingCategory.name) {
         const { data: existing } = await supabase
-          .from('collection_categories')
+          .from('product_categories')
           .select('id')
           .eq('name', editCategoryName.trim())
           .eq('company_id', companyId)
@@ -80,7 +80,7 @@ export function CategoriesManager({
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
         .eq('id', editingCategory.id)
         .eq('company_id', companyId);
@@ -101,7 +101,7 @@ export function CategoriesManager({
     }
   };
 
-  const handleDeleteCategoryClick = (category: CollectionCategory) => {
+  const handleDeleteCategoryClick = (category: ProductCategory) => {
     setDeletingCategory(category);
     setDeleteCategoryDialogOpen(true);
   };
@@ -117,7 +117,7 @@ export function CategoriesManager({
       }
 
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingCategory.id)
         .eq('company_id', companyId);
@@ -136,7 +136,7 @@ export function CategoriesManager({
     }
   };
 
-  const handleEditSubcategoryClick = (subcategory: CollectionSubcategory) => {
+  const handleEditSubcategoryClick = (subcategory: ProductSubcategory) => {
     setEditingSubcategory(subcategory);
     setEditSubcategoryName(subcategory.name);
   };
@@ -162,7 +162,7 @@ export function CategoriesManager({
       // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
       if (editSubcategoryName.trim() !== editingSubcategory.name) {
         const { data: existing } = await supabase
-          .from('collection_subcategories')
+          .from('product_subcategories')
           .select('id')
           .eq('category_id', editingSubcategory.category_id)
           .eq('name', editSubcategoryName.trim())
@@ -179,7 +179,7 @@ export function CategoriesManager({
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
         .eq('id', editingSubcategory.id)
         .eq('company_id', companyId);
@@ -200,7 +200,7 @@ export function CategoriesManager({
     }
   };
 
-  const handleDeleteSubcategoryClick = (subcategory: CollectionSubcategory) => {
+  const handleDeleteSubcategoryClick = (subcategory: ProductSubcategory) => {
     setDeletingSubcategory(subcategory);
     setDeleteSubcategoryDialogOpen(true);
   };
@@ -216,7 +216,7 @@ export function CategoriesManager({
       }
 
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', deletingSubcategory.id)
         .eq('company_id', companyId);
@@ -425,7 +425,7 @@ export function CategoriesManager({
             <AlertDialogDescription>
               Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
               Toutes les sous-catégories associées seront également supprimées.
-              Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les produits utilisant cette catégorie ne seront pas supprimés, mais leur catégorie sera réinitialisée.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -448,7 +448,7 @@ export function CategoriesManager({
             <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
             <AlertDialogDescription>
               Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-              Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les produits utilisant cette sous-catégorie ne seront pas supprimés, mais leur sous-catégorie sera réinitialisée.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Utility functions for generating and storing PDFs in Supabase Storage
  * This ensures documents are frozen in time and don't change when data is updated
  */
 
 import { supabase } from './supabase';
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment } from './supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment } from './supabase';
 import { getCurrentUserCompanyId } from './auth-helpers';
 
 const STORAGE_BUCKET = 'documents'; // Bucket name in Supabase Storage
@@ -106,8 +106,8 @@ export async function generateAndSaveInvoicePDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  collections: Collection[],
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  products: Product[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null,
   adjustments: InvoiceAdjustment[]
 ): Promise<string | null> {
@@ -162,8 +162,8 @@ export async function generateAndSaveStockReportPDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  collections: Collection[],
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  products: Product[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null
 ): Promise<string | null> {
   try {
@@ -208,10 +208,10 @@ export async function generateAndSaveStockReportPDF(
 export async function generateAndSaveDepositSlipPDF(
   invoice: Invoice,
   client: Client,
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   stockUpdates: StockUpdate[],
   userProfile: UserProfile | null,
-  collectionInfos: Record<string, string>
+  productInfos: Record<string, string>
 ): Promise<string | null> {
   try {
     const jsPDF = (await import('jspdf')).default;

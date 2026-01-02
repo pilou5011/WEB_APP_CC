@@ -272,33 +272,33 @@ export function useStockUpdateDraft(clientId: string) {
 
   // Check if data is empty (no need to save)
   const isDraftEmpty = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any collection form has data
-    const hasCollectionData = Object.values(data.perCollectionForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== '' || form.collection_info !== ''
+    // Check if any product form has data
+    const hasProductData = Object.values(data.perProductForm).some(
+      form => form.counted_stock !== '' || form.stock_added !== '' || form.product_info !== ''
     );
 
     // Check if any sub-product form has data
     const hasSubProductData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Check if any adjustments exist
     const hasAdjustments = data.pendingAdjustments.length > 0;
 
-    return !hasCollectionData && !hasSubProductData && !hasAdjustments;
+    return !hasProductData && !hasSubProductData && !hasAdjustments;
   }, []);
 
   // Check if draft has meaningful data that warrants showing recovery dialog
-  // Only check counted_stock and cards_added (stock update fields), ignore collection_info
+  // Only check counted_stock and stock_added (stock update fields), ignore product_info
   const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any collection form has stock data (not just collection_info)
-    const hasStockData = Object.values(data.perCollectionForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+    // Check if any product form has stock data (not just product_info)
+    const hasStockData = Object.values(data.perProductForm).some(
+      form => form.counted_stock !== '' || form.stock_added !== ''
     );
 
     // Check if any sub-product form has stock data
     const hasSubProductStockData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Adjustments also count as meaningful data

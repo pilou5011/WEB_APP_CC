@@ -389,8 +389,8 @@ export default function CreditNotePage() {
                 )}
                 <div className="flex gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={() => router.push(`/clients/${clientId}`)}>
-                    Annuler
-                  </Button>
+                  Annuler
+                </Button>
                   <Button type="submit" disabled={creatingCreditNote}>
                     {creatingCreditNote ? 'Création en cours...' : 'Créer un avoir'}
                   </Button>
