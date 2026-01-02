@@ -274,12 +274,12 @@ export function useStockUpdateDraft(clientId: string) {
   const isDraftEmpty = useCallback((data: DraftStockUpdateData): boolean => {
     // Check if any product form has data
     const hasProductData = Object.values(data.perProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== '' || form.product_info !== ''
+      form => form.counted_stock !== '' || form.stock_added !== '' || form.product_info !== ''
     );
 
     // Check if any sub-product form has data
     const hasSubProductData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Check if any adjustments exist
@@ -289,16 +289,16 @@ export function useStockUpdateDraft(clientId: string) {
   }, []);
 
   // Check if draft has meaningful data that warrants showing recovery dialog
-  // Only check counted_stock and cards_added (stock update fields), ignore product_info
+  // Only check counted_stock and stock_added (stock update fields), ignore product_info
   const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
     // Check if any product form has stock data (not just product_info)
     const hasStockData = Object.values(data.perProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     );
 
     // Check if any sub-product form has stock data
     const hasSubProductStockData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Adjustments also count as meaningful data
