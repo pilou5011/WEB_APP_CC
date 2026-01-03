@@ -550,12 +550,6 @@ export default function NewProductPage() {
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour aux produits
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push('/')}
-          >
-            Retour à l'accueil
-          </Button>
         </div>
 
         <div className="space-y-6">

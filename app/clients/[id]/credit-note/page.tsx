@@ -247,17 +247,10 @@ export default function CreditNotePage() {
           <div className="flex gap-3">
             <Button
               variant="ghost"
-              onClick={() => router.push('/clients')}
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour aux clients
-            </Button>
-            <Button
-              variant="outline"
               onClick={() => router.push(`/clients/${clientId}`)}
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour au client
+              Retour à la page client
             </Button>
           </div>
           <Button

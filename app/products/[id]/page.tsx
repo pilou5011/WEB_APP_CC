@@ -635,7 +635,7 @@ export default function ProductDetailPage() {
       setIsEditing(false);
     } catch (error) {
       console.error('Error updating product:', error);
-      toast.error('Erreur lors de la modification de la product');
+      toast.error('Erreur lors de la modification du produit');
     } finally {
       setSubmitting(false);
     }
@@ -681,7 +681,7 @@ export default function ProductDetailPage() {
 
       if (subProductsError) throw subProductsError;
 
-      // 3. Si la product a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
+      // 3. Si le produit a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
       if (subProducts && subProducts.length > 0) {
         const subProductIds = subProducts.map(sp => sp.id);
         const { error: clientSubProductsError } = await supabase
@@ -694,7 +694,7 @@ export default function ProductDetailPage() {
         if (clientSubProductsError) throw clientSubProductsError;
       }
 
-      // 4. Supprimer (soft delete) la product elle-même
+      // 4. Supprimer (soft delete) le produit elle-même
       const { error } = await supabase
         .from('products')
         .update({ deleted_at: deletedAt })
@@ -707,7 +707,7 @@ export default function ProductDetailPage() {
       router.push('/products');
     } catch (error) {
       console.error('Error deleting product:', error);
-      toast.error('Erreur lors de la suppression de la product');
+      toast.error('Erreur lors de la suppression du produit');
     }
   };
 
@@ -738,13 +738,7 @@ export default function ProductDetailPage() {
             onClick={() => router.push('/products')}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux products
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push('/')}
-          >
-            Retour à l'accueil
+            Retour aux produits
           </Button>
         </div>
 
@@ -764,7 +758,7 @@ export default function ProductDetailPage() {
                     onClick={handleEdit}
                   >
                     <Edit className="mr-2 h-4 w-4" />
-                    Modifier la product
+                    Modifier le produit
                   </Button>
                 )}
               </div>
@@ -798,16 +792,16 @@ export default function ProductDetailPage() {
 
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle>Informations de la product</CardTitle>
+              <CardTitle>Informations du produit</CardTitle>
               <CardDescription>
-                {isEditing ? 'Modifiez les informations de la product' : 'Détails de la product'}
+                {isEditing ? 'Modifiez les informations du produit' : 'Détails du produit'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="name">Nom de la product</Label>
+                    <Label htmlFor="name">Nom du produit</Label>
                     {isEditing ? (
                       <Input
                         id="name"
@@ -818,7 +812,7 @@ export default function ProductDetailPage() {
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.name}</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.name}</p>
                     )}
                   </div>
 
@@ -837,7 +831,7 @@ export default function ProductDetailPage() {
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.price} €</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.price} €</p>
                     )}
                   </div>
 
@@ -858,7 +852,7 @@ export default function ProductDetailPage() {
                         <p className="text-xs text-slate-500 mt-1">Optionnel</p>
                       </>
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.recommended_sale_price ? `${formData.recommended_sale_price} €` : 'Non renseigné'}
                       </p>
                     )}
@@ -887,7 +881,7 @@ export default function ProductDetailPage() {
                         <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
                       </>
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.barcode || 'Non renseigné'}
                       </p>
                     )}
@@ -897,7 +891,7 @@ export default function ProductDetailPage() {
                   <div>
                     <Label htmlFor="category">Catégorie (optionnel)</Label>
                     {!isEditing ? (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.category_id
                           ? categories.find(c => c.id === formData.category_id)?.name || 'Non renseigné'
                           : 'Non renseigné'}
@@ -1067,7 +1061,7 @@ export default function ProductDetailPage() {
                     <div>
                       <Label htmlFor="subcategory">Sous-catégorie (optionnel)</Label>
                       {!isEditing ? (
-                        <p className="mt-1.5 text-sm font-medium text-slate-900">
+                        <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                           {formData.subcategory_id
                             ? getSubcategoriesForCategory(formData.category_id).find(s => s.id === formData.subcategory_id)?.name || 'Non renseigné'
                             : 'Non renseigné'}
@@ -1250,12 +1244,12 @@ export default function ProductDetailPage() {
                           }}
                         />
                         <Label htmlFor="has-sub-products-edit" className="font-normal cursor-pointer">
-                          Cette product contient des sous-produits
+                          Ce produit contient des sous-produits
                         </Label>
                       </>
                     ) : (
                       <Label className="font-normal">
-                        Cette product {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
+                        Ce produit {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
                       </Label>
                     )}
                   </div>
@@ -1293,7 +1287,7 @@ export default function ProductDetailPage() {
                               )}
                             </>
                           ) : (
-                            <p className="text-sm font-medium text-slate-900">{subProduct.name}</p>
+                            <p className="text-sm font-medium text-[#0B1F33]">{subProduct.name}</p>
                           )}
                         </div>
                       ))}
@@ -1329,7 +1323,7 @@ export default function ProductDetailPage() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Cette action ne peut pas être annulée. Cela supprimera définitivement la product "{product.name}".
+                            Cette action ne peut pas être annulée. Cela supprimera définitivement le produit "{product.name}".
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

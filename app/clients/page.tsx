@@ -190,19 +190,11 @@ export default function ClientsPage() {
       <div className="container mx-auto py-8 px-4 max-w-7xl">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">Gestion des Clients</h1>
+            <h1 className="text-4xl font-bold text-[#0B1F33] mb-2">Gestion des Clients</h1>
             <p className="text-slate-600">Clients</p>
           </div>
 
           <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-              className="shadow-lg"
-            >
-              Retour à l'accueil
-            </Button>
-            
             <Button 
               size="lg" 
               className="shadow-lg"

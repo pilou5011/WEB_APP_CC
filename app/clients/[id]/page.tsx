@@ -188,7 +188,7 @@ function SortableProductRow({
           >
             <GripVertical className="h-5 w-5" />
           </button>
-          <p className={cn("font-medium text-slate-900", hasSubProducts && "font-semibold")}>
+          <p className={cn("font-medium text-[#0B1F33]", hasSubProducts && "font-semibold")}>
             {cp.product?.name || 'Produit'}
           </p>
         </div>
@@ -202,7 +202,7 @@ function SortableProductRow({
             className="h-8 w-8 p-0"
             title="Ajuster le stock"
           >
-            <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+            <Pencil className="h-4 w-4 text-slate-600 hover:text-[#0B1F33]" />
           </Button>
         )}
       </TableCell>
@@ -287,7 +287,7 @@ function SortableProductRow({
       </TableCell>
       <TableCell className="align-top py-3 text-right">
         <div>
-          <p className="text-sm font-medium text-slate-900">{effectivePrice.toFixed(2)} €</p>
+          <p className="text-sm font-medium text-[#0B1F33]">{effectivePrice.toFixed(2)} €</p>
           {isCustomPrice && (
             <p className="text-xs text-blue-600">Personnalisé</p>
           )}
@@ -300,7 +300,7 @@ function SortableProductRow({
         <div>
           {effectiveRecommendedSalePrice !== null ? (
             <>
-              <p className="text-sm font-medium text-slate-900">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
+              <p className="text-sm font-medium text-[#0B1F33]">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
               {isCustomRecommendedSalePrice && (
                 <p className="text-xs text-blue-600">Personnalisé</p>
               )}
@@ -2870,12 +2870,6 @@ export default function ClientDetailPage() {
               <ArrowLeft className="mr-2 h-4 w-4" />
               Retour aux clients
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-            >
-              Retour à l'accueil
-            </Button>
           </div>
           <Button
             variant="outline"
@@ -2906,7 +2900,7 @@ export default function ClientDetailPage() {
                         <Calendar className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <span className="font-medium text-slate-700 text-base">Dernier passage : </span>
-                          <span className="text-slate-900 font-semibold text-base">
+                          <span className="text-[#0B1F33] font-semibold text-base">
                             {new Date(lastVisitDate).toLocaleDateString('fr-FR', {
                               day: '2-digit',
                               month: '2-digit',
@@ -2923,7 +2917,7 @@ export default function ClientDetailPage() {
                         <Hash className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <span className="font-medium text-slate-700 text-base">Code client : </span>
-                          <span className="text-slate-900 font-bold text-lg font-mono">{client.client_number}</span>
+                          <span className="text-[#0B1F33] font-bold text-lg font-mono">{client.client_number}</span>
                         </div>
                       </div>
                     )}
@@ -2934,7 +2928,7 @@ export default function ClientDetailPage() {
                         <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <span className="font-medium text-slate-700 text-base">Tél : </span>
-                          <span className="text-slate-900 font-bold text-base">{client.phone}</span>
+                          <span className="text-[#0B1F33] font-bold text-base">{client.phone}</span>
                           {client.phone_1_info && (
                             <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
                           )}
@@ -2950,7 +2944,7 @@ export default function ClientDetailPage() {
                           <span className="font-medium text-slate-700 text-base">E-mail : </span>
                           <a 
                             href={`mailto:${client.email}`}
-                            className="text-slate-900 font-bold text-base hover:text-blue-600 hover:underline transition-colors"
+                            className="text-[#0B1F33] font-bold text-base hover:text-blue-600 hover:underline transition-colors"
                           >
                             {client.email}
                           </a>
@@ -2966,7 +2960,7 @@ export default function ClientDetailPage() {
                     <div className="mt-3">
                       <div className="flex items-start gap-2">
                         <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-slate-900 text-base flex-1">{client.comment}</p>
+                        <p className="text-[#0B1F33] text-base flex-1">{client.comment}</p>
                       </div>
                     </div>
                   )}
@@ -3025,7 +3019,7 @@ export default function ClientDetailPage() {
                           <div className="flex items-start gap-2">
                             <DoorClosed className="h-5 w-5 text-orange-500 mt-0.5 flex-shrink-0" />
                             <div className="flex-1">
-                              <div className="text-slate-900 text-base font-medium mb-1">Périodes de fermeture à venir :</div>
+                              <div className="text-[#0B1F33] text-base font-medium mb-1">Périodes de fermeture à venir :</div>
                               <div className="space-y-1">
                                 {upcomingPeriods.map((period) => {
                                   let periodDisplay: string;
@@ -3117,23 +3111,23 @@ export default function ClientDetailPage() {
               <Separator className="my-6" />
 
 {/* {              <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="text-lg font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <Euro className="h-5 w-5" />
                   Résumé de facturation
                 </h3>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center text-slate-600">
                     <span>Stock vendu</span>
-                    <span className="font-semibold text-slate-900">{stockSold}</span>
+                    <span className="font-semibold text-[#0B1F33]">{stockSold}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-600">
                     <span>Prix unitaire</span>
-                    <span className="font-semibold text-slate-900">2,00 €</span>
+                    <span className="font-semibold text-[#0B1F33]">2,00 €</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center">
-                    <span className="text-lg font-semibold text-slate-900">Montant dû</span>
-                    <span className="text-2xl font-bold text-slate-900">{amountDue.toFixed(2)} €</span>
+                    <span className="text-lg font-semibold text-[#0B1F33]">Montant dû</span>
+                    <span className="text-2xl font-bold text-[#0B1F33]">{amountDue.toFixed(2)} €</span>
                   </div>
                 </div> 
                </div>}  */}
@@ -3293,14 +3287,14 @@ export default function ClientDetailPage() {
                   <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
                     <p className="text-sm text-slate-600">
                       Prix par défaut du produit : 
-                      <span className="font-semibold text-slate-900 ml-2">
+                      <span className="font-semibold text-[#0B1F33] ml-2">
                         {productToEdit.product.price.toFixed(2)} €
                       </span>
                     </p>
                     {productToEdit.product.recommended_sale_price !== null && (
                       <p className="text-sm text-slate-600">
                         Prix de vente conseillé par défaut : 
-                        <span className="font-semibold text-slate-900 ml-2">
+                        <span className="font-semibold text-[#0B1F33] ml-2">
                           {productToEdit.product.recommended_sale_price.toFixed(2)} €
                         </span>
                       </p>
@@ -3442,7 +3436,7 @@ export default function ClientDetailPage() {
                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                   <p className="text-sm text-slate-600">
                     Stock actuel : 
-                    <span className="font-semibold text-slate-900 ml-2">
+                    <span className="font-semibold text-[#0B1F33] ml-2">
                       {itemToAdjust?.currentStock}
                     </span>
                   </p>

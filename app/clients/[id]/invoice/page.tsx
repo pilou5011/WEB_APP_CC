@@ -460,16 +460,10 @@ export default function InvoicePage() {
           <div className="flex gap-3">
             <Button
               variant="ghost"
-              onClick={() => router.push('/clients')}
+              onClick={() => router.push(`/clients/${clientId}`)}
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Retour aux clients
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-            >
-              Retour à l'accueil
+              Retour à la page client
             </Button>
           </div>
           <Button
@@ -580,7 +574,7 @@ export default function InvoicePage() {
                                 className="h-8 w-8 p-0"
                                 title="Modifier le prix"
                               >
-                                <Pencil className="h-4 w-4 text-slate-600 hover:text-slate-900" />
+                                <Pencil className="h-4 w-4 text-slate-600 hover:text-[#0B1F33]" />
                               </Button>
                             )}
                             <Button
@@ -816,11 +810,11 @@ export default function InvoicePage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <p className="text-sm font-medium text-slate-700">Client</p>
-                      <p className="text-sm text-slate-900">{client.company_name || client.name}</p>
+                      <p className="text-sm text-[#0B1F33]">{client.company_name || client.name}</p>
                     </div>
                     <div>
                       <p className="text-sm font-medium text-slate-700">Nombre d'articles</p>
-                      <p className="text-sm text-slate-900">
+                      <p className="text-sm text-[#0B1F33]">
                         {rows.filter(r => r.product_id && r.quantity && parseInt(r.quantity) > 0).length}
                       </p>
                     </div>
