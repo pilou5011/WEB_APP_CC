@@ -5,8 +5,12 @@
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, EstablishmentType, PaymentMethod, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { formatWeekScheduleData } from '@/components/opening-hours-editor';
+import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
+import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
+import { formatDepartment } from '@/lib/postal-code-utils';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
@@ -1849,6 +1853,298 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     }
   } catch (error) {
     console.error('Error generating credit note PDF:', error);
+    throw error;
+  }
+}
+
+interface GenerateClientInfoPDFParams {
+  client: Client;
+  establishmentType: EstablishmentType | null;
+  paymentMethod: PaymentMethod | null;
+}
+
+/**
+ * Generate client information sheet PDF - optimized for single page
+ */
+export async function generateClientInfoPDF(params: GenerateClientInfoPDFParams): Promise<Blob> {
+  const { client, establishmentType, paymentMethod } = params;
+
+  try {
+    // Import jsPDF dynamically
+    const jsPDF = (await import('jspdf')).default;
+    
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    const contentWidth = pageWidth - 2 * margin;
+    const columnWidth = (contentWidth - 8) / 2; // 2 colonnes avec espacement réduit
+    let yPosition = margin;
+
+    // Helper function to split text into lines that fit within width
+    const splitText = (text: string, maxWidth: number, fontSize: number): string[] => {
+      if (!text) return [];
+      
+      // D'abord, séparer par les retours à la ligne existants
+      const paragraphs = text.split('\n');
+      const allLines: string[] = [];
+      
+      paragraphs.forEach(paragraph => {
+        if (!paragraph.trim()) {
+          return;
+        }
+        
+        const words = paragraph.split(' ');
+        let currentLine = '';
+
+        words.forEach(word => {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          doc.setFontSize(fontSize);
+          const testWidth = doc.getTextWidth(testLine);
+          
+          if (testWidth > maxWidth && currentLine) {
+            allLines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        });
+        
+        if (currentLine) {
+          allLines.push(currentLine);
+        }
+      });
+      
+      return allLines;
+    };
+
+    // Title "Fiche Client" - centré
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fiche Client', pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 7;
+
+    // Nom du client - centré
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text(client.name || 'Non renseigné', pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 6;
+
+    // Date d'export (compact)
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Exporté le ${new Date().toLocaleDateString('fr-FR')}`, margin, yPosition);
+    yPosition += 8;
+
+    doc.setTextColor(0, 0, 0);
+
+    // Helper function to add a section with grid layout
+    const addSection = (
+      title: string, 
+      fields: Array<{ label: string; value: string; fullWidth?: boolean }>
+    ) => {
+      // Section title with background (compact)
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setFillColor(71, 85, 105);
+      doc.rect(margin, yPosition, contentWidth, 5, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text(title, margin + 2, yPosition + 3.5);
+      yPosition += 8; // Plus d'espace après le titre pour éviter chevauchement
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+
+      // Process fields in pairs (2 columns) or full width
+      let currentX = margin;
+      let leftColumnY = yPosition;
+      let rightColumnY = yPosition;
+
+      fields.forEach((field) => {
+        const isFullWidth = field.fullWidth || false;
+        const fieldWidth = isFullWidth ? contentWidth : columnWidth;
+        const fieldX = isFullWidth ? margin : currentX;
+        const fieldY = isFullWidth ? yPosition : (currentX === margin ? leftColumnY : rightColumnY);
+
+        // Format: "Label : Valeur" on same line
+        const value = field.value || 'Non renseigné';
+        const fullText = `${field.label} : ${value}`;
+        
+        // Split text if it doesn't fit on one line
+        doc.setFontSize(9);
+        const textLines = splitText(fullText, fieldWidth, 9);
+        const lineHeight = 4.5;
+        const totalFieldHeight = textLines.length * lineHeight + 2;
+
+        // Draw text lines
+        textLines.forEach((line, lineIndex) => {
+          // First line: label in bold, value in normal
+          if (lineIndex === 0) {
+            const labelPart = `${field.label} : `;
+            const valuePart = line.substring(labelPart.length);
+            
+            // Draw label part in bold
+            doc.setFont('helvetica', 'bold');
+            doc.text(labelPart, fieldX, fieldY + (lineIndex * lineHeight));
+            
+            // Draw value part in normal
+            if (valuePart) {
+              const labelWidth = doc.getTextWidth(labelPart);
+              doc.setFont('helvetica', 'normal');
+              doc.text(valuePart, fieldX + labelWidth, fieldY + (lineIndex * lineHeight));
+            }
+          } else {
+            // Subsequent lines (if text wraps) - all in normal
+            doc.setFont('helvetica', 'normal');
+            doc.text(line, fieldX, fieldY + (lineIndex * lineHeight));
+          }
+        });
+
+        // Update positions
+        if (isFullWidth) {
+          yPosition = fieldY + totalFieldHeight + 3;
+          leftColumnY = yPosition;
+          rightColumnY = yPosition;
+          currentX = margin;
+        } else {
+          if (currentX === margin) {
+            // First column
+            leftColumnY = fieldY + totalFieldHeight + 3;
+            currentX = margin + columnWidth + 8;
+          } else {
+            // Second column - move to next row
+            rightColumnY = fieldY + totalFieldHeight + 3;
+            const maxY = Math.max(leftColumnY, rightColumnY);
+            leftColumnY = maxY;
+            rightColumnY = maxY;
+            yPosition = maxY;
+            currentX = margin;
+          }
+        }
+      });
+
+      yPosition = Math.max(leftColumnY, rightColumnY) + 6; // Plus d'espace après chaque section
+    };
+
+    // Informations générales
+    addSection('INFORMATIONS GÉNÉRALES', [
+      { label: 'Nom Commercial', value: client.name || '' },
+      { label: 'Nom Société', value: client.company_name || '' },
+      { label: 'Type d\'établissement', value: establishmentType?.name || '' },
+      { label: 'Numéro de client', value: client.client_number || '' },
+    ]);
+
+    // Adresse
+    addSection('ADRESSE', [
+      { label: 'Adresse', value: client.street_address || '', fullWidth: true },
+      { label: 'Code postal', value: client.postal_code || '' },
+      { label: 'Ville', value: client.city || '' },
+      { label: 'Département', value: client.department ? formatDepartment(client.department) : '' },
+    ]);
+
+    // Coordonnées
+    addSection('COORDONNÉES', [
+      { label: 'Téléphone 1', value: client.phone || '' },
+      { label: 'Info Tél 1', value: client.phone_1_info || '' },
+      { label: 'Téléphone 2', value: client.phone_2 || '' },
+      { label: 'Info Tél 2', value: client.phone_2_info || '' },
+      { label: 'Téléphone 3', value: client.phone_3 || '' },
+      { label: 'Info Tél 3', value: client.phone_3_info || '' },
+      { label: 'Email', value: client.email || '' },
+    ]);
+
+    // Informations légales
+    addSection('INFORMATIONS LÉGALES', [
+      { label: 'Numéro SIRET', value: client.siret_number || '' },
+      { label: 'Numéro TVA', value: client.tva_number || '' },
+    ]);
+
+    // Informations complémentaires
+    const complementaryFields: Array<{ label: string; value: string; fullWidth?: boolean }> = [];
+
+    // Horaires d'ouverture - une ligne par jour
+    if (client.opening_hours) {
+      const scheduleData = formatWeekScheduleData(client.opening_hours);
+      if (scheduleData.length > 0) {
+        // Une ligne par jour avec retour à la ligne
+        const scheduleText = scheduleData.map(item => `${item.day}: ${item.hours}`).join('\n');
+        complementaryFields.push({ 
+          label: 'Horaires d\'ouverture', 
+          value: scheduleText,
+          fullWidth: true
+        });
+      }
+    }
+
+    // Fréquence de passage
+    if (client.visit_frequency_number && client.visit_frequency_unit) {
+      complementaryFields.push({
+        label: 'Fréquence de passage',
+        value: `${client.visit_frequency_number} ${client.visit_frequency_unit}`,
+      });
+    }
+
+    // Temps moyen
+    if ((client.average_time_hours !== null && client.average_time_hours !== undefined) ||
+        (client.average_time_minutes !== null && client.average_time_minutes !== undefined)) {
+      const hours = client.average_time_hours || 0;
+      const minutes = client.average_time_minutes || 0;
+      complementaryFields.push({
+        label: 'Temps moyen',
+        value: `${hours}h${minutes.toString().padStart(2, '0')}`,
+      });
+    }
+
+    // Jours de marché - une ligne par jour
+    if (client.market_days_schedule) {
+      const marketData = formatMarketDaysScheduleData(client.market_days_schedule);
+      if (marketData.length > 0) {
+        // Une ligne par jour avec retour à la ligne
+        const marketText = marketData.map(item => `${item.day}: ${item.hours}`).join('\n');
+        complementaryFields.push({ 
+          label: 'Jour(s) de marché', 
+          value: marketText,
+          fullWidth: true
+        });
+      }
+    }
+
+    // Périodes de vacances
+    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
+      const vacationText = formatVacationPeriods(client.vacation_periods as VacationPeriod[]);
+      if (vacationText) {
+        complementaryFields.push({ 
+          label: 'Période(s) de vacances', 
+          value: vacationText,
+          fullWidth: true
+        });
+      }
+    }
+
+    // Règlement
+    complementaryFields.push({
+      label: 'Règlement',
+      value: paymentMethod?.name || '',
+    });
+
+    // Commentaire
+    if (client.comment) {
+      complementaryFields.push({ 
+        label: 'Commentaire', 
+        value: client.comment,
+        fullWidth: true
+      });
+    }
+
+    addSection('INFORMATIONS COMPLÉMENTAIRES', complementaryFields);
+
+    // Generate blob
+    const pdfBlob = doc.output('blob');
+    return pdfBlob;
+  } catch (error) {
+    console.error('Error generating client info PDF:', error);
     throw error;
   }
 }
