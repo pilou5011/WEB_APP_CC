@@ -273,10 +273,10 @@ export function useCreditNoteDraft(clientId: string) {
   // Check if data is empty (no need to save)
   const isDraftEmpty = useCallback((data: DraftCreditNoteData): boolean => {
     // Check if at least one field is filled: invoice_id, operation_name, quantity, or unit_price
-    const hasInvoiceId = data.invoice_id && data.invoice_id.trim() !== '';
-    const hasOperationName = data.operation_name && data.operation_name.trim() !== '';
-    const hasQuantity = data.quantity && data.quantity.trim() !== '';
-    const hasUnitPrice = data.unit_price && data.unit_price.trim() !== '';
+    const hasInvoiceId = !!(data.invoice_id && data.invoice_id.trim() !== '');
+    const hasOperationName = !!(data.operation_name && data.operation_name.trim() !== '');
+    const hasQuantity = !!(data.quantity && data.quantity.trim() !== '');
+    const hasUnitPrice = !!(data.unit_price && data.unit_price.trim() !== '');
 
     const hasData = hasInvoiceId || hasOperationName || hasQuantity || hasUnitPrice;
 
@@ -286,10 +286,10 @@ export function useCreditNoteDraft(clientId: string) {
   // Check if draft has meaningful data that warrants showing recovery dialog
   const hasMeaningfulDraft = useCallback((data: DraftCreditNoteData): boolean => {
     // Check if at least one field is filled: invoice_id, operation_name, quantity, or unit_price
-    const hasInvoiceId = data.invoice_id && data.invoice_id.trim() !== '';
-    const hasOperationName = data.operation_name && data.operation_name.trim() !== '';
-    const hasQuantity = data.quantity && data.quantity.trim() !== '';
-    const hasUnitPrice = data.unit_price && data.unit_price.trim() !== '';
+    const hasInvoiceId = !!(data.invoice_id && data.invoice_id.trim() !== '');
+    const hasOperationName = !!(data.operation_name && data.operation_name.trim() !== '');
+    const hasQuantity = !!(data.quantity && data.quantity.trim() !== '');
+    const hasUnitPrice = !!(data.unit_price && data.unit_price.trim() !== '');
 
     const hasData = hasInvoiceId || hasOperationName || hasQuantity || hasUnitPrice;
 
