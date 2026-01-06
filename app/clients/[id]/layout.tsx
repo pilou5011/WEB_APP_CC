@@ -16,12 +16,12 @@ export default function ClientLayout({
 
   const navItems = [
     {
-      title: 'Mettre à jour le stock',
+      title: 'Facturer (dépôt)',
       href: `/clients/${clientId}/stock`,
       icon: Package,
     },
     {
-      title: 'Facturer',
+      title: 'Facturer (compte ferme)',
       href: `/clients/${clientId}/invoice`,
       icon: Calculator,
     },
@@ -57,7 +57,16 @@ export default function ClientLayout({
                 )}
               >
                 <Icon className="h-5 w-5" />
-                {item.title}
+                <span className="whitespace-nowrap">
+                  {item.title.includes('(') ? (
+                    <>
+                      {item.title.split('(')[0]}
+                      <span className="text-xs">({item.title.match(/\(([^)]+)\)/)?.[1]})</span>
+                    </>
+                  ) : (
+                    item.title
+                  )}
+                </span>
               </Link>
             );
           })}
