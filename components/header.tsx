@@ -120,8 +120,8 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b border-slate-200" style={{ backgroundColor: '#0B1F33' }}>
       <div className="w-full flex h-16 items-center justify-between pr-0">
         {/* Logo et texte Gaston */}
-        <Link href="/" className="flex items-center flex-shrink-0 h-full bg-white hover:opacity-90 transition-opacity">
-          <div className="h-full flex items-center px-4 md:px-6 lg:px-8">
+        <Link href="/" className="flex items-center flex-shrink-0 h-full hover:opacity-90 transition-opacity" style={{ background: 'linear-gradient(to right, #FFFFFF 0%, #FFFFFF 75%, rgba(11, 31, 51, 0.1) 82%, rgba(11, 31, 51, 0.4) 88%, rgba(11, 31, 51, 0.7) 94%, #0B1F33 100%)' }}>
+          <div className="h-full flex items-center px-4 md:px-6 lg:px-8 pr-12 md:pr-16 lg:pr-20">
             <Image
               src="/logo.png"
               alt="Gaston"

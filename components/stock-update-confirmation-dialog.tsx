@@ -328,7 +328,7 @@ export function StockUpdateConfirmationDialog({
             onClick={handleConfirm}
             disabled={loading}
           >
-            {loading ? 'Enregistrement...' : 'Confirmer et enregistrer'}
+            {loading ? 'Enregistrement...' : 'Générer une facture'}
           </Button>
         </DialogFooter>
       </DialogContent>
