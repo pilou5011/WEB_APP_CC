@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
@@ -340,6 +340,7 @@ function SortableProductRow({
 export default function ClientDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const clientId = params.id as string;
 
   const [client, setClient] = useState<Client | null>(null);
@@ -577,7 +578,8 @@ export default function ClientDetailPage() {
       await loadClientData();
       
       // AFTER client data is loaded, show draft recovery dialog if needed
-      if (hasDraftData) {
+      // ONLY on the stock page (Facturer (dépôt))
+      if (hasDraftData && pathname?.endsWith('/stock')) {
         const draftInfo = await draft.getDraftInfo();
         if (draftInfo) {
           let draftData = draft.loadDraftLocally();
@@ -3536,14 +3538,6 @@ export default function ClientDetailPage() {
           />
         )}
 
-        {/* Draft Recovery Dialog */}
-        <DraftRecoveryDialog
-          open={draftRecoveryOpen}
-          onOpenChange={setDraftRecoveryOpen}
-          onResume={handleResumeDraft}
-          onDiscard={handleDiscardDraft}
-          draftDate={draftDate}
-        />
 
         {client && selectedCreditNote && (() => {
           const relatedInvoice = globalInvoices.find(inv => inv.id === selectedCreditNote.invoice_id);

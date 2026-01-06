@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, Invoice, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
@@ -16,6 +16,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CreditNoteDialog } from '@/components/credit-note-dialog';
+import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { useCreditNoteDraft } from '@/hooks/use-credit-note-draft';
 
 export default function CreditNotePage() {
   const router = useRouter();
@@ -45,9 +47,65 @@ export default function CreditNotePage() {
   const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
   const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
+  // Draft recovery
+  const draft = useCreditNoteDraft(clientId);
+  const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState<string>('');
+  const [hasDraft, setHasDraft] = useState(false);
+  const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
+
   useEffect(() => {
-    loadData();
-  }, [clientId]);
+    // Reset draft check flag when clientId changes (navigating to different client)
+    draftCheckDoneRef.current = false;
+    
+    // Check for draft BEFORE loading client data
+    const initPage = async () => {
+      // First, check if there's a draft
+      const draftInfo = await draft.getDraftInfo();
+      let hasDraftData = false;
+      
+      if (draftInfo) {
+        console.log('[Draft Credit Note] Found draft info before loading client data');
+        // Load the draft data to check if it contains meaningful credit note data
+        let draftData = draft.loadDraftLocally();
+        if (!draftData) {
+          draftData = await draft.loadDraftFromServer();
+        }
+        
+        if (draftData && draft.hasMeaningfulDraft(draftData)) {
+          hasDraftData = true;
+          console.log('[Draft Credit Note] Has meaningful draft, will skip form initialization');
+        }
+      }
+      
+      // Load client data (which will initialize the form if no draft)
+      await loadData();
+      
+      // AFTER client data is loaded, show draft recovery dialog if needed
+      if (hasDraftData) {
+        const draftInfo = await draft.getDraftInfo();
+        if (draftInfo) {
+          let draftData = draft.loadDraftLocally();
+          if (!draftData) {
+            draftData = await draft.loadDraftFromServer();
+          }
+          
+          if (draftData && draft.hasMeaningfulDraft(draftData)) {
+            setDraftDate(draftInfo.createdAt);
+            setHasDraft(true);
+            setDraftRecoveryOpen(true);
+            // Immediately restore draft data to prevent it from being overwritten
+            setCreditNoteForm(draftData);
+          }
+        }
+      }
+      
+      // Mark draft check as done
+      draftCheckDoneRef.current = true;
+    };
+    
+    initPage();
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     try {
@@ -206,6 +264,15 @@ export default function CreditNotePage() {
       if (creditNotesError) throw creditNotesError;
       setCreditNotes(creditNotesData || []);
 
+      // Delete draft after successful credit note creation
+      try {
+        await draft.deleteDraft();
+        console.log('[Draft Credit Note] Draft deleted after successful credit note creation');
+      } catch (error) {
+        console.error('[Draft Credit Note] Error deleting draft after credit note creation:', error);
+        // Don't show error to user, credit note was created successfully
+      }
+
       toast.success('Avoir créé avec succès');
       setCreditNoteConfirmDialogOpen(false);
       setCreditNoteForm({
@@ -222,6 +289,80 @@ export default function CreditNotePage() {
       setCreatingCreditNote(false);
     }
   };
+
+  // Draft recovery handlers
+  const handleResumeDraft = async () => {
+    try {
+      console.log('[Draft Credit Note] User confirmed to resume draft (data already loaded)');
+      toast.success('Brouillon restauré avec succès');
+    } catch (error) {
+      console.error('Error resuming draft:', error);
+      toast.error('Erreur lors de la restauration du brouillon');
+    } finally {
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
+  };
+
+  const handleDiscardDraft = async () => {
+    try {
+      console.log('[Draft Credit Note] Discarding draft for client:', clientId);
+      
+      // CRITICAL: Mark draft check as not done temporarily to prevent auto-save
+      // from recreating the draft while we're deleting it
+      draftCheckDoneRef.current = false;
+      
+      // Delete the draft
+      await draft.deleteDraft();
+      
+      console.log('[Draft Credit Note] Draft deleted successfully, reinitializing form');
+      
+      // Reinitialize form with default values
+      setCreditNoteForm({
+        invoice_id: '',
+        operation_name: '',
+        quantity: '',
+        unit_price: ''
+      });
+      
+      // Re-enable auto-save after a short delay
+      setTimeout(() => {
+        draftCheckDoneRef.current = true;
+        console.log('[Draft Credit Note] Auto-save re-enabled after draft deletion');
+      }, 1000);
+      
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+      
+      toast.success('Brouillon supprimé avec succès');
+    } catch (error) {
+      console.error('[Draft Credit Note] Error discarding draft:', error);
+      toast.error('Erreur lors de la suppression du brouillon');
+      // Re-enable draft check even on error
+      draftCheckDoneRef.current = true;
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
+  };
+
+  // Auto-save draft when creditNoteForm changes
+  useEffect(() => {
+    // Don't autosave while loading or if draft check hasn't completed
+    if (loading || !draftCheckDoneRef.current) {
+      console.log('[Draft Credit Note] AutoSave disabled: loading or draft check not done');
+      return;
+    }
+    
+    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+    if (draftRecoveryOpen) {
+      console.log('[Draft Credit Note] AutoSave disabled: draft recovery dialog is open');
+      return;
+    }
+    
+    if (!loading && client && !creatingCreditNote) {
+      draft.autoSave(creditNoteForm);
+    }
+  }, [creditNoteForm, loading, client, creatingCreditNote, draftRecoveryOpen, draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -443,6 +584,15 @@ export default function CreditNotePage() {
             />
           );
         })()}
+
+        {/* Draft Recovery Dialog */}
+        <DraftRecoveryDialog
+          open={draftRecoveryOpen}
+          onOpenChange={setDraftRecoveryOpen}
+          onResume={handleResumeDraft}
+          onDiscard={handleDiscardDraft}
+          draftDate={draftDate}
+        />
       </div>
     </div>
   );
