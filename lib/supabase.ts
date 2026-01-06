@@ -57,7 +57,9 @@ const SOFT_DELETE_TABLES = [
   'product_subcategories',
   'products',
   'sub_products',
-  'draft_stock_updates'
+  'draft_stock_updates',
+  'draft_invoices',
+  'draft_credit_notes'
 ];
 
 /**
@@ -256,6 +258,49 @@ export type DraftStockUpdate = {
   id: string;
   client_id: string;
   draft_data: DraftStockUpdateData;
+  deleted_at: string | null; // Date de suppression logique
+  created_at: string;
+  updated_at: string;
+};
+
+export type DraftInvoiceRow = {
+  id: string;
+  product_id: string | null;
+  product_name: string;
+  barcode: string;
+  quantity: string;
+  unit_price_ht: number;
+  total_ht: number;
+  custom_price: number | null;
+};
+
+export type DraftInvoiceData = {
+  rows: DraftInvoiceRow[];
+  discountPercentage: number | null;
+};
+
+export type DraftInvoice = {
+  id: string;
+  client_id: string;
+  company_id: string;
+  draft_data: DraftInvoiceData;
+  deleted_at: string | null; // Date de suppression logique
+  created_at: string;
+  updated_at: string;
+};
+
+export type DraftCreditNoteData = {
+  invoice_id: string;
+  operation_name: string;
+  quantity: string;
+  unit_price: string;
+};
+
+export type DraftCreditNote = {
+  id: string;
+  client_id: string;
+  company_id: string;
+  draft_data: DraftCreditNoteData;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;

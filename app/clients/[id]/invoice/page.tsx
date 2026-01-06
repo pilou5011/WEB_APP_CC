@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase, Client, Product, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
@@ -19,6 +19,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
+import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { useInvoiceDraft } from '@/hooks/use-invoice-draft';
 
 interface InvoiceRow {
   id: string;
@@ -57,9 +59,66 @@ export default function InvoicePage() {
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
 
+  // Draft recovery
+  const draft = useInvoiceDraft(clientId);
+  const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState<string>('');
+  const [hasDraft, setHasDraft] = useState(false);
+  const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
+
   useEffect(() => {
-    loadData();
-  }, [clientId]);
+    // Reset draft check flag when clientId changes (navigating to different client)
+    draftCheckDoneRef.current = false;
+    
+    // Check for draft BEFORE loading client data
+    const initPage = async () => {
+      // First, check if there's a draft
+      const draftInfo = await draft.getDraftInfo();
+      let hasDraftData = false;
+      
+      if (draftInfo) {
+        console.log('[Draft Invoice] Found draft info before loading client data');
+        // Load the draft data to check if it contains meaningful invoice data
+        let draftData = draft.loadDraftLocally();
+        if (!draftData) {
+          draftData = await draft.loadDraftFromServer();
+        }
+        
+        if (draftData && draft.hasMeaningfulDraft(draftData)) {
+          hasDraftData = true;
+          console.log('[Draft Invoice] Has meaningful draft, will skip form initialization');
+        }
+      }
+      
+      // Load client data (which will initialize the form if no draft)
+      await loadData();
+      
+      // AFTER client data is loaded, show draft recovery dialog if needed
+      if (hasDraftData) {
+        const draftInfo = await draft.getDraftInfo();
+        if (draftInfo) {
+          let draftData = draft.loadDraftLocally();
+          if (!draftData) {
+            draftData = await draft.loadDraftFromServer();
+          }
+          
+          if (draftData && draft.hasMeaningfulDraft(draftData)) {
+            setDraftDate(draftInfo.createdAt);
+            setHasDraft(true);
+            setDraftRecoveryOpen(true);
+            // Immediately restore draft data to prevent it from being overwritten
+            setRows(draftData.rows);
+            setDiscountPercentage(draftData.discountPercentage);
+          }
+        }
+      }
+      
+      // Mark draft check as done
+      draftCheckDoneRef.current = true;
+    };
+    
+    initPage();
+  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     setLoading(true);
@@ -392,6 +451,15 @@ export default function InvoicePage() {
         userProfile: userProfile || null
       });
 
+      // Delete draft after successful invoice generation
+      try {
+        await draft.deleteDraft();
+        console.log('[Draft Invoice] Draft deleted after successful invoice generation');
+      } catch (error) {
+        console.error('[Draft Invoice] Error deleting draft after invoice generation:', error);
+        // Don't show error to user, invoice was created successfully
+      }
+
       toast.success('Facture générée avec succès');
       setConfirmDialogOpen(false);
       setPreviewDialogOpen(false);
@@ -435,6 +503,88 @@ export default function InvoicePage() {
       setGeneratingInvoice(false);
     }
   };
+
+  // Draft recovery handlers
+  const handleResumeDraft = async () => {
+    try {
+      console.log('[Draft Invoice] User confirmed to resume draft (data already loaded)');
+      toast.success('Brouillon restauré avec succès');
+    } catch (error) {
+      console.error('Error resuming draft:', error);
+      toast.error('Erreur lors de la restauration du brouillon');
+    } finally {
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
+  };
+
+  const handleDiscardDraft = async () => {
+    try {
+      console.log('[Draft Invoice] Discarding draft for client:', clientId);
+      
+      // CRITICAL: Mark draft check as not done temporarily to prevent auto-save
+      // from recreating the draft while we're deleting it
+      draftCheckDoneRef.current = false;
+      
+      // Delete the draft
+      await draft.deleteDraft();
+      
+      console.log('[Draft Invoice] Draft deleted successfully, reinitializing form');
+      
+      // Reinitialize form with default values
+      setRows([{
+        id: '1',
+        product_id: null,
+        product_name: '',
+        barcode: '',
+        quantity: '',
+        unit_price_ht: 0,
+        total_ht: 0,
+        custom_price: null
+      }]);
+      setDiscountPercentage(null);
+      
+      // Re-enable auto-save after a short delay
+      setTimeout(() => {
+        draftCheckDoneRef.current = true;
+        console.log('[Draft Invoice] Auto-save re-enabled after draft deletion');
+      }, 1000);
+      
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+      
+      toast.success('Brouillon supprimé avec succès');
+    } catch (error) {
+      console.error('[Draft Invoice] Error discarding draft:', error);
+      toast.error('Erreur lors de la suppression du brouillon');
+      // Re-enable draft check even on error
+      draftCheckDoneRef.current = true;
+      setDraftRecoveryOpen(false);
+      setHasDraft(false);
+    }
+  };
+
+  // Auto-save draft when rows or discountPercentage changes
+  useEffect(() => {
+    // Don't autosave while loading or if draft check hasn't completed
+    if (loading || !draftCheckDoneRef.current) {
+      console.log('[Draft Invoice] AutoSave disabled: loading or draft check not done');
+      return;
+    }
+    
+    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+    if (draftRecoveryOpen) {
+      console.log('[Draft Invoice] AutoSave disabled: draft recovery dialog is open');
+      return;
+    }
+    
+    if (!loading && client && allProducts.length > 0 && !generatingInvoice) {
+      draft.autoSave({
+        rows,
+        discountPercentage
+      });
+    }
+  }, [rows, discountPercentage, loading, client, allProducts.length, generatingInvoice, draftRecoveryOpen, draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -908,6 +1058,15 @@ export default function InvoicePage() {
             clientProducts={[]}
           />
         )}
+
+        {/* Draft Recovery Dialog */}
+        <DraftRecoveryDialog
+          open={draftRecoveryOpen}
+          onOpenChange={setDraftRecoveryOpen}
+          onResume={handleResumeDraft}
+          onDiscard={handleDiscardDraft}
+          draftDate={draftDate}
+        />
       </div>
     </div>
   );
