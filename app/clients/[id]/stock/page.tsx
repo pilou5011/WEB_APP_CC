@@ -1510,12 +1510,19 @@ export default function ClientDetailPage() {
             .eq('invoice_id', invoiceData.id)
             .eq('company_id', companyId);
 
+          // Transformer clientProducts pour inclure Product (majuscule) attendu par pdf-generators.ts
+          // Les données sont chargées avec product (minuscule) mais les fonctions PDF attendent Product (majuscule)
+          const clientProductsForPdf = (clientProducts || []).map((cp: any) => ({
+            ...cp,
+            Product: cp.Product ?? cp.product ?? undefined,
+          }));
+
           // Générer les 3 PDFs en parallèle
           await Promise.all([
             generateAndSaveInvoicePDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               products: allProducts,
               stockUpdates: insertedStockUpdates,
               adjustments: invoiceAdjustments || [],
@@ -1524,19 +1531,35 @@ export default function ClientDetailPage() {
             generateAndSaveStockReportPDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               stockUpdates: insertedStockUpdates
             }),
             generateAndSaveDepositSlipPDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               stockUpdates: insertedStockUpdates,
               userProfile: userProfile || null
             })
           ]);
 
           console.log('All PDFs generated and saved successfully');
+          
+          // Ouvrir automatiquement la prévisualisation de la facture générée
+          if (invoiceData) {
+            // Recharger la facture avec les données à jour (notamment invoice_pdf_path)
+            const { data: updatedInvoice, error: reloadError } = await supabase
+              .from('invoices')
+              .select('*')
+              .eq('id', invoiceData.id)
+              .eq('company_id', companyId)
+              .single();
+            
+            if (!reloadError && updatedInvoice) {
+              setSelectedGlobalInvoice(updatedInvoice as Invoice);
+              setGlobalInvoiceDialogOpen(true);
+            }
+          }
         } catch (pdfError) {
           console.error('Error generating PDFs:', pdfError);
           // Ne pas bloquer le processus si la génération des PDFs échoue
@@ -3583,7 +3606,14 @@ export default function ClientDetailPage() {
         {client && selectedGlobalInvoice && (
           <GlobalInvoiceDialog
             open={globalInvoiceDialogOpen}
-            onOpenChange={setGlobalInvoiceDialogOpen}
+            onOpenChange={(open) => {
+              setGlobalInvoiceDialogOpen(open);
+              // Lorsqu'on ferme le dialog de facture, ouvrir automatiquement le dialog de bon de dépôt
+              if (!open && selectedGlobalInvoice && selectedGlobalInvoice.deposit_slip_pdf_path) {
+                setSelectedInvoiceForDepositSlip(selectedGlobalInvoice);
+                setDepositSlipDialogOpen(true);
+              }
+            }}
             client={client}
             invoice={selectedGlobalInvoice}
             stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}

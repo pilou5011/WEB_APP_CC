@@ -464,6 +464,20 @@ export default function InvoicePage() {
       setConfirmDialogOpen(false);
       setPreviewDialogOpen(false);
 
+      // Recharger la facture avec les données à jour (notamment invoice_pdf_path)
+      const { data: updatedInvoice, error: reloadError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('id', invoiceData.id)
+        .eq('company_id', companyId)
+        .single();
+      
+      if (!reloadError && updatedInvoice) {
+        // Ouvrir automatiquement la prévisualisation de la facture générée
+        setSelectedGlobalInvoice(updatedInvoice as Invoice);
+        setGlobalInvoiceDialogOpen(true);
+      }
+
       // Reset form
       setRows([{
         id: '1',
@@ -476,9 +490,6 @@ export default function InvoicePage() {
         custom_price: null
       }]);
       setDiscountPercentage(null);
-
-      // Navigate to documents page
-      router.push(`/clients/${clientId}/documents`);
 
     } catch (error: any) {
       console.error('Error generating invoice:', error);

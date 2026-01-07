@@ -1165,8 +1165,22 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .limit(1)
       .maybeSingle();
 
-    // Charger les product_info depuis la dernière mise à jour de stock de chaque Product
-    // (même logique que dans le dialog "Générer un bon de dépôt")
+    // Créer un map pour stocker la dernière product_info de chaque Product
+    const productInfos: Record<string, string> = {};
+    const processedProducts = new Set<string>();
+
+    // PRIORITÉ 1: Utiliser les stockUpdates passés en paramètre (les plus récents, venant d'être insérés)
+    // Parcourir les stock_updates passés en paramètre
+    // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
+    (stockUpdates || []).forEach((update: StockUpdate) => {
+      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+        productInfos[update.product_id] = update.product_info || '';
+        processedProducts.add(update.product_id);
+      }
+    });
+
+    // PRIORITÉ 2: Compléter avec les stock_updates de la base de données pour les produits qui n'ont pas encore d'info
+    // (pour les cas où on régénère un bon de dépôt et qu'on veut les infos des mises à jour précédentes)
     const { data: allStockUpdates } = await supabase
       .from('stock_updates')
       .select('*')
@@ -1174,13 +1188,8 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
-    // Créer un map pour stocker la dernière product_info de chaque Product
-    const productInfos: Record<string, string> = {};
-    const processedProducts = new Set<string>();
-
-    // Parcourir les stock_updates triés par date décroissante
-    // Pour chaque Product, prendre la première occurrence (la plus récente)
-    // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
+    // Parcourir les stock_updates de la base de données triés par date décroissante
+    // Pour chaque Product qui n'a pas encore d'info, prendre la première occurrence (la plus récente)
     (allStockUpdates || []).forEach((update: StockUpdate) => {
       if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
         productInfos[update.product_id] = update.product_info || '';
