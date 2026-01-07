@@ -264,6 +264,20 @@ export default function CreditNotePage() {
       if (creditNotesError) throw creditNotesError;
       setCreditNotes(creditNotesData || []);
 
+      // Recharger l'avoir avec les données à jour (notamment credit_note_pdf_path)
+      const { data: updatedCreditNote, error: reloadError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('id', creditNote.id)
+        .eq('company_id', companyId)
+        .single();
+      
+      if (!reloadError && updatedCreditNote) {
+        // Ouvrir automatiquement la prévisualisation de l'avoir généré
+        setSelectedCreditNote(updatedCreditNote as CreditNote);
+        setCreditNotePreviewDialogOpen(true);
+      }
+
       // Delete draft after successful credit note creation
       try {
         await draft.deleteDraft();
