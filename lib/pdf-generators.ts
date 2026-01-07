@@ -35,6 +35,8 @@ interface GenerateDepositSlipPDFParams {
   clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
   userProfile: UserProfile | null;
+  allowReplacement?: boolean;
+  existingDepositSlipPdfPath?: string;
 }
 
 interface GenerateCreditNotePDFParams {
@@ -1138,15 +1140,15 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
 /**
  * Generate and save deposit slip PDF
  * This function generates the deposit slip PDF and saves it to Supabase storage.
- * It only saves if the PDF doesn't already exist (immutability).
+ * It supports immutability by default, or replacement mode when allowReplacement is true.
  */
-export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<void> {
-  const { invoice, client, clientProducts, stockUpdates, userProfile } = params;
+export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<string> {
+  const { invoice, client, clientProducts, stockUpdates, userProfile, allowReplacement, existingDepositSlipPdfPath } = params;
 
   // Check if PDF already exists
-  if (invoice.deposit_slip_pdf_path) {
+  if (invoice.deposit_slip_pdf_path && !allowReplacement) {
     console.log('Deposit slip PDF already exists, skipping generation:', invoice.deposit_slip_pdf_path);
-    return;
+    return invoice.deposit_slip_pdf_path;
   }
 
   try {
@@ -1347,7 +1349,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     // Date
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, 15, yPosition);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
     yPosition += 10;
 
     // Titre "Bon de dépôt"
@@ -1402,7 +1404,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Product', 
+        'Produit', 
         'Infos',
         { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
@@ -1429,7 +1431,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] }, // Product
+        0: { halign: 'left', cellWidth: columnWidths[0] }, // Produit
         1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
         2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
         3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
@@ -1465,43 +1467,75 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     });
 
     const pdfBlobData = doc.output('blob');
-    const filePath = `invoices/${invoice.id}/deposit_slip_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, pdfBlobData, {
-        contentType: 'application/pdf',
-        upsert: false
-      });
+    // Compute target folder and base name
+    const folder =
+      (allowReplacement && (existingDepositSlipPdfPath || invoice.deposit_slip_pdf_path))
+        ? (existingDepositSlipPdfPath || invoice.deposit_slip_pdf_path)!.split('/').slice(0, -1).join('/')
+        : `invoices/${invoice.id}`;
+    const baseDate = new Date(invoice.created_at).toISOString().split('T')[0];
+    const baseName = `deposit_slip_${baseDate}`;
 
-    if (uploadError) {
-      if (uploadError.message?.includes('already exists') || 
-          uploadError.message?.includes('duplicate') ||
-          uploadError.message?.includes('409')) {
-        console.log('PDF already exists, not overwriting:', filePath);
-      } else {
+    const isDuplicateUploadError = (msg?: string) =>
+      !!msg && (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('409'));
+
+    let finalFilePath: string | null = null;
+    for (let i = 0; i < 50; i++) {
+      const suffix = i === 0 ? '' : `_${i + 1}`;
+      const candidate = `${folder}/${baseName}${suffix}.pdf`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(candidate, pdfBlobData, {
+          contentType: 'application/pdf',
+          upsert: false
+        });
+
+      if (uploadError) {
+        if (isDuplicateUploadError(uploadError.message)) {
+          continue;
+        }
         throw uploadError;
       }
-    } else if (uploadData) {
-      // Mettre à jour deposit_slip_pdf_path
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({ deposit_slip_pdf_path: filePath })
-        .eq('id', invoice.id)
-        .eq('company_id', companyId)
-        .is('deposit_slip_pdf_path', null);
-      
-      if (updateError) {
-        console.warn('Error updating invoice with PDF path:', updateError);
-      } else {
-        console.log('Deposit slip PDF saved successfully:', filePath);
-      }
+
+      finalFilePath = candidate;
+      break;
     }
+
+    if (!finalFilePath) {
+      throw new Error('Impossible de générer un nom de fichier unique pour le bon de dépôt');
+    }
+
+    // Mettre à jour deposit_slip_pdf_path (toujours en mode remplacement, sinon uniquement si NULL)
+    let query = supabase
+      .from('invoices')
+      .update({ deposit_slip_pdf_path: finalFilePath })
+      .eq('id', invoice.id)
+      .eq('company_id', companyId);
+
+    if (!allowReplacement) {
+      query = query.is('deposit_slip_pdf_path', null);
+    }
+
+    const { error: updateError } = await query;
+    if (updateError) {
+      if (!allowReplacement) {
+        console.warn('Error updating invoice with PDF path (likely already set):', updateError);
+      } else {
+        throw updateError;
+      }
+    } else {
+      console.log('Deposit slip PDF saved successfully:', finalFilePath);
+    }
+
+    return finalFilePath;
   } catch (error) {
     console.error('Error generating deposit slip PDF:', error);
     throw error;
   }
 }
+
+// Replacement flow is handled by generateAndSaveDepositSlipPDF via allowReplacement=true.
 
 /**
  * Generate and save credit note PDF

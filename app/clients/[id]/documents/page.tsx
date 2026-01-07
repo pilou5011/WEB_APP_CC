@@ -359,6 +359,11 @@ export default function ClientDetailPage() {
   const [stockReportDialogOpen, setStockReportDialogOpen] = useState(false);
   const [selectedInvoiceForStockReport, setSelectedInvoiceForStockReport] = useState<Invoice | null>(null);
   const [selectedInvoiceForDepositSlip, setSelectedInvoiceForDepositSlip] = useState<Invoice | null>(null);
+
+  // Deposit slip regeneration (replace last generated deposit slip)
+  const [depositSlipConfirmOpen, setDepositSlipConfirmOpen] = useState(false);
+  const [depositSlipLastInvoice, setDepositSlipLastInvoice] = useState<Invoice | null>(null);
+  const [depositSlipReplacing, setDepositSlipReplacing] = useState(false);
   const [recentStockUpdatesWithoutInvoice, setRecentStockUpdatesWithoutInvoice] = useState<StockUpdate[]>([]);
   const [stockUpdatesForDialog, setStockUpdatesForDialog] = useState<StockUpdate[]>([]);
   const [stockUpdatesFromHistory, setStockUpdatesFromHistory] = useState<StockUpdate[]>([]);
@@ -1705,6 +1710,162 @@ export default function ClientDetailPage() {
     }
   };
 
+  const formatDepositSlipDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString('fr-FR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const handleGenerateDepositSlipClick = async () => {
+    if (!client) return;
+
+    setDepositSlipReplacing(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) throw new Error('Non autorisé');
+
+      // Find the most recent invoice that has a deposit_slip_pdf_path (REQUIRED)
+      const { data: lastInvoiceWithDepositSlip, error: invoiceError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('company_id', companyId)
+        .not('deposit_slip_pdf_path', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
+
+      // If no invoice with deposit slip exists, show error
+      if (!lastInvoiceWithDepositSlip || !lastInvoiceWithDepositSlip.deposit_slip_pdf_path) {
+        toast.error('Aucune facture avec bon de dépôt trouvée. Veuillez d\'abord mettre à jour le stock pour générer un bon de dépôt.');
+        setDepositSlipReplacing(false);
+        return;
+      }
+
+      const invoiceToUse = lastInvoiceWithDepositSlip as Invoice;
+
+      // Load the most recent stock updates for this client (to get current stock data)
+      const { data: allStockUpdates, error: stockUpdatesError } = await supabase
+        .from('stock_updates')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (stockUpdatesError) throw stockUpdatesError;
+
+      // Get the most recent stock update for each product to use current stock
+      const currentStockUpdates: StockUpdate[] = [];
+      const processedProducts = new Set<string>();
+      (allStockUpdates || []).forEach((update: StockUpdate) => {
+        if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+          currentStockUpdates.push(update);
+          processedProducts.add(update.product_id);
+        }
+      });
+
+      // Ensure clientProducts include `Product` shape expected by pdf-generators.ts
+      const clientProductsForPdf = (clientProducts || []).map((cp: any) => ({
+        ...cp,
+        Product: cp.Product ?? cp.product ?? undefined,
+      }));
+
+      // Show confirmation dialog before replacing
+      setDepositSlipLastInvoice(invoiceToUse);
+      setDepositSlipConfirmOpen(true);
+      setDepositSlipReplacing(false);
+    } catch (e) {
+      console.error('Error preparing deposit slip generation:', e);
+      toast.error('Erreur lors de la préparation de la génération du bon de dépôt');
+      setDepositSlipReplacing(false);
+    }
+  };
+
+  const handleConfirmReplaceDepositSlip = async () => {
+    if (!client) return;
+    if (!depositSlipLastInvoice || !depositSlipLastInvoice.deposit_slip_pdf_path) return;
+
+    setDepositSlipReplacing(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) throw new Error('Non autorisé');
+
+      // Load the most recent stock updates for this client (to get current stock data)
+      const { data: allStockUpdates, error: stockUpdatesError } = await supabase
+        .from('stock_updates')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (stockUpdatesError) throw stockUpdatesError;
+
+      // Get the most recent stock update for each product to use current stock
+      const currentStockUpdates: StockUpdate[] = [];
+      const processedProducts = new Set<string>();
+      (allStockUpdates || []).forEach((update: StockUpdate) => {
+        if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+          currentStockUpdates.push(update);
+          processedProducts.add(update.product_id);
+        }
+      });
+
+      // Ensure clientProducts include `Product` shape expected by pdf-generators.ts
+      const clientProductsForPdf = (clientProducts || []).map((cp: any) => ({
+        ...cp,
+        Product: cp.Product ?? cp.product ?? undefined,
+      }));
+
+      const pdfGenerators = await import('@/lib/pdf-generators');
+      const { generateAndSaveDepositSlipPDF } = pdfGenerators as any;
+      if (typeof generateAndSaveDepositSlipPDF !== 'function') {
+        throw new Error('Fonction generateAndSaveDepositSlipPDF introuvable');
+      }
+
+      const newFilePath: string = await generateAndSaveDepositSlipPDF({
+        invoice: depositSlipLastInvoice,
+        client,
+        clientProducts: clientProductsForPdf,
+        stockUpdates: currentStockUpdates,
+        userProfile: null,
+        allowReplacement: true,
+        existingDepositSlipPdfPath: depositSlipLastInvoice.deposit_slip_pdf_path,
+      });
+
+      const updatedInvoice: Invoice = {
+        ...depositSlipLastInvoice,
+        deposit_slip_pdf_path: newFilePath,
+      };
+
+      // Update local state so the history buttons reflect the new path
+      setGlobalInvoices((prev) => prev.map((inv) => (inv.id === updatedInvoice.id ? updatedInvoice : inv)));
+
+      setDepositSlipConfirmOpen(false);
+      setDepositSlipLastInvoice(null);
+
+      // Open the preview of the newly generated deposit slip (stored PDF)
+      setSelectedInvoiceForDepositSlip(updatedInvoice);
+      setDepositSlipDialogOpen(true);
+
+      toast.success('Le dernier bon de dépôt a été remplacé avec les données à jour');
+    } catch (e) {
+      console.error('Error replacing deposit slip:', e);
+      toast.error('Erreur lors de la génération du bon de dépôt');
+    } finally {
+      setDepositSlipReplacing(false);
+    }
+  };
+
   const handleDeleteProductClick = (cp: ClientProduct & { product?: Product }) => {
     setProductToDelete(cp);
     setDeleteProductDialogOpen(true);
@@ -2880,10 +3041,7 @@ export default function ClientDetailPage() {
             <CardContent>
               <Button
                 variant="outline"
-                onClick={() => {
-                  setSelectedInvoiceForDepositSlip(null);
-                  setDepositSlipDialogOpen(true);
-                }}
+                onClick={handleGenerateDepositSlipClick}
                 disabled={clientProducts.length === 0}
               >
                 <Download className="mr-2 h-4 w-4" />
@@ -2896,6 +3054,35 @@ export default function ClientDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Confirm deposit slip regeneration */}
+          <AlertDialog open={depositSlipConfirmOpen} onOpenChange={(open) => {
+            if (depositSlipReplacing) return;
+            setDepositSlipConfirmOpen(open);
+          }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Confirmer la génération du bon de dépôt</AlertDialogTitle>
+                <AlertDialogDescription className="space-y-3">
+                  <p>
+                    Si vous confirmez, le dernier bon de dépôt généré le{' '}
+                    <span className="font-semibold text-[#0B1F33]">
+                      {depositSlipLastInvoice ? formatDepositSlipDate(depositSlipLastInvoice.created_at) : '—'}
+                    </span>{' '}
+                    sera remplacé par ce nouveau bon de dépôt.
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={depositSlipReplacing}>
+                  Annuler
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={handleConfirmReplaceDepositSlip} disabled={depositSlipReplacing}>
+                  {depositSlipReplacing ? 'Génération...' : 'Confirmer'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0) && (
             <Card className="border-slate-200 shadow-md">
