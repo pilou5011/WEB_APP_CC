@@ -195,6 +195,35 @@ export default function Home() {
             // Utiliser les données du fallback
             const companyId = fallbackCompanyData.id;
             
+            // Créer un customer Stripe pour la nouvelle entreprise
+            try {
+              console.log('Création du customer Stripe pour la nouvelle entreprise...');
+              
+              const { data: { session: authSession } } = await supabase.auth.getSession();
+              
+              const stripeResponse = await fetch('/api/stripe/create-customer', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${authSession?.access_token}`,
+                },
+                body: JSON.stringify({
+                  company_id: companyId,
+                  email: userEmail,
+                  name: pendingCompanyName,
+                }),
+              });
+
+              if (stripeResponse.ok) {
+                const stripeData = await stripeResponse.json();
+                console.log('Customer Stripe créé:', stripeData.customer_id);
+              } else {
+                console.warn('Erreur lors de la création du customer Stripe (non bloquant)');
+              }
+            } catch (stripeError) {
+              console.warn('Erreur lors de la création du customer Stripe (non bloquant):', stripeError);
+            }
+            
             // Créer l'utilisateur
             const { error: createUserError } = await supabase
               .from('users')

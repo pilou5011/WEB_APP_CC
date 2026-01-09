@@ -497,6 +497,42 @@ export default function AuthPage() {
       companyId = companyData.id;
 
       // ============================================
+      // CRÉATION DU CUSTOMER STRIPE
+      // ============================================
+      
+      // Créer un customer Stripe pour la nouvelle entreprise
+      // Ceci permet de gérer les abonnements futurs
+      try {
+        console.log('Création du customer Stripe pour la nouvelle entreprise...');
+        
+        const { data: { session: authSession } } = await supabase.auth.getSession();
+        
+        const stripeResponse = await fetch('/api/stripe/create-customer', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authSession?.access_token}`,
+          },
+          body: JSON.stringify({
+            company_id: companyId,
+            email: trimmedEmail,
+            name: trimmedCompanyName,
+          }),
+        });
+
+        if (stripeResponse.ok) {
+          const stripeData = await stripeResponse.json();
+          console.log('Customer Stripe créé:', stripeData.customer_id);
+        } else {
+          // Ne pas bloquer la création du compte si Stripe échoue
+          console.warn('Erreur lors de la création du customer Stripe (non bloquant)');
+        }
+      } catch (stripeError) {
+        // Ne pas bloquer la création du compte si Stripe échoue
+        console.warn('Erreur lors de la création du customer Stripe (non bloquant):', stripeError);
+      }
+
+      // ============================================
       // CRÉATION DE L'UTILISATEUR DANS LA TABLE USERS
       // ============================================
 
