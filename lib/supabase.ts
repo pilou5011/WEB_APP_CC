@@ -53,6 +53,7 @@ const SOFT_DELETE_TABLES = [
   'client_sub_products',
   'establishment_types',
   'payment_methods',
+  'tour_names',
   'product_categories',
   'product_subcategories',
   'products',
@@ -105,6 +106,7 @@ export type Client = {
   payment_method_id: string | null;
   email: string | null;
   comment: string | null;
+  tour_name_id: string | null;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
@@ -122,6 +124,15 @@ export type PaymentMethod = {
   name: string;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
+};
+
+export type TourName = {
+  id: string;
+  company_id: string;
+  name: string;
+  deleted_at: string | null; // Date de suppression logique
+  created_at: string;
+  updated_at: string;
 };
 
 export type StockUpdate = {
