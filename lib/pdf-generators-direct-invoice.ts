@@ -243,7 +243,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Product', 'Infos', 'Code-barres', 'Quantité', 'PU HT', 'Total HT']],
+      head: [['Produit', 'Infos', 'Code-barres', 'Quantité', 'PU HT', 'Total HT']],
       body: invoiceRows,
       theme: 'grid',
       headStyles: {

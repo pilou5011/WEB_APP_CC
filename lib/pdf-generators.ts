@@ -327,7 +327,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Product', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
+      head: [['Produit', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
