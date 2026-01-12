@@ -66,18 +66,11 @@ export default function ClientsPage() {
     return Array.from(citySet).sort((a, b) => a.localeCompare(b));
   }, [clients]);
 
-  // Extraire les tournées uniques depuis les clients
+  // Charger toutes les tournées disponibles de l'entreprise (pas seulement celles associées aux clients)
   const availableTours = useMemo(() => {
-    const tourSet = new Map<string, string>(); // id -> name
-    clientsWithTours.forEach(client => {
-      if (client.tour_name_id && client.tour_name) {
-        tourSet.set(client.tour_name_id, client.tour_name.name);
-      }
-    });
-    return Array.from(tourSet.entries())
-      .map(([id, name]) => ({ id, name }))
+    return tourNames.map(tour => ({ id: tour.id, name: tour.name }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [clientsWithTours]);
+  }, [tourNames]);
 
 
   // Filtrer et regrouper les clients par ville

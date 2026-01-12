@@ -27,40 +27,20 @@ ALTER TABLE tour_names ENABLE ROW LEVEL SECURITY;
 -- Politiques RLS pour tour_names (basées sur company_id)
 CREATE POLICY "Users can view tour_names from their company"
   ON tour_names FOR SELECT
-  USING (
-    company_id IN (
-      SELECT company_id FROM user_profile WHERE id = auth.uid()
-    )
-  );
+  USING (company_id = public.user_company_id());
 
 CREATE POLICY "Users can insert tour_names for their company"
   ON tour_names FOR INSERT
-  WITH CHECK (
-    company_id IN (
-      SELECT company_id FROM user_profile WHERE id = auth.uid()
-    )
-  );
+  WITH CHECK (company_id = public.user_company_id());
 
 CREATE POLICY "Users can update tour_names from their company"
   ON tour_names FOR UPDATE
-  USING (
-    company_id IN (
-      SELECT company_id FROM user_profile WHERE id = auth.uid()
-    )
-  )
-  WITH CHECK (
-    company_id IN (
-      SELECT company_id FROM user_profile WHERE id = auth.uid()
-    )
-  );
+  USING (company_id = public.user_company_id())
+  WITH CHECK (company_id = public.user_company_id());
 
 CREATE POLICY "Users can delete tour_names from their company"
   ON tour_names FOR DELETE
-  USING (
-    company_id IN (
-      SELECT company_id FROM user_profile WHERE id = auth.uid()
-    )
-  );
+  USING (company_id = public.user_company_id());
 
 -- Ajouter la colonne tour_name_id à la table clients
 ALTER TABLE clients

@@ -663,6 +663,7 @@ export default function ClientInfoPage() {
         .single();
 
       if (error) {
+        console.error('Supabase error:', error);
         throw error;
       }
 
@@ -671,9 +672,11 @@ export default function ClientInfoPage() {
       setNewTourNameName('');
       setShowNewTourNameInput(false);
       toast.success('Nom de tournée ajouté');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding tour name:', error);
-      toast.error('Erreur lors de l\'ajout du nom de tournée');
+      const errorMessage = error?.message || error?.details || 'Erreur inconnue';
+      console.error('Full error:', JSON.stringify(error, null, 2));
+      toast.error(`Erreur lors de l'ajout du nom de tournée: ${errorMessage}`);
     } finally {
       setAddingNewTourName(false);
     }
