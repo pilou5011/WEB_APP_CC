@@ -1233,11 +1233,17 @@ export default function ClientInfoPage() {
         ? paymentMethods.find(m => m.id === client.payment_method_id) || null
         : null;
 
+      // Récupérer le nom de la tournée
+      const tourName = client.tour_name_id
+        ? tourNames.find(t => t.id === client.tour_name_id)?.name || null
+        : null;
+
       // Générer le PDF
       const pdfBlob = await generateClientInfoPDF({
         client,
         establishmentType,
         paymentMethod,
+        tourName,
       });
 
       // Télécharger le PDF

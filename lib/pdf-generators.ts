@@ -1904,291 +1904,349 @@ interface GenerateClientInfoPDFParams {
   client: Client;
   establishmentType: EstablishmentType | null;
   paymentMethod: PaymentMethod | null;
+  tourName?: string | null;
 }
 
 /**
  * Generate client information sheet PDF - optimized for single page
  */
-export async function generateClientInfoPDF(params: GenerateClientInfoPDFParams): Promise<Blob> {
-  const { client, establishmentType, paymentMethod } = params;
+export async function generateClientInfoPDF(
+  params: GenerateClientInfoPDFParams
+): Promise<Blob> {
+  const { client, establishmentType, paymentMethod, tourName } = params;
 
   try {
-    // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;
-    
     const doc = new jsPDF();
+
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
     const margin = 12;
     const contentWidth = pageWidth - 2 * margin;
-    const columnWidth = (contentWidth - 8) / 2; // 2 colonnes avec espacement réduit
-    let yPosition = margin;
+    const columnGap = 8;
+    const columnWidth = (contentWidth - columnGap) / 2;
 
-    // Helper function to split text into lines that fit within width
-    const splitText = (text: string, maxWidth: number, fontSize: number): string[] => {
+    let yPosition = margin + 10;
+
+    /* --------------------------------------------------
+     * Utils
+     * -------------------------------------------------- */
+    const splitText = (
+      text: string,
+      maxWidth: number,
+      fontSize: number
+    ): string[] => {
       if (!text) return [];
-      
-      // D'abord, séparer par les retours à la ligne existants
-      const paragraphs = text.split('\n');
-      const allLines: string[] = [];
-      
-      paragraphs.forEach(paragraph => {
-        if (!paragraph.trim()) {
-          return;
-        }
-        
-        const words = paragraph.split(' ');
-        let currentLine = '';
-
-        words.forEach(word => {
-          const testLine = currentLine ? `${currentLine} ${word}` : word;
-          doc.setFontSize(fontSize);
-          const testWidth = doc.getTextWidth(testLine);
-          
-          if (testWidth > maxWidth && currentLine) {
-            allLines.push(currentLine);
-            currentLine = word;
-          } else {
-            currentLine = testLine;
-          }
-        });
-        
-        if (currentLine) {
-          allLines.push(currentLine);
-        }
-      });
-      
-      return allLines;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fontSize);
+      return doc.splitTextToSize(text, maxWidth);
     };
 
-    // Title "Fiche Client" - centré
-    doc.setFontSize(16);
+    /* --------------------------------------------------
+     * HEADER
+     * -------------------------------------------------- */
     doc.setFont('helvetica', 'bold');
-    doc.text('Fiche Client', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 7;
+    doc.setFontSize(30);
+    doc.setTextColor('#013258');
+    doc.text(client.name || 'Non renseigné', pageWidth / 2, yPosition, {
+      align: 'center',
+    });
 
-    // Nom du client - centré
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text(client.name || 'Non renseigné', pageWidth / 2, yPosition, { align: 'center' });
-    yPosition += 6;
-
-    // Date d'export (compact)
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Exporté le ${new Date().toLocaleDateString('fr-FR')}`, margin, yPosition);
     yPosition += 8;
 
-    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(16);
+    doc.setTextColor('#1873c0');
+    doc.text('Fiche Client', pageWidth / 2, yPosition, { align: 'center' });
 
-    // Helper function to add a section with grid layout
+    yPosition += 10;
+
+    doc.setFillColor('#013258');
+    doc.roundedRect(5, yPosition, pageWidth - 10, 2, 1, 1, 'F');
+    doc.roundedRect(5, yPosition + 3, pageWidth - 10, 2, 1, 1, 'F');
+
+    yPosition += 15;
+
+    /* --------------------------------------------------
+     * Section helper (padding contenu symétrique)
+     * -------------------------------------------------- */
     const addSection = (
-      title: string, 
+      title: string,
       fields: Array<{ label: string; value: string; fullWidth?: boolean }>
     ) => {
-      // Section title with background (compact)
-      doc.setFontSize(9);
-      doc.setFont('helvetica', 'bold');
-      doc.setFillColor(71, 85, 105);
-      doc.rect(margin, yPosition, contentWidth, 5, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.text(title, margin + 2, yPosition + 3.5);
-      yPosition += 8; // Plus d'espace après le titre pour éviter chevauchement
+      const sectionX = 8;
+      const sectionWidth = pageWidth - sectionX * 2;
 
-      doc.setTextColor(0, 0, 0);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
+      const paddingHorizontal = 4;
+      const paddingVertical = 8; // 🔴 padding HAUT = BAS (contenu uniquement) - augmenté pour éviter que le contenu touche les bords
 
-      // Process fields in pairs (2 columns) or full width
-      let currentX = margin;
-      let leftColumnY = yPosition;
-      let rightColumnY = yPosition;
+      const titleHeight = 6;
+      const sectionGap = 8;
+      const lineHeight = 5;
+      const fieldSpacing = 2; // Espacement vertical entre chaque label
 
-      fields.forEach((field) => {
-        const isFullWidth = field.fullWidth || false;
-        const fieldWidth = isFullWidth ? contentWidth : columnWidth;
-        const fieldX = isFullWidth ? margin : currentX;
-        const fieldY = isFullWidth ? yPosition : (currentX === margin ? leftColumnY : rightColumnY);
+      const sectionStartY = yPosition;
 
-        // Format: "Label : Valeur" on same line
+      // 🔑 Début du contenu (APRÈS le titre)
+      const contentStartY =
+        sectionStartY + titleHeight + paddingVertical;
+
+      /* ----------------------------
+       * 1️⃣ Calcul hauteur contenu
+       * ---------------------------- */
+      let leftY = contentStartY;
+      let rightY = contentStartY;
+      let cursorLeft = true;
+
+      fields.forEach(field => {
+        const isFull = field.fullWidth;
         const value = field.value || 'Non renseigné';
-        const fullText = `${field.label} : ${value}`;
-        
-        // Split text if it doesn't fit on one line
-        doc.setFontSize(9);
-        const textLines = splitText(fullText, fieldWidth, 9);
-        const lineHeight = 4.5;
-        const totalFieldHeight = textLines.length * lineHeight + 2;
 
-        // Draw text lines
-        textLines.forEach((line, lineIndex) => {
-          // First line: label in bold, value in normal
-          if (lineIndex === 0) {
-            const labelPart = `${field.label} : `;
-            const valuePart = line.substring(labelPart.length);
-            
-            // Draw label part in bold
-            doc.setFont('helvetica', 'bold');
-            doc.text(labelPart, fieldX, fieldY + (lineIndex * lineHeight));
-            
-            // Draw value part in normal
-            if (valuePart) {
-              const labelWidth = doc.getTextWidth(labelPart);
-              doc.setFont('helvetica', 'normal');
-              doc.text(valuePart, fieldX + labelWidth, fieldY + (lineIndex * lineHeight));
-            }
-          } else {
-            // Subsequent lines (if text wraps) - all in normal
-            doc.setFont('helvetica', 'normal');
-            doc.text(line, fieldX, fieldY + (lineIndex * lineHeight));
-          }
-        });
+        const availableWidth = isFull
+          ? sectionWidth - paddingHorizontal * 2
+          : columnWidth;
 
-        // Update positions
-        if (isFullWidth) {
-          yPosition = fieldY + totalFieldHeight + 3;
-          leftColumnY = yPosition;
-          rightColumnY = yPosition;
-          currentX = margin;
+        const label = `${field.label.trim()} : `;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        const labelWidth = doc.getTextWidth(label);
+
+        const valueLines = splitText(
+          value,
+          availableWidth - labelWidth,
+          9
+        );
+
+        const blockHeight =
+          Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
+
+        if (isFull) {
+          const y = Math.max(leftY, rightY);
+          leftY = y + blockHeight;
+          rightY = leftY;
+          cursorLeft = true;
+        } else if (cursorLeft) {
+          leftY += blockHeight;
+          cursorLeft = false;
         } else {
-          if (currentX === margin) {
-            // First column
-            leftColumnY = fieldY + totalFieldHeight + 3;
-            currentX = margin + columnWidth + 8;
-          } else {
-            // Second column - move to next row
-            rightColumnY = fieldY + totalFieldHeight + 3;
-            const maxY = Math.max(leftColumnY, rightColumnY);
-            leftColumnY = maxY;
-            rightColumnY = maxY;
-            yPosition = maxY;
-            currentX = margin;
-          }
+          rightY += blockHeight;
+          const maxY = Math.max(leftY, rightY);
+          leftY = maxY;
+          rightY = maxY;
+          cursorLeft = true;
         }
       });
 
-      yPosition = Math.max(leftColumnY, rightColumnY) + 6; // Plus d'espace après chaque section
+      const contentEndY = Math.max(leftY, rightY);
+      // Retirer le fieldSpacing du dernier élément pour avoir un padding symétrique
+      const contentHeight = contentEndY - contentStartY - fieldSpacing;
+
+      /* ----------------------------
+       * 2️⃣ Hauteur section (clé)
+       * ---------------------------- */
+      const sectionHeight =
+        titleHeight +
+        paddingVertical +
+        contentHeight +
+        paddingVertical;
+
+      /* ----------------------------
+       * 3️⃣ Cadre
+       * ---------------------------- */
+      doc.setDrawColor('#dbe7f3');
+      doc.setFillColor('#FFFFFF');
+      doc.roundedRect(
+        sectionX,
+        sectionStartY,
+        sectionWidth,
+        sectionHeight,
+        4,
+        4,
+        'FD'
+      );
+
+      /* ----------------------------
+       * 4️⃣ Titre (hors symétrie)
+       * ---------------------------- */
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor('#1873c0');
+
+      const titleWidth = doc.getTextWidth(title) + 6;
+      doc.setFillColor('#FFFFFF');
+      doc.rect(sectionX + 4, sectionStartY - 2, titleWidth, titleHeight, 'F');
+      doc.text(title, sectionX + 7, sectionStartY + 1);
+
+      /* ----------------------------
+       * 5️⃣ Rendu contenu
+       * ---------------------------- */
+      doc.setFontSize(10);
+      doc.setTextColor('#013258');
+
+      leftY = contentStartY;
+      rightY = contentStartY;
+      cursorLeft = true;
+
+      fields.forEach(field => {
+        const isFull = field.fullWidth;
+        const value = field.value || 'Non renseigné';
+
+        const x = isFull
+          ? sectionX + paddingHorizontal
+          : cursorLeft
+          ? sectionX + paddingHorizontal
+          : sectionX + paddingHorizontal + columnWidth + columnGap;
+
+        const y = isFull
+          ? Math.max(leftY, rightY)
+          : cursorLeft
+          ? leftY
+          : rightY;
+
+        const availableWidth = isFull
+          ? sectionWidth - paddingHorizontal * 2
+          : columnWidth;
+
+        const label = `${field.label.trim()} : `;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(label, x, y);
+
+        const labelWidth = doc.getTextWidth(label);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const valueLines = splitText(
+          value,
+          availableWidth - labelWidth,
+          10
+        );
+
+        valueLines.forEach((line, i) => {
+          // Pour "Horaires d'ouverture", mettre les valeurs sur une nouvelle ligne
+          const isOpeningHours = field.label === "Horaires d'ouverture";
+          const xPos = isOpeningHours ? x : (i === 0 ? x + labelWidth : x);
+          const yPos = isOpeningHours ? y + (i + 1) * lineHeight : y + i * lineHeight;
+          doc.setFontSize(10);
+          doc.text(line, xPos, yPos);
+        });
+
+        // Pour "Horaires d'ouverture", ajouter une ligne supplémentaire pour l'espacement
+        const isOpeningHours = field.label === "Horaires d'ouverture";
+        const blockHeight =
+          Math.max(1, valueLines.length) * lineHeight + fieldSpacing + (isOpeningHours ? lineHeight : 0);
+
+        if (isFull) {
+          leftY = y + blockHeight;
+          rightY = leftY;
+          cursorLeft = true;
+        } else if (cursorLeft) {
+          leftY = y + blockHeight;
+          cursorLeft = false;
+        } else {
+          rightY = y + blockHeight;
+          const maxY = Math.max(leftY, rightY);
+          leftY = maxY;
+          rightY = maxY;
+          cursorLeft = true;
+        }
+      });
+
+      yPosition = sectionStartY + sectionHeight + sectionGap;
     };
 
-    // Informations générales
-    addSection('INFORMATIONS GÉNÉRALES', [
+    /* --------------------------------------------------
+     * Sections
+     * -------------------------------------------------- */
+
+    addSection('Informations générales', [
       { label: 'Nom Commercial', value: client.name || '' },
       { label: 'Nom Société', value: client.company_name || '' },
-      { label: 'Type d\'établissement', value: establishmentType?.name || '' },
-      { label: 'Numéro de client', value: client.client_number || '' },
+      { label: "Type d'établissement", value: establishmentType?.name || '' },
+      { label: 'Numéro client', value: client.client_number || '' },
+      { label: 'Nom de la tournée', value: tourName || '' },
     ]);
 
-    // Adresse
-    addSection('ADRESSE', [
-      { label: 'Adresse', value: client.street_address || '', fullWidth: true },
-      { label: 'Code postal', value: client.postal_code || '' },
-      { label: 'Ville', value: client.city || '' },
-      { label: 'Département', value: client.department ? formatDepartment(client.department) : '' },
-    ]);
-
-    // Coordonnées
-    addSection('COORDONNÉES', [
-      { label: 'Téléphone 1', value: client.phone || '' },
-      { label: 'Info Tél 1', value: client.phone_1_info || '' },
-      { label: 'Téléphone 2', value: client.phone_2 || '' },
-      { label: 'Info Tél 2', value: client.phone_2_info || '' },
-      { label: 'Téléphone 3', value: client.phone_3 || '' },
-      { label: 'Info Tél 3', value: client.phone_3_info || '' },
+    addSection('Coordonnées', [
+      { 
+        label: 'Adresse', 
+        value: [
+          client.street_address,
+          client.postal_code,
+          client.city
+        ].filter(Boolean).join(' '), 
+        fullWidth: true 
+      },
+      { 
+        label: 'Téléphone 1', 
+        value: [
+          client.phone,
+          client.phone_1_info
+        ].filter(Boolean).join(' - ') || ''
+      },
+      { 
+        label: 'Téléphone 2', 
+        value: [
+          client.phone_2,
+          client.phone_2_info
+        ].filter(Boolean).join(' - ') || ''
+      },
+      { 
+        label: 'Téléphone 3', 
+        value: [
+          client.phone_3,
+          client.phone_3_info
+        ].filter(Boolean).join(' - ') || ''
+      },
       { label: 'Email', value: client.email || '' },
     ]);
 
-    // Informations légales
-    addSection('INFORMATIONS LÉGALES', [
+    addSection('Informations légales', [
       { label: 'Numéro SIRET', value: client.siret_number || '' },
       { label: 'Numéro TVA', value: client.tva_number || '' },
     ]);
 
-    // Informations complémentaires
-    const complementaryFields: Array<{ label: string; value: string; fullWidth?: boolean }> = [];
+    const complementaryFields: any[] = [];
 
-    // Horaires d'ouverture - une ligne par jour
     if (client.opening_hours) {
-      const scheduleData = formatWeekScheduleData(client.opening_hours);
-      if (scheduleData.length > 0) {
-        // Une ligne par jour avec retour à la ligne
-        const scheduleText = scheduleData.map(item => `${item.day}: ${item.hours}`).join('\n');
-        complementaryFields.push({ 
-          label: 'Horaires d\'ouverture', 
-          value: scheduleText,
-          fullWidth: true
+      const data = formatWeekScheduleData(client.opening_hours);
+      if (data.length) {
+        complementaryFields.push({
+          label: "Horaires d'ouverture",
+          value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
+          fullWidth: true,
         });
       }
     }
 
-    // Fréquence de passage
-    if (client.visit_frequency_number && client.visit_frequency_unit) {
-      complementaryFields.push({
-        label: 'Fréquence de passage',
-        value: `${client.visit_frequency_number} ${client.visit_frequency_unit}`,
-      });
-    }
-
-    // Temps moyen
-    if ((client.average_time_hours !== null && client.average_time_hours !== undefined) ||
-        (client.average_time_minutes !== null && client.average_time_minutes !== undefined)) {
-      const hours = client.average_time_hours || 0;
-      const minutes = client.average_time_minutes || 0;
-      complementaryFields.push({
-        label: 'Temps moyen',
-        value: `${hours}h${minutes.toString().padStart(2, '0')}`,
-      });
-    }
-
-    // Jours de marché - une ligne par jour
     if (client.market_days_schedule) {
-      const marketData = formatMarketDaysScheduleData(client.market_days_schedule);
-      if (marketData.length > 0) {
-        // Une ligne par jour avec retour à la ligne
-        const marketText = marketData.map(item => `${item.day}: ${item.hours}`).join('\n');
-        complementaryFields.push({ 
-          label: 'Jour(s) de marché', 
-          value: marketText,
-          fullWidth: true
+      const data = formatMarketDaysScheduleData(client.market_days_schedule);
+      if (data.length) {
+        complementaryFields.push({
+          label: 'Jour(s) de marché',
+          value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
+          fullWidth: true,
         });
       }
     }
 
-    // Périodes de vacances
-    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
-      const vacationText = formatVacationPeriods(client.vacation_periods as VacationPeriod[]);
-      if (vacationText) {
-        complementaryFields.push({ 
-          label: 'Période(s) de vacances', 
-          value: vacationText,
-          fullWidth: true
-        });
-      }
+    if (client.comment) {
+      complementaryFields.push({
+        label: 'Commentaire',
+        value: client.comment,
+        fullWidth: true,
+      });
     }
 
-    // Règlement
     complementaryFields.push({
       label: 'Règlement',
       value: paymentMethod?.name || '',
     });
 
-    // Commentaire
-    if (client.comment) {
-      complementaryFields.push({ 
-        label: 'Commentaire', 
-        value: client.comment,
-        fullWidth: true
-      });
-    }
+    addSection('Informations complémentaires', complementaryFields);
 
-    addSection('INFORMATIONS COMPLÉMENTAIRES', complementaryFields);
-
-    // Generate blob
-    const pdfBlob = doc.output('blob');
-    return pdfBlob;
+    return doc.output('blob');
   } catch (error) {
     console.error('Error generating client info PDF:', error);
     throw error;
   }
 }
-
