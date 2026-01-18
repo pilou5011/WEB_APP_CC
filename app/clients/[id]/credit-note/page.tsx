@@ -418,6 +418,11 @@ export default function CreditNotePage() {
           </Button>
         </div>
 
+        {/* Client name header */}
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-slate-900">{client.name}</h1>
+        </div>
+
         <div className="space-y-6">
           {/* Créer un avoir */}
           <Card className="border-slate-200 shadow-md">

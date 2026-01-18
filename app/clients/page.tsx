@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, Client } from '@/lib/supabase';
+import { supabase, Client, TourName } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,8 +23,12 @@ export default function ClientsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [selectedTours, setSelectedTours] = useState<string[]>([]);
   const [departmentFilterOpen, setDepartmentFilterOpen] = useState(false);
   const [cityFilterOpen, setCityFilterOpen] = useState(false);
+  const [tourFilterOpen, setTourFilterOpen] = useState(false);
+  const [tourNames, setTourNames] = useState<TourName[]>([]);
+  const [clientsWithTours, setClientsWithTours] = useState<(Client & { tour_name?: TourName | null })[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -62,6 +66,12 @@ export default function ClientsPage() {
     return Array.from(citySet).sort((a, b) => a.localeCompare(b));
   }, [clients]);
 
+  // Charger toutes les tournées disponibles de l'entreprise (pas seulement celles associées aux clients)
+  const availableTours = useMemo(() => {
+    return tourNames.map(tour => ({ id: tour.id, name: tour.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [tourNames]);
+
 
   // Filtrer et regrouper les clients par ville
   useEffect(() => {
@@ -69,7 +79,8 @@ export default function ClientsPage() {
       clientsCount: clients.length, 
       searchTerm, 
       selectedDepartments, 
-      selectedCities 
+      selectedCities,
+      selectedTours
     });
     
     // Créer une copie du tableau clients pour éviter de modifier l'original
@@ -108,6 +119,13 @@ export default function ClientsPage() {
       });
     }
 
+    // Filtrage par tournée
+    if (selectedTours.length > 0) {
+      filtered = filtered.filter(client => {
+        return client.tour_name_id && selectedTours.includes(client.tour_name_id);
+      });
+    }
+
     // Créer une copie pour le tri (ne pas modifier filtered directement)
     const sorted = [...filtered];
     sorted.sort((a, b) => {
@@ -121,7 +139,7 @@ export default function ClientsPage() {
 
     console.log('[FILTER] Clients filtrés:', sorted.length);
     setFilteredClients(sorted);
-  }, [clients, searchTerm, selectedDepartments, selectedCities]);
+  }, [clients, searchTerm, selectedDepartments, selectedCities, selectedTours]);
 
   // Grouper les clients par ville
   const clientsByCity = useMemo(() => {
@@ -162,15 +180,42 @@ export default function ClientsPage() {
         throw new Error('Non autorisé');
       }
 
-      const { data, error } = await supabase
+      // Charger les clients avec leurs tournées
+      const { data: clientsData, error: clientsError } = await supabase
         .from('clients')
         .select('*')
         .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setClients(data || []);
+      if (clientsError) throw clientsError;
+
+      // Charger toutes les tournées de l'entreprise
+      const { data: toursData, error: toursError } = await supabase
+        .from('tour_names')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('name');
+
+      if (toursError) throw toursError;
+
+      setTourNames(toursData || []);
+
+      // Créer un map pour les tournées (id -> tour_name)
+      const tourMap = new Map<string, TourName>();
+      (toursData || []).forEach(tour => {
+        tourMap.set(tour.id, tour);
+      });
+
+      // Associer les tournées aux clients
+      const clientsWithToursData = (clientsData || []).map(client => ({
+        ...client,
+        tour_name: client.tour_name_id ? tourMap.get(client.tour_name_id) || null : null
+      }));
+
+      setClients(clientsData || []);
+      setClientsWithTours(clientsWithToursData);
     } catch (error) {
       console.error('Error loading clients:', error);
       if (!silent) {
@@ -381,14 +426,98 @@ export default function ClientsPage() {
               </div>
             )}
 
+            {/* Filtre par tournée */}
+            <Popover open={tourFilterOpen} onOpenChange={setTourFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={tourFilterOpen}
+                  className="w-[250px] justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <Filter className="h-4 w-4 text-slate-500" />
+                    <span className="text-sm">
+                      {selectedTours.length === 0
+                        ? 'Tournée'
+                        : selectedTours.length === 1
+                        ? availableTours.find(t => t.id === selectedTours[0])?.name || 'Tournée'
+                        : `${selectedTours.length} tournées`}
+                    </span>
+                  </div>
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Rechercher une tournée..." />
+                  <CommandList>
+                    <CommandEmpty>Aucune tournée trouvée.</CommandEmpty>
+                    <CommandGroup>
+                      {availableTours.map((tour) => {
+                        const isSelected = selectedTours.includes(tour.id);
+                        return (
+                          <CommandItem
+                            key={tour.id}
+                            onSelect={() => {
+                              if (isSelected) {
+                                setSelectedTours(selectedTours.filter((t) => t !== tour.id));
+                              } else {
+                                setSelectedTours([...selectedTours, tour.id]);
+                              }
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                'mr-2 h-4 w-4',
+                                isSelected ? 'opacity-100' : 'opacity-0'
+                              )}
+                            />
+                            {tour.name}
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            {/* Badges des tournées sélectionnées */}
+            {selectedTours.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {selectedTours.map((tourId) => {
+                  const tour = availableTours.find(t => t.id === tourId);
+                  return tour ? (
+                    <Badge
+                      key={tourId}
+                      variant="secondary"
+                      className="flex items-center gap-1"
+                    >
+                      {tour.name}
+                      <button
+                        onClick={() => {
+                          setSelectedTours(selectedTours.filter((t) => t !== tourId));
+                        }}
+                        className="ml-1 hover:bg-slate-200 rounded-full p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ) : null;
+                })}
+              </div>
+            )}
+
             {/* Bouton pour réinitialiser les filtres */}
-            {(selectedDepartments.length > 0 || selectedCities.length > 0) && (
+            {(selectedDepartments.length > 0 || selectedCities.length > 0 || selectedTours.length > 0) && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
                   setSelectedDepartments([]);
                   setSelectedCities([]);
+                  setSelectedTours([]);
                 }}
                 className="text-xs"
               >
@@ -398,7 +527,7 @@ export default function ClientsPage() {
           </div>
 
           {/* Compteur de résultats */}
-          {(searchTerm || selectedDepartments.length > 0 || selectedCities.length > 0) && (
+          {(searchTerm || selectedDepartments.length > 0 || selectedCities.length > 0 || selectedTours.length > 0) && (
             <p className="text-sm text-slate-600">
               {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''} trouvé{filteredClients.length !== 1 ? 's' : ''}
               {searchTerm && ` pour "${searchTerm}"`}

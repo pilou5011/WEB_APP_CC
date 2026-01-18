@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, EstablishmentType, PaymentMethod } from '@/lib/supabase';
+import { supabase, Client, EstablishmentType, PaymentMethod, TourName } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -64,6 +64,15 @@ export default function ClientInfoPage() {
   const [editPaymentMethodName, setEditPaymentMethodName] = useState('');
   const [deletingPaymentMethod, setDeletingPaymentMethod] = useState<PaymentMethod | null>(null);
   const [deletePaymentMethodDialogOpen, setDeletePaymentMethodDialogOpen] = useState(false);
+  const [tourNames, setTourNames] = useState<TourName[]>([]);
+  const [tourNameName, setTourNameName] = useState<string>('');
+  const [newTourNameName, setNewTourNameName] = useState('');
+  const [showNewTourNameInput, setShowNewTourNameInput] = useState(false);
+  const [addingNewTourName, setAddingNewTourName] = useState(false);
+  const [editingTourName, setEditingTourName] = useState<TourName | null>(null);
+  const [editTourNameName, setEditTourNameName] = useState('');
+  const [deletingTourName, setDeletingTourName] = useState<TourName | null>(null);
+  const [deleteTourNameDialogOpen, setDeleteTourNameDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
@@ -93,13 +102,15 @@ export default function ClientInfoPage() {
 
     payment_method_id: '',
     email: '',
-    comment: ''
+    comment: '',
+    tour_name_id: ''
   });
 
   useEffect(() => {
     loadClient();
     loadEstablishmentTypes();
     loadPaymentMethods();
+    loadTourNames();
   }, [clientId]);
 
   const loadClient = async () => {
@@ -159,6 +170,23 @@ export default function ClientInfoPage() {
         }
       } else {
         setPaymentMethodName('');
+      }
+
+      // Charger le nom de la tournée si présent
+      if (data.tour_name_id) {
+        const { data: tourNameData } = await supabase
+          .from('tour_names')
+          .select('name')
+          .eq('id', data.tour_name_id)
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .single();
+        
+        if (tourNameData) {
+          setTourNameName(tourNameData.name);
+        }
+      } else {
+        setTourNameName('');
       }
 
       // Charger les horaires d'ouverture et fusionner avec le schedule par défaut
@@ -255,7 +283,8 @@ export default function ClientInfoPage() {
         average_time_minutes: data.average_time_minutes?.toString() || '',
         payment_method_id: data.payment_method_id || '',
         email: data.email || '',
-        comment: data.comment || ''
+        comment: data.comment || '',
+        tour_name_id: data.tour_name_id || ''
       });
     } catch (error) {
       console.error('Error loading client:', error);
@@ -298,6 +327,27 @@ export default function ClientInfoPage() {
       setPaymentMethods(data || []);
     } catch (error) {
       console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const loadTourNames = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      setTourNames(data || []);
+    } catch (error) {
+      console.error('Error loading tour names:', error);
     }
   };
 
@@ -576,6 +626,146 @@ export default function ClientInfoPage() {
     }
   };
 
+  const handleAddNewTourName = async () => {
+    if (!newTourNameName.trim()) {
+      toast.error('Veuillez saisir un nom de tournée');
+      return;
+    }
+
+    setAddingNewTourName(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('tour_names')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newTourNameName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce nom de tournée existe déjà');
+        setAddingNewTourName(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .insert([{ 
+          name: newTourNameName.trim(),
+          company_id: companyId
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      await loadTourNames();
+      setFormData({ ...formData, tour_name_id: data.id });
+      setNewTourNameName('');
+      setShowNewTourNameInput(false);
+      toast.success('Nom de tournée ajouté');
+    } catch (error: any) {
+      console.error('Error adding tour name:', error);
+      const errorMessage = error?.message || error?.details || 'Erreur inconnue';
+      console.error('Full error:', JSON.stringify(error, null, 2));
+      toast.error(`Erreur lors de l'ajout du nom de tournée: ${errorMessage}`);
+    } finally {
+      setAddingNewTourName(false);
+    }
+  };
+
+  const handleEditTourName = async () => {
+    if (!editingTourName || !editTourNameName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un autre nom avec le même nom existe déjà (non supprimé)
+      if (editTourNameName.trim() !== editingTourName.name) {
+        const { data: existing } = await supabase
+          .from('tour_names')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('name', editTourNameName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingTourName.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
+      const { error } = await supabase
+        .from('tour_names')
+        .update({ name: editTourNameName.trim() })
+        .eq('id', editingTourName.id)
+        .eq('company_id', companyId);
+
+      if (error) {
+        throw error;
+      }
+
+      await loadTourNames();
+      setEditingTourName(null);
+      setEditTourNameName('');
+      toast.success('Nom de tournée modifié avec succès');
+    } catch (error) {
+      console.error('Error updating tour name:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteTourNameClick = (tourName: TourName) => {
+    setDeletingTourName(tourName);
+    setDeleteTourNameDialogOpen(true);
+  };
+
+  const handleDeleteTourName = async () => {
+    if (!deletingTourName) return;
+
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error } = await supabase
+        .from('tour_names')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingTourName.id)
+        .eq('company_id', companyId);
+
+      if (error) throw error;
+
+      await loadTourNames();
+      if (formData.tour_name_id === deletingTourName.id) {
+        setFormData({ ...formData, tour_name_id: '' });
+      }
+      setDeleteTourNameDialogOpen(false);
+      setDeletingTourName(null);
+      toast.success('Nom de tournée supprimé avec succès');
+    } catch (error) {
+      console.error('Error deleting tour name:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
   const hasUnsavedChanges = (): boolean => {
     if (!client) return false;
 
@@ -613,7 +803,8 @@ export default function ClientInfoPage() {
       normalize(formData.average_time_minutes) !== normalize(client.average_time_minutes?.toString()) ||
       normalize(formData.payment_method_id) !== normalize(client.payment_method_id) ||
       normalize(formData.email) !== normalize(client.email) ||
-      normalize(formData.comment) !== normalize(client.comment)
+      normalize(formData.comment) !== normalize(client.comment) ||
+      normalize(formData.tour_name_id) !== normalize(client.tour_name_id)
     ) {
       return true;
     }
@@ -699,7 +890,8 @@ export default function ClientInfoPage() {
       average_time_minutes: client.average_time_minutes?.toString() || '',
       payment_method_id: client.payment_method_id || '',
       email: client.email || '',
-      comment: client.comment || ''
+      comment: client.comment || '',
+      tour_name_id: client.tour_name_id || ''
     });
     const defaultSchedule = getDefaultWeekSchedule();
     if (client.opening_hours) {
@@ -884,6 +1076,7 @@ export default function ClientInfoPage() {
           payment_method_id: formData.payment_method_id || null,
           email: formData.email || null,
           comment: formData.comment || null,
+          tour_name_id: formData.tour_name_id || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId)
@@ -1040,11 +1233,17 @@ export default function ClientInfoPage() {
         ? paymentMethods.find(m => m.id === client.payment_method_id) || null
         : null;
 
+      // Récupérer le nom de la tournée
+      const tourName = client.tour_name_id
+        ? tourNames.find(t => t.id === client.tour_name_id)?.name || null
+        : null;
+
       // Générer le PDF
       const pdfBlob = await generateClientInfoPDF({
         client,
         establishmentType,
         paymentMethod,
+        tourName,
       });
 
       // Télécharger le PDF
@@ -1142,6 +1341,13 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Nom Société</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.company_name || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Nom de la tournée</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {tourNameName || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1622,6 +1828,167 @@ export default function ClientInfoPage() {
                     className="mt-1.5"
                   />
                   <p className="text-xs text-slate-500 mt-1">6 chiffres exactement</p>
+                </div>
+
+                {/* Nom de la tournée */}
+                <div>
+                  <Label htmlFor="tour_name">Nom de la tournée (optionnel)</Label>
+                  {!showNewTourNameInput && !editingTourName ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="flex-1 justify-between"
+                          >
+                            {formData.tour_name_id
+                              ? tourNames.find(t => t.id === formData.tour_name_id)?.name
+                              : 'Sélectionner une tournée...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Rechercher une tournée..." />
+                            <CommandList>
+                              {tourNames.length === 0 ? (
+                                <CommandEmpty>
+                                  <div className="py-6 text-center text-sm text-slate-400">
+                                    Liste vide, veuillez ajouter un élément
+                                  </div>
+                                </CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {tourNames.map((tourName) => (
+                                    <div key={tourName.id} className="flex items-center group">
+                                      <CommandItem
+                                        value={tourName.id}
+                                        onSelect={() => {
+                                          setFormData({ ...formData, tour_name_id: tourName.id });
+                                        }}
+                                        className="flex-1"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            formData.tour_name_id === tourName.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {tourName.name}
+                                      </CommandItem>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingTourName(tourName);
+                                          setEditTourNameName(tourName.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTourNameClick(tourName);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowNewTourNameInput(true)}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingTourName ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={editTourNameName}
+                        onChange={(e) => setEditTourNameName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditTourName();
+                          } else if (e.key === 'Escape') {
+                            setEditingTourName(null);
+                            setEditTourNameName('');
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleEditTourName}
+                      >
+                        Enregistrer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingTourName(null);
+                          setEditTourNameName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        placeholder="Nouvelle tournée..."
+                        value={newTourNameName}
+                        onChange={(e) => setNewTourNameName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddNewTourName();
+                          } else if (e.key === 'Escape') {
+                            setShowNewTourNameInput(false);
+                            setNewTourNameName('');
+                          }
+                        }}
+                        className="flex-1"
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleAddNewTourName}
+                        disabled={addingNewTourName}
+                      >
+                        {addingNewTourName ? '...' : 'Ajouter'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setShowNewTourNameInput(false);
+                          setNewTourNameName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2159,6 +2526,28 @@ export default function ClientInfoPage() {
               <AlertDialogCancel>Annuler</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleDeletePaymentMethod}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Dialog de confirmation de suppression - Nom de tournée */}
+        <AlertDialog open={deleteTourNameDialogOpen} onOpenChange={setDeleteTourNameDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer ce nom de tournée ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la tournée "{deletingTourName?.name}" ?
+                Les clients utilisant cette tournée ne seront pas supprimés, mais leur nom de tournée sera réinitialisé.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteTourName}
                 className="bg-red-600 hover:bg-red-700"
               >
                 Supprimer

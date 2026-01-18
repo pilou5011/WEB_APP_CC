@@ -637,6 +637,11 @@ export default function InvoicePage() {
           </Button>
         </div>
 
+        {/* Client name header */}
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-slate-900">{client.name}</h1>
+        </div>
+
         <Card className="border-slate-200 shadow-md">
           <CardHeader>
             <CardTitle>Facturer</CardTitle>
