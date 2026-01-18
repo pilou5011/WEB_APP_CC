@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -7,14 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Euro, Package, TrendingDown, Percent } from 'lucide-react';
-import { Collection } from '@/lib/supabase';
+import { Product } from '@/lib/supabase';
 
-interface CollectionUpdate {
-  collection: Collection;
+interface ProductUpdate {
+  Product: Product;
   previousStock: number;
   countedStock: number;
-  cardsSold: number;
-  cardsAdded: number;
+  stockSold: number;
+  stockAdded: number;
   newStock: number;
   amount: number;
   effectivePrice: number;
@@ -31,7 +31,7 @@ interface StockUpdateConfirmationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (discountPercentage?: number) => void;
-  collectionUpdates: CollectionUpdate[];
+  productUpdates: ProductUpdate[];
   pendingAdjustments?: PendingAdjustment[];
   loading?: boolean;
 }
@@ -40,7 +40,7 @@ export function StockUpdateConfirmationDialog({
   open,
   onOpenChange,
   onConfirm,
-  collectionUpdates,
+  productUpdates,
   pendingAdjustments = [],
   loading = false
 }: StockUpdateConfirmationDialogProps) {
@@ -53,8 +53,8 @@ export function StockUpdateConfirmationDialog({
     }
   }, [open]);
   
-  const totalCardsSold = collectionUpdates.reduce((sum, item) => sum + item.cardsSold, 0);
-  const collectionsAmount = collectionUpdates.reduce((sum, item) => sum + item.amount, 0);
+  const totalStockSold = productUpdates.reduce((sum, item) => sum + item.stockSold, 0);
+  const productsAmount = productUpdates.reduce((sum, item) => sum + item.amount, 0);
   
   // Calcul du total des ajustements (reprises de stock)
   const adjustmentsTotal = pendingAdjustments.reduce((sum, adj) => {
@@ -64,7 +64,7 @@ export function StockUpdateConfirmationDialog({
     return sum + (unitPrice * quantity);
   }, 0);
   
-  const totalAmountBeforeDiscount = collectionsAmount + adjustmentsTotal;
+  const totalAmountBeforeDiscount = productsAmount + adjustmentsTotal;
   
   // Calcul de la remise
   const discountValue = discountPercentage ? parseFloat(discountPercentage) : 0;
@@ -95,9 +95,9 @@ export function StockUpdateConfirmationDialog({
             <div className="bg-orange-50 rounded-lg p-4 border border-orange-100">
               <div className="flex items-center gap-2 text-orange-600 mb-2">
                 <TrendingDown className="h-5 w-5" />
-                <span className="text-sm font-medium">Total cartes vendues</span>
+                <span className="text-sm font-medium">Total stock vendu</span>
               </div>
-              <p className="text-3xl font-bold text-orange-900">{totalCardsSold}</p>
+              <p className="text-3xl font-bold text-orange-900">{totalStockSold}</p>
             </div>
 
             <div className={`rounded-lg p-4 border ${totalAmount < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
@@ -126,19 +126,22 @@ export function StockUpdateConfirmationDialog({
                 </Label>
                 <Input
                   id="discount"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={discountPercentage}
                   onChange={(e) => {
                     const value = e.target.value;
-                    if (value === '' || (parseFloat(value) >= 0 && parseFloat(value) <= 100)) {
-                      setDiscountPercentage(value);
+                    // Permettre les nombres décimaux entre 0 et 100
+                    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                      const numValue = parseFloat(value);
+                      if (value === '' || (!isNaN(numValue) && numValue >= 0 && numValue <= 100)) {
+                        setDiscountPercentage(value);
+                      }
                     }
                   }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   placeholder="0"
-                  className="mt-1.5"
+                  className="mt-1.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 />
               </div>
               {discountAmount > 0 && (
@@ -154,23 +157,23 @@ export function StockUpdateConfirmationDialog({
 
           <Separator />
 
-          {/* Collection details */}
-          {collectionUpdates.length > 0 && (
+          {/* Product details */}
+          {productUpdates.length > 0 && (
             <>
               <div>
-                <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <Package className="h-5 w-5" />
-                  Détail par collection
+                  Détail par Product
                 </h3>
                 <div className="space-y-3">
-                  {collectionUpdates.map((update, index) => (
+                  {productUpdates.map((update, index) => (
                     <div
                       key={index}
                       className="border border-slate-200 rounded-lg p-4 bg-white"
                     >
                       <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-semibold text-slate-900">{update.collection.name}</p>
+                          <p className="font-semibold text-[#0B1F33]">{update.Product.name}</p>
                           <p className="text-sm text-slate-500">
                             Prix unitaire : {update.effectivePrice.toFixed(2)} €
                             {update.isCustomPrice && <span className="ml-1 text-blue-600">(personnalisé)</span>}
@@ -178,7 +181,7 @@ export function StockUpdateConfirmationDialog({
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-slate-500">Montant</p>
-                          <p className="text-xl font-bold text-slate-900">
+                          <p className="text-xl font-bold text-[#0B1F33]">
                             {update.amount.toFixed(2)} €
                           </p>
                         </div>
@@ -194,16 +197,16 @@ export function StockUpdateConfirmationDialog({
                           <span className="font-semibold">{update.countedStock}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block mb-1">Cartes vendues</span>
-                          <span className="font-semibold text-orange-600">{update.cardsSold}</span>
+                          <span className="text-slate-500 block mb-1">Stock vendu</span>
+                          <span className="font-semibold text-orange-600">{update.stockSold}</span>
                         </div>
                         <div>
                           <span className="text-slate-500 block mb-1">Nouveau dépôt</span>
                           <span className="font-semibold text-blue-600">{update.newStock}</span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block mb-1">Cartes ajoutées</span>
-                          <span className="font-semibold text-green-600">+{update.cardsAdded}</span>
+                          <span className="text-slate-500 block mb-1">Stock ajouté</span>
+                          <span className="font-semibold text-green-600">+{update.stockAdded}</span>
                         </div>
                       </div>
                     </div>
@@ -218,7 +221,7 @@ export function StockUpdateConfirmationDialog({
           {pendingAdjustments.length > 0 && (
             <>
               <div>
-                <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <TrendingDown className="h-5 w-5 text-red-600" />
                   Reprises de stock
                 </h3>
@@ -234,9 +237,9 @@ export function StockUpdateConfirmationDialog({
                       >
                         <div className="flex justify-between items-start mb-2">
                           <div>
-                            <p className="font-semibold text-slate-900">{adj.operation_name}</p>
+                            <p className="font-semibold text-[#0B1F33]">{adj.operation_name}</p>
                             <p className="text-sm text-slate-600 mt-1">
-                              {quantity} carte{quantity > 1 ? 's' : ''} × {unitPrice.toFixed(2)} €
+                              {quantity} unité{quantity > 1 ? 's' : ''} × {unitPrice.toFixed(2)} €
                             </p>
                           </div>
                           <div className="text-right">
@@ -257,24 +260,24 @@ export function StockUpdateConfirmationDialog({
 
           {/* Total summary */}
           <div className="bg-slate-50 rounded-lg p-6 border border-slate-200">
-            <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+            <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
               <Euro className="h-5 w-5" />
               Récapitulatif de facturation
             </h3>
             <div className="space-y-3">
-              {collectionUpdates.length > 0 && (
+              {productUpdates.length > 0 && (
                 <>
                   <div className="flex justify-between items-center text-slate-700">
-                    <span>Nombre de collections mises à jour</span>
-                    <span className="font-medium">{collectionUpdates.length}</span>
+                    <span>Nombre de Produits mises à jour</span>
+                    <span className="font-medium">{productUpdates.length}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-700">
-                    <span>Total cartes vendues</span>
-                    <span className="font-medium">{totalCardsSold}</span>
+                    <span>Total stock vendu</span>
+                    <span className="font-medium">{totalStockSold}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-700">
                     <span>Montant ventes</span>
-                    <span className="font-medium">{collectionsAmount.toFixed(2)} €</span>
+                    <span className="font-medium">{productsAmount.toFixed(2)} €</span>
                   </div>
                 </>
               )}
@@ -304,8 +307,8 @@ export function StockUpdateConfirmationDialog({
                 </>
               )}
               <div className="flex justify-between items-center pt-2">
-                <span className="text-xl font-bold text-slate-900">Montant total à facturer</span>
-                <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-slate-900'}`}>
+                <span className="text-xl font-bold text-[#0B1F33]">Montant total à facturer</span>
+                <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-[#0B1F33]'}`}>
                   {totalAmount.toFixed(2)} €
                 </span>
               </div>
@@ -325,7 +328,7 @@ export function StockUpdateConfirmationDialog({
             onClick={handleConfirm}
             disabled={loading}
           >
-            {loading ? 'Enregistrement...' : 'Confirmer et enregistrer'}
+            {loading ? 'Enregistrement...' : 'Générer une facture'}
           </Button>
         </DialogFooter>
       </DialogContent>

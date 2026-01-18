@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, Edit2, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export interface VacationPeriod {
   id: string;
@@ -117,6 +118,8 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
   const [tempStartDate, setTempStartDate] = useState('');
   const [tempEndDate, setTempEndDate] = useState('');
   const [tempYear, setTempYear] = useState(new Date().getFullYear().toString());
+  const [deletingPeriodId, setDeletingPeriodId] = useState<string | null>(null);
+  const [deletePeriodDialogOpen, setDeletePeriodDialogOpen] = useState(false);
 
   const resetDialog = () => {
     setPeriodType('specific');
@@ -284,9 +287,18 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
     resetDialog();
   };
 
-  const handleRemovePeriod = (id: string) => {
-    onChange(value.filter(period => period.id !== id));
-    toast.success('Période de fermeture supprimée');
+  const handleDeletePeriodClick = (id: string) => {
+    setDeletingPeriodId(id);
+    setDeletePeriodDialogOpen(true);
+  };
+
+  const handleDeletePeriodConfirm = () => {
+    if (deletingPeriodId) {
+      onChange(value.filter(period => period.id !== deletingPeriodId));
+      toast.success('Période de fermeture supprimée');
+      setDeletePeriodDialogOpen(false);
+      setDeletingPeriodId(null);
+    }
   };
 
   // Générer les options de semaines (S1 à S52)
@@ -537,7 +549,7 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleRemovePeriod(period.id)}
+                          onClick={() => handleDeletePeriodClick(period.id)}
                           className="h-8 w-8 p-0 hover:bg-red-50"
                         >
                           <Trash2 className="h-4 w-4 text-red-600" />
@@ -551,6 +563,27 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
           </Table>
         </div>
       )}
+
+      {/* Dialog de confirmation de suppression de période */}
+      <AlertDialog open={deletePeriodDialogOpen} onOpenChange={setDeletePeriodDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer cette période de fermeture ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Êtes-vous sûr de vouloir supprimer cette période de fermeture ? Cette action est irréversible.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeletePeriodConfirm}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

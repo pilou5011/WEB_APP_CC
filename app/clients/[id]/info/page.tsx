@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Client, EstablishmentType, PaymentMethod } from '@/lib/supabase';
+import { supabase, Client, EstablishmentType, PaymentMethod, TourName } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2, Check, ChevronsUpDown, Pencil } from 'lucide-react';
+import { ArrowLeft, Building2, MapPin, Phone, FileText, Edit, Plus, X, Settings, Clock, Mail, MessageSquare, Trash2, Check, ChevronsUpDown, Pencil, Download } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
@@ -23,6 +24,7 @@ import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatV
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { cn } from '@/lib/utils';
+import { generateClientInfoPDF } from '@/lib/pdf-generators';
 
 // Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
@@ -41,6 +43,7 @@ export default function ClientInfoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const [establishmentTypes, setEstablishmentTypes] = useState<EstablishmentType[]>([]);
   const [establishmentTypeName, setEstablishmentTypeName] = useState<string>('');
   const [newTypeName, setNewTypeName] = useState('');
@@ -61,6 +64,15 @@ export default function ClientInfoPage() {
   const [editPaymentMethodName, setEditPaymentMethodName] = useState('');
   const [deletingPaymentMethod, setDeletingPaymentMethod] = useState<PaymentMethod | null>(null);
   const [deletePaymentMethodDialogOpen, setDeletePaymentMethodDialogOpen] = useState(false);
+  const [tourNames, setTourNames] = useState<TourName[]>([]);
+  const [tourNameName, setTourNameName] = useState<string>('');
+  const [newTourNameName, setNewTourNameName] = useState('');
+  const [showNewTourNameInput, setShowNewTourNameInput] = useState(false);
+  const [addingNewTourName, setAddingNewTourName] = useState(false);
+  const [editingTourName, setEditingTourName] = useState<TourName | null>(null);
+  const [editTourNameName, setEditTourNameName] = useState('');
+  const [deletingTourName, setDeletingTourName] = useState<TourName | null>(null);
+  const [deleteTourNameDialogOpen, setDeleteTourNameDialogOpen] = useState(false);
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
@@ -90,21 +102,30 @@ export default function ClientInfoPage() {
 
     payment_method_id: '',
     email: '',
-    comment: ''
+    comment: '',
+    tour_name_id: ''
   });
 
   useEffect(() => {
     loadClient();
     loadEstablishmentTypes();
     loadPaymentMethods();
+    loadTourNames();
   }, [clientId]);
 
   const loadClient = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .select('*')
         .eq('id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error) throw error;
@@ -123,6 +144,8 @@ export default function ClientInfoPage() {
           .from('establishment_types')
           .select('name')
           .eq('id', data.establishment_type_id)
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
           .single();
         
         if (typeData) {
@@ -138,6 +161,8 @@ export default function ClientInfoPage() {
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
           .single();
         
         if (methodData) {
@@ -145,6 +170,23 @@ export default function ClientInfoPage() {
         }
       } else {
         setPaymentMethodName('');
+      }
+
+      // Charger le nom de la tournée si présent
+      if (data.tour_name_id) {
+        const { data: tourNameData } = await supabase
+          .from('tour_names')
+          .select('name')
+          .eq('id', data.tour_name_id)
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .single();
+        
+        if (tourNameData) {
+          setTourNameName(tourNameData.name);
+        }
+      } else {
+        setTourNameName('');
       }
 
       // Charger les horaires d'ouverture et fusionner avec le schedule par défaut
@@ -241,7 +283,8 @@ export default function ClientInfoPage() {
         average_time_minutes: data.average_time_minutes?.toString() || '',
         payment_method_id: data.payment_method_id || '',
         email: data.email || '',
-        comment: data.comment || ''
+        comment: data.comment || '',
+        tour_name_id: data.tour_name_id || ''
       });
     } catch (error) {
       console.error('Error loading client:', error);
@@ -256,6 +299,7 @@ export default function ClientInfoPage() {
       const { data, error } = await supabase
         .from('establishment_types')
         .select('*')
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -267,15 +311,43 @@ export default function ClientInfoPage() {
 
   const loadPaymentMethods = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
       setPaymentMethods(data || []);
     } catch (error) {
       console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const loadTourNames = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      setTourNames(data || []);
+    } catch (error) {
+      console.error('Error loading tour names:', error);
     }
   };
 
@@ -287,20 +359,37 @@ export default function ClientInfoPage() {
 
     setAddingNewPaymentMethod(true);
     try {
+      // Vérifier si une méthode avec le même nom existe déjà (non supprimée)
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newPaymentMethodName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette méthode de paiement existe déjà');
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
-        .insert([{ name: newPaymentMethodName.trim() }])
+        .insert([{ 
+          name: newPaymentMethodName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette méthode de paiement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewPaymentMethod(false);
-        return;
+        throw error;
       }
 
       setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
@@ -324,20 +413,37 @@ export default function ClientInfoPage() {
 
     setAddingNewType(true);
     try {
+      // Vérifier si un type avec le même nom existe déjà (non supprimé)
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('establishment_types')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newTypeName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce type d\'établissement existe déjà');
+        setAddingNewType(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('establishment_types')
-        .insert([{ name: newTypeName.trim() }])
+        .insert([{ 
+          name: newTypeName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce type d\'établissement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewType(false);
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -360,18 +466,36 @@ export default function ClientInfoPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
+      if (editEstablishmentTypeName.trim() !== editingEstablishmentType.name) {
+        const { data: existing } = await supabase
+          .from('establishment_types')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('name', editEstablishmentTypeName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingEstablishmentType.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editEstablishmentTypeName.trim() })
-        .eq('id', editingEstablishmentType.id);
+        .eq('id', editingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -393,10 +517,16 @@ export default function ClientInfoPage() {
     if (!deletingEstablishmentType) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('establishment_types')
-        .delete()
-        .eq('id', deletingEstablishmentType.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -420,18 +550,35 @@ export default function ClientInfoPage() {
     }
 
     try {
+      // Vérifier si une autre méthode avec le même nom existe déjà (non supprimée)
+      if (editPaymentMethodName.trim() !== editingPaymentMethod.name) {
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', editPaymentMethodName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingPaymentMethod.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editPaymentMethodName.trim() })
-        .eq('id', editingPaymentMethod.id);
+        .eq('id', editingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadPaymentMethods();
@@ -453,10 +600,16 @@ export default function ClientInfoPage() {
     if (!deletingPaymentMethod) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
-        .delete()
-        .eq('id', deletingPaymentMethod.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -471,6 +624,325 @@ export default function ClientInfoPage() {
       console.error('Error deleting payment method:', error);
       toast.error('Erreur lors de la suppression');
     }
+  };
+
+  const handleAddNewTourName = async () => {
+    if (!newTourNameName.trim()) {
+      toast.error('Veuillez saisir un nom de tournée');
+      return;
+    }
+
+    setAddingNewTourName(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('tour_names')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newTourNameName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce nom de tournée existe déjà');
+        setAddingNewTourName(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .insert([{ 
+          name: newTourNameName.trim(),
+          company_id: companyId
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      await loadTourNames();
+      setFormData({ ...formData, tour_name_id: data.id });
+      setNewTourNameName('');
+      setShowNewTourNameInput(false);
+      toast.success('Nom de tournée ajouté');
+    } catch (error: any) {
+      console.error('Error adding tour name:', error);
+      const errorMessage = error?.message || error?.details || 'Erreur inconnue';
+      console.error('Full error:', JSON.stringify(error, null, 2));
+      toast.error(`Erreur lors de l'ajout du nom de tournée: ${errorMessage}`);
+    } finally {
+      setAddingNewTourName(false);
+    }
+  };
+
+  const handleEditTourName = async () => {
+    if (!editingTourName || !editTourNameName.trim()) {
+      toast.error('Le nom ne peut pas être vide');
+      return;
+    }
+
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un autre nom avec le même nom existe déjà (non supprimé)
+      if (editTourNameName.trim() !== editingTourName.name) {
+        const { data: existing } = await supabase
+          .from('tour_names')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('name', editTourNameName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingTourName.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
+      const { error } = await supabase
+        .from('tour_names')
+        .update({ name: editTourNameName.trim() })
+        .eq('id', editingTourName.id)
+        .eq('company_id', companyId);
+
+      if (error) {
+        throw error;
+      }
+
+      await loadTourNames();
+      setEditingTourName(null);
+      setEditTourNameName('');
+      toast.success('Nom de tournée modifié avec succès');
+    } catch (error) {
+      console.error('Error updating tour name:', error);
+      toast.error('Erreur lors de la modification');
+    }
+  };
+
+  const handleDeleteTourNameClick = (tourName: TourName) => {
+    setDeletingTourName(tourName);
+    setDeleteTourNameDialogOpen(true);
+  };
+
+  const handleDeleteTourName = async () => {
+    if (!deletingTourName) return;
+
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error } = await supabase
+        .from('tour_names')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingTourName.id)
+        .eq('company_id', companyId);
+
+      if (error) throw error;
+
+      await loadTourNames();
+      if (formData.tour_name_id === deletingTourName.id) {
+        setFormData({ ...formData, tour_name_id: '' });
+      }
+      setDeleteTourNameDialogOpen(false);
+      setDeletingTourName(null);
+      toast.success('Nom de tournée supprimé avec succès');
+    } catch (error) {
+      console.error('Error deleting tour name:', error);
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
+  const hasUnsavedChanges = (): boolean => {
+    if (!client) return false;
+
+    // Fonction helper pour normaliser les valeurs pour comparaison
+    const normalize = (val: string | null | undefined): string => {
+      return val ?? '';
+    };
+
+    // Comparer les données du formulaire avec les données du client
+    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
+    
+    // Comparer les champs de base - comparaison directe avec normalisation
+    if (
+      normalize(formData.name) !== normalize(client.name) ||
+      normalize(formData.company_name) !== normalize(client.company_name) ||
+      normalize(formData.street_address) !== normalize(client.street_address) ||
+      normalize(formData.postal_code) !== normalize(client.postal_code) ||
+      normalize(formData.city) !== normalize(client.city) ||
+      normalize(formData.department) !== normalize(department) ||
+      formData.latitude !== (client.latitude ?? null) ||
+      formData.longitude !== (client.longitude ?? null) ||
+      normalize(formData.phone) !== normalize(client.phone) ||
+      normalize(formData.phone_1_info) !== normalize(client.phone_1_info) ||
+      normalize(formData.phone_2) !== normalize(client.phone_2) ||
+      normalize(formData.phone_2_info) !== normalize(client.phone_2_info) ||
+      normalize(formData.phone_3) !== normalize(client.phone_3) ||
+      normalize(formData.phone_3_info) !== normalize(client.phone_3_info) ||
+      normalize(formData.siret_number) !== normalize(client.siret_number) ||
+      normalize(formData.tva_number) !== normalize(client.tva_number) ||
+      normalize(formData.client_number) !== normalize(client.client_number) ||
+      normalize(formData.establishment_type_id) !== normalize(client.establishment_type_id) ||
+      normalize(formData.visit_frequency_number) !== normalize(client.visit_frequency_number?.toString()) ||
+      normalize(formData.visit_frequency_unit) !== normalize(client.visit_frequency_unit) ||
+      normalize(formData.average_time_hours) !== normalize(client.average_time_hours?.toString()) ||
+      normalize(formData.average_time_minutes) !== normalize(client.average_time_minutes?.toString()) ||
+      normalize(formData.payment_method_id) !== normalize(client.payment_method_id) ||
+      normalize(formData.email) !== normalize(client.email) ||
+      normalize(formData.comment) !== normalize(client.comment) ||
+      normalize(formData.tour_name_id) !== normalize(client.tour_name_id)
+    ) {
+      return true;
+    }
+
+    // Comparer les horaires d'ouverture
+    const defaultSchedule = getDefaultWeekSchedule();
+    const clientSchedule = client.opening_hours ? (client.opening_hours as any) : defaultSchedule;
+    const mergedClientSchedule = { ...defaultSchedule };
+    Object.keys(defaultSchedule).forEach((day) => {
+      if (clientSchedule[day]) {
+        mergedClientSchedule[day as keyof WeekSchedule] = clientSchedule[day];
+      }
+    });
+    
+    if (JSON.stringify(openingHours) !== JSON.stringify(mergedClientSchedule)) {
+      return true;
+    }
+
+    // Comparer les jours de marché
+    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+    const clientMarketSchedule = client.market_days_schedule ? (client.market_days_schedule as any) : defaultMarketSchedule;
+    const mergedClientMarketSchedule = { ...defaultMarketSchedule };
+    Object.keys(defaultMarketSchedule).forEach((day) => {
+      if (clientMarketSchedule[day]) {
+        mergedClientMarketSchedule[day as keyof MarketDaysSchedule] = clientMarketSchedule[day];
+      }
+    });
+    
+    if (JSON.stringify(marketDaysSchedule) !== JSON.stringify(mergedClientMarketSchedule)) {
+      return true;
+    }
+
+    // Comparer les périodes de fermeture
+    const clientVacationPeriods = client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0
+      ? client.vacation_periods as VacationPeriod[]
+      : [];
+    
+    if (JSON.stringify(vacationPeriods) !== JSON.stringify(clientVacationPeriods)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleBackClick = () => {
+    if (!client) return;
+    
+    if (hasUnsavedChanges()) {
+      setUnsavedChangesDialogOpen(true);
+    } else {
+      handleCancelEdit();
+    }
+  };
+
+  const handleCancelEdit = () => {
+    if (!client) return;
+    
+    setIsEditing(false);
+    // Restaurer les données du client si on annule l'édition
+    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
+    setFormData({
+      name: client.name || '',
+      company_name: client.company_name || '',
+      street_address: client.street_address || '',
+      postal_code: client.postal_code || '',
+      city: client.city || '',
+      department: department || '',
+      latitude: client.latitude || null,
+      longitude: client.longitude || null,
+      phone: client.phone || '',
+      phone_1_info: client.phone_1_info || '',
+      phone_2: client.phone_2 || '',
+      phone_2_info: client.phone_2_info || '',
+      phone_3: client.phone_3 || '',
+      phone_3_info: client.phone_3_info || '',
+      siret_number: client.siret_number || '',
+      tva_number: client.tva_number || '',
+      client_number: client.client_number || '',
+      establishment_type_id: client.establishment_type_id || '',
+      visit_frequency_number: client.visit_frequency_number?.toString() || '',
+      visit_frequency_unit: client.visit_frequency_unit || '',
+      average_time_hours: client.average_time_hours?.toString() || '',
+      average_time_minutes: client.average_time_minutes?.toString() || '',
+      payment_method_id: client.payment_method_id || '',
+      email: client.email || '',
+      comment: client.comment || '',
+      tour_name_id: client.tour_name_id || ''
+    });
+    const defaultSchedule = getDefaultWeekSchedule();
+    if (client.opening_hours) {
+      const loadedSchedule = client.opening_hours as any;
+      const mergedSchedule = { ...defaultSchedule };
+      
+      Object.keys(defaultSchedule).forEach((day) => {
+        if (loadedSchedule[day]) {
+          mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
+        }
+      });
+      
+      setOpeningHours(mergedSchedule);
+    } else {
+      setOpeningHours(defaultSchedule);
+    }
+    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
+    if (client.market_days_schedule) {
+      const loadedMarketSchedule = client.market_days_schedule as any;
+      const mergedMarketSchedule = { ...defaultMarketSchedule };
+      
+      Object.keys(defaultMarketSchedule).forEach((day) => {
+        if (loadedMarketSchedule[day]) {
+          mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
+        }
+      });
+      
+      setMarketDaysSchedule(mergedMarketSchedule);
+    } else {
+      setMarketDaysSchedule(defaultMarketSchedule);
+    }
+    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
+      setVacationPeriods(client.vacation_periods as VacationPeriod[]);
+    } else {
+      setVacationPeriods([]);
+    }
+    setShowNewTypeInput(false);
+    setNewTypeName('');
+  };
+
+  const handleSaveAndExit = async () => {
+    setUnsavedChangesDialogOpen(false);
+    
+    // Créer un événement de soumission artificiel
+    const fakeEvent = {
+      preventDefault: () => {},
+    } as React.FormEvent;
+    
+    // Sauvegarder les données (handleSubmit gère déjà setIsEditing(false) en cas de succès)
+    // Si la sauvegarde échoue, l'utilisateur reste en mode édition et peut réessayer
+    await handleSubmit(fakeEvent);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -549,6 +1021,28 @@ export default function ClientInfoPage() {
         }
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un autre client avec le même numéro existe déjà (non supprimé) dans cette entreprise
+      if (formData.client_number?.trim()) {
+        const { data: existing } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('client_number', formData.client_number.trim())
+          .neq('id', clientId) // Exclure le client actuel
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce numéro de client existe déjà pour un autre client dans votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
 
       const { data, error } = await supabase
         .from('clients')
@@ -582,9 +1076,11 @@ export default function ClientInfoPage() {
           payment_method_id: formData.payment_method_id || null,
           email: formData.email || null,
           comment: formData.comment || null,
+          tour_name_id: formData.tour_name_id || null,
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId)
+        .eq('company_id', companyId)
         .select()
         .single();
 
@@ -607,6 +1103,7 @@ export default function ClientInfoPage() {
           .from('establishment_types')
           .select('name')
           .eq('id', data.establishment_type_id)
+          .is('deleted_at', null)
           .single();
         
         if (typeData) {
@@ -618,10 +1115,12 @@ export default function ClientInfoPage() {
 
       // Recharger le nom de la méthode de paiement
       if (data.payment_method_id) {
-        const { data: methodData } = await supabase
+          const { data: methodData } = await supabase
           .from('payment_methods')
           .select('name')
           .eq('id', data.payment_method_id)
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
           .single();
         
         if (methodData) {
@@ -687,16 +1186,22 @@ export default function ClientInfoPage() {
 
     setDeleting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('clients')
-        .delete()
-        .eq('id', clientId);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', clientId)
+        .eq('company_id', companyId);
 
       if (error) {
         let errorMessage = 'Erreur lors de la suppression du client';
         
         if (error.code === '23503') {
-          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements (collections, factures, etc.)';
+          errorMessage = 'Impossible de supprimer ce client : il est référencé dans d\'autres enregistrements (produits, factures, etc.)';
         } else if (error.message) {
           errorMessage = `Erreur : ${error.message}`;
         }
@@ -712,6 +1217,49 @@ export default function ClientInfoPage() {
       console.error('Error deleting client:', error);
       toast.error(error?.message || 'Erreur inattendue lors de la suppression du client');
       setDeleting(false);
+    }
+  };
+
+  const handleExportClientInfo = async () => {
+    if (!client) return;
+
+    try {
+      // Récupérer le type d'établissement et la méthode de paiement
+      const establishmentType = client.establishment_type_id
+        ? establishmentTypes.find(t => t.id === client.establishment_type_id) || null
+        : null;
+      
+      const paymentMethod = client.payment_method_id
+        ? paymentMethods.find(m => m.id === client.payment_method_id) || null
+        : null;
+
+      // Récupérer le nom de la tournée
+      const tourName = client.tour_name_id
+        ? tourNames.find(t => t.id === client.tour_name_id)?.name || null
+        : null;
+
+      // Générer le PDF
+      const pdfBlob = await generateClientInfoPDF({
+        client,
+        establishmentType,
+        paymentMethod,
+        tourName,
+      });
+
+      // Télécharger le PDF
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Fiche_Client_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast.success('Fiche client exportée avec succès');
+    } catch (error: any) {
+      console.error('Error exporting client info:', error);
+      toast.error('Erreur lors de l\'export de la fiche client');
     }
   };
 
@@ -759,10 +1307,16 @@ export default function ClientInfoPage() {
                     Détails complets du client
                   </CardDescription>
                 </div>
-                <Button onClick={() => setIsEditing(true)}>
-                  <Edit className="mr-2 h-4 w-4" />
-                  Modifier infos client
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleExportClientInfo}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Exporter la fiche
+                  </Button>
+                  <Button onClick={() => setIsEditing(true)}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Modifier infos client
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -787,6 +1341,13 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Nom Société</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.company_name || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Nom de la tournée</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {tourNameName || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -816,7 +1377,7 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="md:col-span-2">
-                      <Label className="text-slate-500 text-sm">Adresse</Label>
+                      <Label className="text-slate-500 text-sm">Numéro et libellé de voie</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.street_address || <span className="text-slate-400">Non renseigné</span>}
                       </p>
@@ -1043,75 +1604,7 @@ export default function ClientInfoPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => {
-              setIsEditing(false);
-              // Restaurer les données du client si on annule l'édition
-              const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
-              setFormData({
-                name: client.name || '',
-                company_name: client.company_name || '',
-                street_address: client.street_address || '',
-                postal_code: client.postal_code || '',
-                city: client.city || '',
-                department: department || '',
-                latitude: client.latitude || null,
-                longitude: client.longitude || null,
-                phone: client.phone || '',
-                phone_1_info: client.phone_1_info || '',
-                phone_2: client.phone_2 || '',
-                phone_2_info: client.phone_2_info || '',
-                phone_3: client.phone_3 || '',
-                phone_3_info: client.phone_3_info || '',
-                siret_number: client.siret_number || '',
-                tva_number: client.tva_number || '',
-                client_number: client.client_number || '',
-                establishment_type_id: client.establishment_type_id || '',
-                visit_frequency_number: client.visit_frequency_number?.toString() || '',
-                visit_frequency_unit: client.visit_frequency_unit || '',
-                average_time_hours: client.average_time_hours?.toString() || '',
-                average_time_minutes: client.average_time_minutes?.toString() || '',
-                payment_method_id: client.payment_method_id || '',
-                email: client.email || '',
-                comment: client.comment || ''
-              });
-              const defaultSchedule = getDefaultWeekSchedule();
-              if (client.opening_hours) {
-                const loadedSchedule = client.opening_hours as any;
-                const mergedSchedule = { ...defaultSchedule };
-                
-                Object.keys(defaultSchedule).forEach((day) => {
-                  if (loadedSchedule[day]) {
-                    mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
-                  }
-                });
-                
-                setOpeningHours(mergedSchedule);
-              } else {
-                setOpeningHours(defaultSchedule);
-              }
-              const defaultMarketSchedule = getDefaultMarketDaysSchedule();
-              if (client.market_days_schedule) {
-                const loadedMarketSchedule = client.market_days_schedule as any;
-                const mergedMarketSchedule = { ...defaultMarketSchedule };
-                
-                Object.keys(defaultMarketSchedule).forEach((day) => {
-                  if (loadedMarketSchedule[day]) {
-                    mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
-                  }
-                });
-                
-                setMarketDaysSchedule(mergedMarketSchedule);
-              } else {
-                setMarketDaysSchedule(defaultMarketSchedule);
-              }
-              if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
-                setVacationPeriods(client.vacation_periods as VacationPeriod[]);
-              } else {
-                setVacationPeriods([]);
-              }
-              setShowNewTypeInput(false);
-              setNewTypeName('');
-            }}
+            onClick={handleBackClick}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
             Retour
@@ -1336,6 +1829,167 @@ export default function ClientInfoPage() {
                   />
                   <p className="text-xs text-slate-500 mt-1">6 chiffres exactement</p>
                 </div>
+
+                {/* Nom de la tournée */}
+                <div>
+                  <Label htmlFor="tour_name">Nom de la tournée (optionnel)</Label>
+                  {!showNewTourNameInput && !editingTourName ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="flex-1 justify-between"
+                          >
+                            {formData.tour_name_id
+                              ? tourNames.find(t => t.id === formData.tour_name_id)?.name
+                              : 'Sélectionner une tournée...'}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Rechercher une tournée..." />
+                            <CommandList>
+                              {tourNames.length === 0 ? (
+                                <CommandEmpty>
+                                  <div className="py-6 text-center text-sm text-slate-400">
+                                    Liste vide, veuillez ajouter un élément
+                                  </div>
+                                </CommandEmpty>
+                              ) : (
+                                <CommandGroup>
+                                  {tourNames.map((tourName) => (
+                                    <div key={tourName.id} className="flex items-center group">
+                                      <CommandItem
+                                        value={tourName.id}
+                                        onSelect={() => {
+                                          setFormData({ ...formData, tour_name_id: tourName.id });
+                                        }}
+                                        className="flex-1"
+                                      >
+                                        <Check
+                                          className={cn(
+                                            'mr-2 h-4 w-4',
+                                            formData.tour_name_id === tourName.id ? 'opacity-100' : 'opacity-0'
+                                          )}
+                                        />
+                                        {tourName.name}
+                                      </CommandItem>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setEditingTourName(tourName);
+                                          setEditTourNameName(tourName.name);
+                                        }}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDeleteTourNameClick(tourName);
+                                        }}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </CommandGroup>
+                              )}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowNewTourNameInput(true)}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : editingTourName ? (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        value={editTourNameName}
+                        onChange={(e) => setEditTourNameName(e.target.value)}
+                        className="flex-1"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleEditTourName();
+                          } else if (e.key === 'Escape') {
+                            setEditingTourName(null);
+                            setEditTourNameName('');
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleEditTourName}
+                      >
+                        Enregistrer
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingTourName(null);
+                          setEditTourNameName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2 mt-1.5">
+                      <Input
+                        placeholder="Nouvelle tournée..."
+                        value={newTourNameName}
+                        onChange={(e) => setNewTourNameName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddNewTourName();
+                          } else if (e.key === 'Escape') {
+                            setShowNewTourNameInput(false);
+                            setNewTourNameName('');
+                          }
+                        }}
+                        className="flex-1"
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleAddNewTourName}
+                        disabled={addingNewTourName}
+                      >
+                        {addingNewTourName ? '...' : 'Ajouter'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setShowNewTourNameInput(false);
+                          setNewTourNameName('');
+                        }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Adresse */}
@@ -1357,6 +2011,7 @@ export default function ClientInfoPage() {
                   }}
                   onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
                   onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  streetLabel="Numéro et libellé de voie"
                   required
                 />
 
@@ -1800,79 +2455,11 @@ export default function ClientInfoPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => {
-                    setIsEditing(false);
-                    // Restaurer les données du client si on annule l'édition
-                    const department = client.department || (client.postal_code ? getDepartmentFromPostalCode(client.postal_code) : null);
-                    setFormData({
-                      name: client.name || '',
-                      company_name: client.company_name || '',
-                      street_address: client.street_address || '',
-                      postal_code: client.postal_code || '',
-                      city: client.city || '',
-                      department: department || '',
-                      latitude: client.latitude || null,
-                      longitude: client.longitude || null,
-                      phone: client.phone || '',
-                      phone_1_info: client.phone_1_info || '',
-                      phone_2: client.phone_2 || '',
-                      phone_2_info: client.phone_2_info || '',
-                      phone_3: client.phone_3 || '',
-                      phone_3_info: client.phone_3_info || '',
-                      siret_number: client.siret_number || '',
-                      tva_number: client.tva_number || '',
-                      client_number: client.client_number || '',
-                      establishment_type_id: client.establishment_type_id || '',
-                      visit_frequency_number: client.visit_frequency_number?.toString() || '',
-                      visit_frequency_unit: client.visit_frequency_unit || '',
-                      average_time_hours: client.average_time_hours?.toString() || '',
-                      average_time_minutes: client.average_time_minutes?.toString() || '',
-                      payment_method_id: client.payment_method_id || '',
-                      email: client.email || '',
-                      comment: client.comment || ''
-                    });
-                    const defaultSchedule = getDefaultWeekSchedule();
-                    if (client.opening_hours) {
-                      const loadedSchedule = client.opening_hours as any;
-                      const mergedSchedule = { ...defaultSchedule };
-                      
-                      Object.keys(defaultSchedule).forEach((day) => {
-                        if (loadedSchedule[day]) {
-                          mergedSchedule[day as keyof WeekSchedule] = loadedSchedule[day];
-                        }
-                      });
-                      
-                      setOpeningHours(mergedSchedule);
-                    } else {
-                      setOpeningHours(defaultSchedule);
-                    }
-                    const defaultMarketSchedule = getDefaultMarketDaysSchedule();
-                    if (client.market_days_schedule) {
-                      const loadedMarketSchedule = client.market_days_schedule as any;
-                      const mergedMarketSchedule = { ...defaultMarketSchedule };
-                      
-                      Object.keys(defaultMarketSchedule).forEach((day) => {
-                        if (loadedMarketSchedule[day]) {
-                          mergedMarketSchedule[day as keyof MarketDaysSchedule] = loadedMarketSchedule[day];
-                        }
-                      });
-                      
-                      setMarketDaysSchedule(mergedMarketSchedule);
-                    } else {
-                      setMarketDaysSchedule(defaultMarketSchedule);
-                    }
-                    if (client.vacation_periods && Array.isArray(client.vacation_periods) && client.vacation_periods.length > 0) {
-                      setVacationPeriods(client.vacation_periods as VacationPeriod[]);
-                    } else {
-                      setVacationPeriods([]);
-                    }
-                    setShowNewTypeInput(false);
-                    setNewTypeName('');
-                  }}
-                  disabled={submitting}
-                >
-                  Annuler
-                    </Button>
+                    onClick={handleBackClick}
+                    disabled={submitting}
+                  >
+                    Annuler
+                  </Button>
                     <Button type="submit" disabled={submitting}>
                       {submitting ? 'Enregistrement...' : 'Enregistrer'}
                     </Button>
@@ -1947,6 +2534,28 @@ export default function ClientInfoPage() {
           </AlertDialogContent>
         </AlertDialog>
 
+        {/* Dialog de confirmation de suppression - Nom de tournée */}
+        <AlertDialog open={deleteTourNameDialogOpen} onOpenChange={setDeleteTourNameDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Supprimer ce nom de tournée ?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Êtes-vous sûr de vouloir supprimer la tournée "{deletingTourName?.name}" ?
+                Les clients utilisant cette tournée ne seront pas supprimés, mais leur nom de tournée sera réinitialisé.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Annuler</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteTourName}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Supprimer
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Dialog de confirmation de suppression */}
         <AlertDialog 
           open={deleteDialogOpen} 
@@ -1962,7 +2571,7 @@ export default function ClientInfoPage() {
               <AlertDialogDescription>
                 Cette action est irréversible. Le client "{client?.name}" et toutes ses données associées seront définitivement supprimés :
                 <ul className="list-disc list-inside mt-2 space-y-1">
-                  <li>Toutes les collections associées à ce client</li>
+                  <li>Tous les produits associés à ce client</li>
                   <li>Tous les historiques de stock</li>
                   <li>Toutes les factures et ajustements</li>
                   <li>Toutes les informations personnalisées (horaires, jours de marché, etc.)</li>
@@ -1984,6 +2593,43 @@ export default function ClientInfoPage() {
                 className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {deleting ? 'Suppression en cours...' : 'Supprimer définitivement'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Dialog de confirmation pour modifications non sauvegardées */}
+        <AlertDialog 
+          open={unsavedChangesDialogOpen} 
+          onOpenChange={(open) => {
+            if (!submitting) {
+              setUnsavedChangesDialogOpen(open);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Modifications non sauvegardées</AlertDialogTitle>
+              <AlertDialogDescription>
+                Vous avez modifié des informations du client. Souhaitez-vous enregistrer ces modifications avant de quitter ?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel 
+                onClick={() => {
+                  setUnsavedChangesDialogOpen(false);
+                  handleCancelEdit();
+                }}
+                disabled={submitting}
+              >
+                Quitter sans enregistrer
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleSaveAndExit}
+                disabled={submitting}
+                className="disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? 'Enregistrement...' : 'Enregistrer et quitter'}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

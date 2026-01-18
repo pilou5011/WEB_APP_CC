@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { EstablishmentType, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,19 +48,37 @@ export function EstablishmentTypesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
+      if (editName.trim() !== editingType.name) {
+        const { data: existing } = await supabase
+          .from('establishment_types')
+          .select('id')
+          .eq('name', editName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingType.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editName.trim() })
-        .eq('id', editingType.id);
+        .eq('id', editingType.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        setSubmitting(false);
-        return;
+        throw error;
       }
 
       toast.success('Type modifié avec succès');
@@ -84,10 +103,16 @@ export function EstablishmentTypesManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('establishment_types')
-        .delete()
-        .eq('id', deletingType.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingType.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 

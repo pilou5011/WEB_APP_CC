@@ -1,8 +1,9 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, supabase } from '@/lib/supabase';
 import type { InvoiceAdjustment } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail } from 'lucide-react';
@@ -14,8 +15,8 @@ interface GlobalInvoiceDialogProps {
   client: Client;
   invoice: Invoice;
   stockUpdates: StockUpdate[];
-  collections: Collection[];
-  clientCollections?: (ClientCollection & { collection?: Collection })[];
+  products: Product[];
+  clientProducts?: (ClientProduct & { Product?: Product })[];
 }
 
 export function GlobalInvoiceDialog({
@@ -24,8 +25,8 @@ export function GlobalInvoiceDialog({
   client,
   invoice,
   stockUpdates,
-  collections,
-  clientCollections = []
+  products,
+  clientProducts = []
 }: GlobalInvoiceDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -50,10 +51,16 @@ export function GlobalInvoiceDialog({
       // Load invoice adjustments for this invoice
       (async () => {
         try {
+          const companyId = await getCurrentUserCompanyId();
+          if (!companyId) {
+            throw new Error('Non autorisé');
+          }
+
           const { data, error } = await supabase
             .from('invoice_adjustments')
             .select('*')
             .eq('invoice_id', invoice.id)
+            .eq('company_id', companyId)
             .order('created_at', { ascending: true });
           if (error) throw error;
           setAdjustments(data || []);
@@ -116,16 +123,22 @@ export function GlobalInvoiceDialog({
     } else {
       // No PDF exists yet - this should not happen if stock was updated correctly
       console.warn('No PDF path found for invoice:', invoice.id);
-      toast.warning('La facture n\'a pas encore été générée. Veuillez mettre à jour le stock pour générer les documents.');
+      toast.warning('La facture n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };
 
   const loadUserProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 

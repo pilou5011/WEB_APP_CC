@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase, EstablishmentType, PaymentMethod } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -89,9 +90,16 @@ export default function NewClientPage() {
 
   const loadEstablishmentTypes = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('establishment_types')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -103,9 +111,16 @@ export default function NewClientPage() {
 
   const loadPaymentMethods = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -123,20 +138,37 @@ export default function NewClientPage() {
 
     setAddingNewPaymentMethod(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une méthode avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('payment_methods')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newPaymentMethodName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette méthode de paiement existe déjà');
+        setAddingNewPaymentMethod(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('payment_methods')
-        .insert([{ name: newPaymentMethodName.trim() }])
+        .insert([{ 
+          name: newPaymentMethodName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette méthode de paiement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewPaymentMethod(false);
-        return;
+        throw error;
       }
 
       setPaymentMethods([...paymentMethods, data].sort((a, b) => a.name.localeCompare(b.name)));
@@ -159,18 +191,41 @@ export default function NewClientPage() {
     }
 
     try {
+      // Vérifier si une autre méthode avec le même nom existe déjà (non supprimée)
+      if (editPaymentMethodName.trim() !== editingPaymentMethod.name) {
+        const companyId = await getCurrentUserCompanyId();
+        if (!companyId) {
+          throw new Error('Non autorisé');
+        }
+
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('name', editPaymentMethodName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingPaymentMethod.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editPaymentMethodName.trim() })
-        .eq('id', editingPaymentMethod.id);
+        .eq('id', editingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadPaymentMethods();
@@ -192,10 +247,16 @@ export default function NewClientPage() {
     if (!deletingPaymentMethod) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
-        .delete()
-        .eq('id', deletingPaymentMethod.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingPaymentMethod.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -220,20 +281,37 @@ export default function NewClientPage() {
 
     setAddingNewType(true);
     try {
+      // Vérifier si un type avec le même nom existe déjà (non supprimé)
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('establishment_types')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newTypeName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce type d\'établissement existe déjà');
+        setAddingNewType(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('establishment_types')
-        .insert([{ name: newTypeName.trim() }])
+        .insert([{ 
+          name: newTypeName.trim(),
+          company_id: companyId
+        }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce type d\'établissement existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewType(false);
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -256,18 +334,41 @@ export default function NewClientPage() {
     }
 
     try {
+      // Vérifier si un autre type avec le même nom existe déjà (non supprimé)
+      if (editEstablishmentTypeName.trim() !== editingEstablishmentType.name) {
+        const companyId = await getCurrentUserCompanyId();
+        if (!companyId) {
+          throw new Error('Non autorisé');
+        }
+
+        const { data: existing } = await supabase
+          .from('establishment_types')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('name', editEstablishmentTypeName.trim())
+          .is('deleted_at', null)
+          .neq('id', editingEstablishmentType.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('establishment_types')
         .update({ name: editEstablishmentTypeName.trim() })
-        .eq('id', editingEstablishmentType.id);
+        .eq('id', editingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       await loadEstablishmentTypes();
@@ -289,10 +390,16 @@ export default function NewClientPage() {
     if (!deletingEstablishmentType) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('establishment_types')
-        .delete()
-        .eq('id', deletingEstablishmentType.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingEstablishmentType.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -404,6 +511,28 @@ export default function NewClientPage() {
         .filter(Boolean)
         .join(', ') || 'Adresse non renseignée';
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un client avec le même numéro existe déjà (non supprimé) dans cette entreprise
+      if (formData.client_number?.trim()) {
+        const { data: existing } = await supabase
+          .from('clients')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('client_number', formData.client_number.trim())
+          .is('deleted_at', null)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce numéro de client existe déjà dans votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('clients')
         .insert([{
@@ -435,7 +564,8 @@ export default function NewClientPage() {
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
           payment_method_id: formData.payment_method_id || null,
           email: formData.email?.trim() || null,
-          comment: formData.comment?.trim() || null
+          comment: formData.comment?.trim() || null,
+          company_id: companyId
         }])
         .select()
         .single();
@@ -722,6 +852,7 @@ export default function NewClientPage() {
                   }}
                   onCityChange={(value) => setFormData(prev => ({ ...prev, city: value }))}
                   onCoordinatesChange={(lat, lon) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lon }))}
+                  streetLabel="Numéro et libellé de voie"
                   required
                 />
 
@@ -976,19 +1107,7 @@ export default function NewClientPage() {
                     <Separator />
 
                     <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <Label htmlFor="payment_method_id">Règlement (optionnel)</Label>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setManagePaymentMethodsDialogOpen(true)}
-                          className="h-7 text-xs"
-                        >
-                          <Settings className="h-3 w-3 mr-1" />
-                          Gérer les méthodes
-                        </Button>
-                      </div>
+                      <Label htmlFor="payment_method_id" className="mb-1.5 block">Règlement (optionnel)</Label>
                       {!showNewPaymentMethodInput && !editingPaymentMethod ? (
                         <div className="flex gap-2">
                           <Popover>

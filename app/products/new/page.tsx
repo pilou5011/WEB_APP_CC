@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { supabase, ProductCategory, ProductSubcategory } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
-export default function NewCollectionPage() {
+export default function NewProductPage() {
   const router = useRouter();
 
   const [formData, setFormData] = useState({
@@ -30,20 +31,20 @@ export default function NewCollectionPage() {
   const [subProducts, setSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [categories, setCategories] = useState<CollectionCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newSubcategoryName, setNewSubcategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [showNewSubcategoryInput, setShowNewSubcategoryInput] = useState(false);
   const [addingNewCategory, setAddingNewCategory] = useState(false);
   const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
@@ -56,9 +57,16 @@ export default function NewCollectionPage() {
 
   const loadCategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -70,9 +78,16 @@ export default function NewCollectionPage() {
 
   const loadSubcategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -94,20 +109,34 @@ export default function NewCollectionPage() {
 
     setAddingNewCategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_categories')
+        .select('id')
+        .eq('name', newCategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette catégorie existe déjà');
+        setAddingNewCategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
-        .insert([{ name: newCategoryName.trim() }])
+        .from('product_categories')
+        .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette catégorie existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewCategory(false);
-        return;
+        throw error;
       }
 
       await loadCategories();
@@ -131,23 +160,39 @@ export default function NewCollectionPage() {
 
     setAddingNewSubcategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_subcategories')
+        .select('id')
+        .eq('category_id', formData.category_id)
+        .eq('name', newSubcategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        setAddingNewSubcategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .insert([{ 
           category_id: formData.category_id,
+          company_id: companyId,
           name: newSubcategoryName.trim() 
         }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        setAddingNewSubcategory(false);
-        return;
+        throw error;
       }
 
       await loadSubcategories();
@@ -170,18 +215,36 @@ export default function NewCollectionPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
+      if (editCategoryName.trim() !== editingCategory.name) {
+        const { data: existing } = await supabase
+          .from('product_categories')
+          .select('id')
+          .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingCategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Catégorie modifiée avec succès');
@@ -198,10 +261,16 @@ export default function NewCollectionPage() {
     if (!deletingCategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
-        .delete()
-        .eq('id', deletingCategory.id);
+        .from('product_categories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -225,18 +294,37 @@ export default function NewCollectionPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      if (editSubcategoryName.trim() !== editingSubcategory.name) {
+        const { data: existing } = await supabase
+          .from('product_subcategories')
+          .select('id')
+          .eq('category_id', editingSubcategory.category_id)
+          .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingSubcategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Sous-catégorie modifiée avec succès');
@@ -253,10 +341,16 @@ export default function NewCollectionPage() {
     if (!deletingSubcategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
-        .delete()
-        .eq('id', deletingSubcategory.id);
+        .from('product_subcategories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -300,26 +394,80 @@ export default function NewCollectionPage() {
         return;
       }
 
-      // Vérifier si une collection avec le même nom existe déjà
-      const { data: existingCollection, error: checkError } = await supabase
-        .from('collections')
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si un produit avec le même nom existe déjà
+      const { data: existingProduct, error: checkError } = await supabase
+        .from('products')
         .select('id, name')
         .eq('name', formData.name.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (checkError) throw checkError;
 
-      if (existingCollection) {
-        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+      if (existingProduct) {
+        toast.error(`Un produit avec le nom "${formData.name.trim()}" existe déjà. Les noms de produits doivent être uniques.`);
         setSubmitting(false);
         return;
       }
 
-      // Create collection
-      const { data: newCollection, error: collectionError } = await supabase
-        .from('collections')
+      // Vérifier que category_id et subcategory_id appartiennent à la même entreprise
+      if (formData.category_id) {
+        const { data: categoryCheck, error: categoryCheckError } = await supabase
+          .from('product_categories')
+          .select('id, company_id')
+          .eq('id', formData.category_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (categoryCheckError || !categoryCheck) {
+          toast.error('La catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      if (formData.subcategory_id) {
+        const { data: subcategoryCheck, error: subcategoryCheckError } = await supabase
+          .from('product_subcategories')
+          .select('id, company_id')
+          .eq('id', formData.subcategory_id)
+          .eq('company_id', companyId)
+          .single();
+
+        if (subcategoryCheckError || !subcategoryCheck) {
+          toast.error('La sous-catégorie sélectionnée n\'existe pas ou n\'appartient pas à votre entreprise');
+          setSubmitting(false);
+          return;
+        }
+
+        // Vérifier que la sous-catégorie appartient bien à la catégorie sélectionnée
+        if (formData.category_id) {
+          const { data: subcategoryRelationCheck, error: relationError } = await supabase
+            .from('product_subcategories')
+            .select('category_id')
+            .eq('id', formData.subcategory_id)
+            .single();
+
+          if (relationError || !subcategoryRelationCheck || subcategoryRelationCheck.category_id !== formData.category_id) {
+            toast.error('La sous-catégorie sélectionnée n\'appartient pas à la catégorie sélectionnée');
+            setSubmitting(false);
+            return;
+          }
+        }
+      }
+
+      // Create product
+      const { data: newProduct, error: productError } = await supabase
+        .from('products')
         .insert({
           name: formData.name.trim(),
+          company_id: companyId,
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
@@ -329,24 +477,35 @@ export default function NewCollectionPage() {
         .select()
         .single();
 
-      if (collectionError) {
-        // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
-        if (collectionError.code === '23505') {
-          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+      if (productError) {
+        // Gérer les erreurs spécifiques
+        if (productError.code === '23505') {
+          // Violation de contrainte unique
+          toast.error(`Un produit avec le nom "${formData.name.trim()}" existe déjà. Les noms de produits doivent être uniques.`);
+        } else if (productError.code === '23503') {
+          // Violation de clé étrangère
+          toast.error('Erreur : la catégorie ou la sous-catégorie sélectionnée n\'est pas valide');
+        } else if (productError.message?.includes('row-level security policy')) {
+          // Erreur RLS
+          toast.error('Erreur de sécurité. Veuillez contacter le support.');
+          console.error('RLS Error:', productError);
         } else {
-          throw collectionError;
+          // Autre erreur
+          toast.error(productError.message || 'Erreur lors de la création du produit');
+          console.error('Product creation error:', productError);
         }
         setSubmitting(false);
         return;
       }
 
       // Handle sub-products if hasSubProducts is true
-      if (hasSubProducts && newCollection) {
+      if (hasSubProducts && newProduct) {
         const validSubProducts = subProducts.filter(sp => sp.name.trim() !== '');
         
         if (validSubProducts.length > 0) {
           const subProductsToInsert = validSubProducts.map(sp => ({
-            collection_id: newCollection.id,
+            product_id: newProduct.id,
+            company_id: companyId,
             name: sp.name.trim()
           }));
 
@@ -358,11 +517,23 @@ export default function NewCollectionPage() {
         }
       }
 
-      toast.success('Collection créée avec succès');
-      router.push(`/collections/${newCollection.id}`);
-    } catch (error) {
-      console.error('Error creating collection:', error);
-      toast.error('Erreur lors de la création de la collection');
+      toast.success('Produit créé avec succès');
+      router.push(`/products/${newProduct.id}`);
+    } catch (error: any) {
+      console.error('Error creating product:', error);
+      
+      // Gestion d'erreur améliorée
+      if (error.message === 'Non autorisé' || error.message?.includes('company_id')) {
+        toast.error('Erreur d\'authentification. Veuillez vous reconnecter.');
+        // Rediriger vers la page d'authentification après un délai
+        setTimeout(() => {
+          router.push('/auth');
+        }, 2000);
+      } else if (error.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Erreur lors de la création du produit');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -374,38 +545,32 @@ export default function NewCollectionPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => router.push('/collections')}
+            onClick={() => router.push('/products')}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux collections
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push('/')}
-          >
-            Retour à l'accueil
+            Retour aux produits
           </Button>
         </div>
 
         <div className="space-y-6">
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle className="text-3xl">Créer une nouvelle collection</CardTitle>
+              <CardTitle className="text-3xl">Créer un nouveau produit</CardTitle>
               <CardDescription>
-                Renseignez les informations de la nouvelle collection
+                Renseignez les informations du nouveau produit
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="name">Nom de la collection *</Label>
+                    <Label htmlFor="name">Nom du produit *</Label>
                     <Input
                       id="name"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       required
-                      placeholder="Ex: Collection Hiver 2024"
+                      placeholder="Ex: Produit Hiver 2024"
                       className="mt-1.5"
                     />
                   </div>
@@ -804,7 +969,7 @@ export default function NewCollectionPage() {
                       }}
                     />
                     <Label htmlFor="has-sub-products" className="font-normal cursor-pointer">
-                      Cette collection contient des sous-produits
+                      Ce produit contient des sous-produits
                     </Label>
                   </div>
 
@@ -855,12 +1020,12 @@ export default function NewCollectionPage() {
 
                 <div className="flex gap-3">
                   <Button type="submit" disabled={submitting} className="w-full md:w-auto">
-                    {submitting ? 'Création en cours...' : 'Créer la collection'}
+                    {submitting ? 'Création en cours...' : 'Créer le produit'}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => router.push('/collections')}
+                    onClick={() => router.push('/products')}
                     disabled={submitting}
                   >
                     Annuler
@@ -879,7 +1044,7 @@ export default function NewCollectionPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
                 Toutes les sous-catégories associées seront également supprimées.
-                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les produits utilisant cette catégorie ne seront pas supprimés, mais leur catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -901,7 +1066,7 @@ export default function NewCollectionPage() {
               <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les produits utilisant cette sous-catégorie ne seront pas supprimés, mais leur sous-catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, CreditNote, Invoice, supabase } from '@/lib/supabase';
+import { Client, CreditNote, Invoice, UserProfile, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail } from 'lucide-react';
@@ -22,6 +23,7 @@ export function CreditNoteDialog({
   creditNote,
   invoice
 }: CreditNoteDialogProps) {
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
@@ -33,6 +35,7 @@ export function CreditNoteDialog({
       setPdfGenerated(false);
       setPdfUrl(null);
       setPdfBlob(null);
+      loadUserProfile();
       loadStoredPDF();
     }
     
@@ -43,6 +46,31 @@ export function CreditNoteDialog({
       }
     };
   }, [open, creditNote.id]);
+
+  const loadUserProfile = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data, error } = await supabase
+        .from('user_profile')
+        .select('*')
+        .eq('company_id', companyId)
+        .limit(1)
+        .maybeSingle();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      setUserProfile(null);
+    }
+  };
 
   useEffect(() => {
     if (open && !pdfGenerated) {
@@ -81,7 +109,7 @@ export function CreditNoteDialog({
     } else {
       // No PDF exists yet
       console.warn('No PDF path found for credit note:', creditNote.id);
-      toast.warning('L\'avoir n\'a pas encore été généré.');
+      toast.warning('L\'avoir n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };
@@ -135,6 +163,13 @@ export function CreditNoteDialog({
             clientName: client.name,
             pdfBase64: base64data,
             fileName: fileName,
+            documentType: 'credit_note',
+            creditNoteDate: new Date(creditNote.created_at).toLocaleDateString('fr-FR'),
+            invoiceNumber: invoice.invoice_number || 'N/A',
+            senderEmail: userProfile?.email,
+            senderName: `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || undefined,
+            senderCompanyName: userProfile?.company_name_short || userProfile?.company_name || undefined,
+            senderPhone: userProfile?.phone,
           }),
         });
 

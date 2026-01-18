@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { supabase, Collection, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { supabase, Product, ProductCategory, ProductSubcategory } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -17,12 +18,12 @@ import { SubProduct } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
-export default function CollectionDetailPage() {
+export default function ProductDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const collectionId = params.id as string;
+  const productId = params.id as string;
 
-  const [collection, setCollection] = useState<Collection | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
   const [existingSubProducts, setExistingSubProducts] = useState<SubProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -48,34 +49,41 @@ export default function CollectionDetailPage() {
   const [hasSubProducts, setHasSubProducts] = useState(false);
   const [subProducts, setSubProducts] = useState<{ id: string | null; name: string }[]>([]);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
-  const [categories, setCategories] = useState<CollectionCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newSubcategoryName, setNewSubcategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
   const [showNewSubcategoryInput, setShowNewSubcategoryInput] = useState(false);
   const [addingNewCategory, setAddingNewCategory] = useState(false);
   const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
   useEffect(() => {
-    loadCollectionData();
+    loadProductData();
     loadCategories();
     loadSubcategories();
-  }, [collectionId]);
+  }, [productId]);
 
   const loadCategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -87,9 +95,16 @@ export default function CollectionDetailPage() {
 
   const loadSubcategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -111,20 +126,34 @@ export default function CollectionDetailPage() {
 
     setAddingNewCategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_categories')
+        .select('id')
+        .eq('name', newCategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette catégorie existe déjà');
+        setAddingNewCategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
-        .insert([{ name: newCategoryName.trim() }])
+        .from('product_categories')
+        .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette catégorie existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewCategory(false);
-        return;
+        throw error;
       }
 
       await loadCategories();
@@ -148,23 +177,39 @@ export default function CollectionDetailPage() {
 
     setAddingNewSubcategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_subcategories')
+        .select('id')
+        .eq('category_id', formData.category_id)
+        .eq('name', newSubcategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        setAddingNewSubcategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .insert([{ 
           category_id: formData.category_id,
+          company_id: companyId,
           name: newSubcategoryName.trim() 
         }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        setAddingNewSubcategory(false);
-        return;
+        throw error;
       }
 
       await loadSubcategories();
@@ -187,18 +232,36 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
+      if (editCategoryName.trim() !== editingCategory.name) {
+        const { data: existing } = await supabase
+          .from('product_categories')
+          .select('id')
+          .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingCategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Catégorie modifiée avec succès');
@@ -215,10 +278,16 @@ export default function CollectionDetailPage() {
     if (!deletingCategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
-        .delete()
-        .eq('id', deletingCategory.id);
+        .from('product_categories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -242,18 +311,37 @@ export default function CollectionDetailPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      if (editSubcategoryName.trim() !== editingSubcategory.name) {
+        const { data: existing } = await supabase
+          .from('product_subcategories')
+          .select('id')
+          .eq('category_id', editingSubcategory.category_id)
+          .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingSubcategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Sous-catégorie modifiée avec succès');
@@ -270,10 +358,16 @@ export default function CollectionDetailPage() {
     if (!deletingSubcategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
-        .delete()
-        .eq('id', deletingSubcategory.id);
+        .from('product_subcategories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -290,30 +384,37 @@ export default function CollectionDetailPage() {
     }
   };
 
-  const loadCollectionData = async () => {
+  const loadProductData = async () => {
     try {
-      const { data: collectionData, error: collectionError } = await supabase
-        .from('collections')
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: productData, error: productError } = await supabase
+        .from('products')
         .select('*')
-        .eq('id', collectionId)
+        .eq('id', productId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
-      if (collectionError) throw collectionError;
+      if (productError) throw productError;
 
-      if (!collectionData) {
-        toast.error('Collection non trouvée');
-        router.push('/collections');
+      if (!productData) {
+        toast.error('Product non trouvée');
+        router.push('/products');
         return;
       }
 
-      setCollection(collectionData);
+      setProduct(productData);
       const initialFormData = {
-        name: collectionData.name,
-        price: collectionData.price.toString(),
-        recommended_sale_price: collectionData.recommended_sale_price?.toString() || '',
-        barcode: collectionData.barcode || '',
-        category_id: collectionData.category_id || '',
-        subcategory_id: collectionData.subcategory_id || ''
+        name: productData.name,
+        price: productData.price.toString(),
+        recommended_sale_price: productData.recommended_sale_price?.toString() || '',
+        barcode: productData.barcode || '',
+        category_id: productData.category_id || '',
+        subcategory_id: productData.subcategory_id || ''
       };
       setFormData(initialFormData);
       setOriginalFormData(initialFormData);
@@ -322,7 +423,9 @@ export default function CollectionDetailPage() {
       const { data: subProductsData, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
-        .eq('collection_id', collectionId)
+        .eq('product_id', productId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: true });
 
       if (subProductsError) throw subProductsError;
@@ -341,7 +444,7 @@ export default function CollectionDetailPage() {
         setOriginalSubProducts([{ id: null, name: '' }]);
       }
     } catch (error) {
-      console.error('Error loading collection data:', error);
+      console.error('Error loading product data:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -350,11 +453,16 @@ export default function CollectionDetailPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!collection) return;
+    if (!product) return;
     
     setSubmitting(true);
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const price = parseFloat(formData.price);
 
       if (isNaN(price) || price < 0) {
@@ -377,24 +485,26 @@ export default function CollectionDetailPage() {
         return;
       }
 
-      // Vérifier si une autre collection avec le même nom existe déjà (sauf celle en cours de modification)
-      const { data: existingCollection, error: checkError } = await supabase
-        .from('collections')
+      // Vérifier si une autre product avec le même nom existe déjà (sauf celle en cours de modification)
+      const { data: existingProduct, error: checkError } = await supabase
+        .from('products')
         .select('id, name')
         .eq('name', formData.name.trim())
-        .neq('id', collectionId)
+        .eq('company_id', companyId)
+        .neq('id', productId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (checkError) throw checkError;
 
-      if (existingCollection) {
-        toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+      if (existingProduct) {
+        toast.error(`Une product avec le nom "${formData.name.trim()}" existe déjà. Les noms de products doivent être uniques.`);
         setSubmitting(false);
         return;
       }
 
       const { error } = await supabase
-        .from('collections')
+        .from('products')
         .update({
           name: formData.name.trim(),
           price: price,
@@ -404,12 +514,13 @@ export default function CollectionDetailPage() {
           subcategory_id: formData.subcategory_id || null,
           updated_at: new Date().toISOString()
         })
-        .eq('id', collectionId);
+        .eq('id', productId)
+        .eq('company_id', companyId);
 
       if (error) {
         // Vérifier si l'erreur est due à un nom dupliqué (contrainte unique en base)
         if (error.code === '23505') {
-          toast.error(`Une collection avec le nom "${formData.name.trim()}" existe déjà. Les noms de collections doivent être uniques.`);
+          toast.error(`Une product avec le nom "${formData.name.trim()}" existe déjà. Les noms de products doivent être uniques.`);
         } else {
           throw error;
         }
@@ -430,8 +541,9 @@ export default function CollectionDetailPage() {
         if (toDelete.length > 0) {
           const { error: deleteError } = await supabase
             .from('sub_products')
-            .delete()
-            .in('id', toDelete);
+            .update({ deleted_at: new Date().toISOString() })
+            .in('id', toDelete)
+            .eq('company_id', companyId);
           if (deleteError) throw deleteError;
         }
 
@@ -446,14 +558,16 @@ export default function CollectionDetailPage() {
                 name: sp.name.trim(),
                 updated_at: new Date().toISOString()
               })
-              .eq('id', sp.id);
+              .eq('id', sp.id)
+              .eq('company_id', companyId);
             if (updateError) throw updateError;
           } else {
             // Insert new
             const { data: newSubProduct, error: insertError } = await supabase
               .from('sub_products')
               .insert({
-                collection_id: collectionId,
+                product_id: productId,
+                company_id: companyId,
                 name: sp.name.trim()
               })
               .select('id')
@@ -465,23 +579,25 @@ export default function CollectionDetailPage() {
           }
         }
 
-        // Ajouter les nouveaux sous-produits à tous les clients ayant cette collection
+        // Ajouter les nouveaux sous-produits à tous les clients ayant cette product
         if (newlyCreatedSubProductIds.length > 0) {
-          // Récupérer tous les clients ayant cette collection
-          const { data: clientCollections, error: clientCollectionsError } = await supabase
-            .from('client_collections')
+          // Récupérer tous les clients ayant cette product
+          const { data: clientProducts, error: clientProductsError } = await supabase
+            .from('client_products')
             .select('client_id')
-            .eq('collection_id', collectionId);
+            .eq('product_id', productId)
+            .eq('company_id', companyId)
+            .is('deleted_at', null);
 
-          if (clientCollectionsError) throw clientCollectionsError;
+          if (clientProductsError) throw clientProductsError;
 
           // Pour chaque client, ajouter les nouveaux sous-produits avec stock 0
-          if (clientCollections && clientCollections.length > 0) {
+          if (clientProducts && clientProducts.length > 0) {
             const clientSubProductsToInsert: any[] = [];
-            for (const cc of clientCollections) {
+            for (const cp of clientProducts) {
               for (const subProductId of newlyCreatedSubProductIds) {
                 clientSubProductsToInsert.push({
-                  client_id: cc.client_id,
+                  client_id: cp.client_id,
                   sub_product_id: subProductId,
                   initial_stock: 0,
                   current_stock: 0
@@ -490,31 +606,36 @@ export default function CollectionDetailPage() {
             }
 
             if (clientSubProductsToInsert.length > 0) {
+              const clientSubProductsToInsertWithCompany = clientSubProductsToInsert.map(csp => ({
+                ...csp,
+                company_id: companyId
+              }));
               const { error: insertClientSubProductsError } = await supabase
                 .from('client_sub_products')
-                .insert(clientSubProductsToInsert);
+                .insert(clientSubProductsToInsertWithCompany);
 
               if (insertClientSubProductsError) throw insertClientSubProductsError;
             }
           }
         }
       } else {
-        // Remove all sub-products if hasSubProducts is false
+        // Remove all sub-products if hasSubProducts is false (soft delete)
         if (existingSubProducts.length > 0) {
           const { error: deleteError } = await supabase
             .from('sub_products')
-            .delete()
-            .eq('collection_id', collectionId);
+            .update({ deleted_at: new Date().toISOString() })
+            .eq('product_id', productId)
+            .eq('company_id', companyId);
           if (deleteError) throw deleteError;
         }
       }
 
-      toast.success('Collection modifiée avec succès');
-      await loadCollectionData();
+      toast.success('Product modifiée avec succès');
+      await loadProductData();
       setIsEditing(false);
     } catch (error) {
-      console.error('Error updating collection:', error);
-      toast.error('Erreur lors de la modification de la collection');
+      console.error('Error updating product:', error);
+      toast.error('Erreur lors de la modification du produit');
     } finally {
       setSubmitting(false);
     }
@@ -533,18 +654,60 @@ export default function CollectionDetailPage() {
 
   const handleDelete = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const deletedAt = new Date().toISOString();
+
+      // 1. Supprimer (soft delete) toutes les lignes dans client_products qui référencent cette product
+      const { error: clientProductsError } = await supabase
+        .from('client_products')
+        .update({ deleted_at: deletedAt })
+        .eq('product_id', productId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null); // Seulement les lignes non supprimées
+
+      if (clientProductsError) throw clientProductsError;
+
+      // 2. Récupérer tous les sous-produits de cette product (non supprimés)
+      const { data: subProducts, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('id')
+        .eq('product_id', productId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null);
+
+      if (subProductsError) throw subProductsError;
+
+      // 3. Si le produit a des sous-produits, supprimer (soft delete) toutes les lignes dans client_sub_products
+      if (subProducts && subProducts.length > 0) {
+        const subProductIds = subProducts.map(sp => sp.id);
+        const { error: clientSubProductsError } = await supabase
+          .from('client_sub_products')
+          .update({ deleted_at: deletedAt })
+          .in('sub_product_id', subProductIds)
+          .eq('company_id', companyId)
+          .is('deleted_at', null); // Seulement les lignes non supprimées
+
+        if (clientSubProductsError) throw clientSubProductsError;
+      }
+
+      // 4. Supprimer (soft delete) le produit elle-même
       const { error } = await supabase
-        .from('collections')
-        .delete()
-        .eq('id', collectionId);
+        .from('products')
+        .update({ deleted_at: deletedAt })
+        .eq('id', productId)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
-      toast.success('Collection supprimée avec succès');
-      router.push('/collections');
+      toast.success('Product supprimée avec succès');
+      router.push('/products');
     } catch (error) {
-      console.error('Error deleting collection:', error);
-      toast.error('Erreur lors de la suppression de la collection');
+      console.error('Error deleting product:', error);
+      toast.error('Erreur lors de la suppression du produit');
     }
   };
 
@@ -562,7 +725,7 @@ export default function CollectionDetailPage() {
     );
   }
 
-  if (!collection) {
+  if (!product) {
     return null;
   }
 
@@ -572,16 +735,10 @@ export default function CollectionDetailPage() {
         <div className="flex gap-3 mb-6">
           <Button
             variant="ghost"
-            onClick={() => router.push('/collections')}
+            onClick={() => router.push('/products')}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Retour aux collections
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => router.push('/')}
-          >
-            Retour à l'accueil
+            Retour aux produits
           </Button>
         </div>
 
@@ -590,10 +747,10 @@ export default function CollectionDetailPage() {
             <CardHeader>
               <div className="flex justify-between items-start">
                 <div>
-                  <CardTitle className="text-3xl">{collection.name}</CardTitle>
+                  <CardTitle className="text-3xl">{product.name}</CardTitle>
                   <CardDescription className="flex items-center gap-1.5 mt-2 text-base">
                     <Euro className="h-5 w-5" />
-                    <span>{collection.price.toFixed(2)} €</span>
+                    <span>{product.price.toFixed(2)} €</span>
                   </CardDescription>
                 </div>
                 {!isEditing && (
@@ -601,7 +758,7 @@ export default function CollectionDetailPage() {
                     onClick={handleEdit}
                   >
                     <Edit className="mr-2 h-4 w-4" />
-                    Modifier la collection
+                    Modifier le produit
                   </Button>
                 )}
               </div>
@@ -613,7 +770,7 @@ export default function CollectionDetailPage() {
                     <Euro className="h-5 w-5" />
                     <span className="text-sm font-medium">Prix de cession (HT)</span>
                   </div>
-                  <p className="text-3xl font-bold text-green-900">{collection.price.toFixed(2)} €</p>
+                  <p className="text-3xl font-bold text-green-900">{product.price.toFixed(2)} €</p>
                 </div>
 
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
@@ -622,7 +779,7 @@ export default function CollectionDetailPage() {
                     <span className="text-sm font-medium">Date de création</span>
                   </div>
                   <p className="text-lg font-bold text-blue-900">
-                    {new Date(collection.created_at).toLocaleDateString('fr-FR', {
+                    {new Date(product.created_at).toLocaleDateString('fr-FR', {
                       day: 'numeric',
                       month: 'long',
                       year: 'numeric'
@@ -635,27 +792,27 @@ export default function CollectionDetailPage() {
 
           <Card className="border-slate-200 shadow-md">
             <CardHeader>
-              <CardTitle>Informations de la collection</CardTitle>
+              <CardTitle>Informations du produit</CardTitle>
               <CardDescription>
-                {isEditing ? 'Modifiez les informations de la collection' : 'Détails de la collection'}
+                {isEditing ? 'Modifiez les informations du produit' : 'Détails du produit'}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="name">Nom de la collection</Label>
+                    <Label htmlFor="name">Nom du produit</Label>
                     {isEditing ? (
                       <Input
                         id="name"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         required
-                        placeholder="Ex: Collection Hiver 2024"
+                        placeholder="Ex: Product Hiver 2024"
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.name}</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.name}</p>
                     )}
                   </div>
 
@@ -674,7 +831,7 @@ export default function CollectionDetailPage() {
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">{formData.price} €</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.price} €</p>
                     )}
                   </div>
 
@@ -695,7 +852,7 @@ export default function CollectionDetailPage() {
                         <p className="text-xs text-slate-500 mt-1">Optionnel</p>
                       </>
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.recommended_sale_price ? `${formData.recommended_sale_price} €` : 'Non renseigné'}
                       </p>
                     )}
@@ -724,7 +881,7 @@ export default function CollectionDetailPage() {
                         <p className="text-xs text-slate-500 mt-1">Exactement 13 chiffres</p>
                       </>
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.barcode || 'Non renseigné'}
                       </p>
                     )}
@@ -734,7 +891,7 @@ export default function CollectionDetailPage() {
                   <div>
                     <Label htmlFor="category">Catégorie (optionnel)</Label>
                     {!isEditing ? (
-                      <p className="mt-1.5 text-sm font-medium text-slate-900">
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                         {formData.category_id
                           ? categories.find(c => c.id === formData.category_id)?.name || 'Non renseigné'
                           : 'Non renseigné'}
@@ -904,7 +1061,7 @@ export default function CollectionDetailPage() {
                     <div>
                       <Label htmlFor="subcategory">Sous-catégorie (optionnel)</Label>
                       {!isEditing ? (
-                        <p className="mt-1.5 text-sm font-medium text-slate-900">
+                        <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
                           {formData.subcategory_id
                             ? getSubcategoriesForCategory(formData.category_id).find(s => s.id === formData.subcategory_id)?.name || 'Non renseigné'
                             : 'Non renseigné'}
@@ -1087,12 +1244,12 @@ export default function CollectionDetailPage() {
                           }}
                         />
                         <Label htmlFor="has-sub-products-edit" className="font-normal cursor-pointer">
-                          Cette collection contient des sous-produits
+                          Ce produit contient des sous-produits
                         </Label>
                       </>
                     ) : (
                       <Label className="font-normal">
-                        Cette collection {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
+                        Ce produit {hasSubProducts ? 'contient' : 'ne contient pas'} des sous-produits
                       </Label>
                     )}
                   </div>
@@ -1130,7 +1287,7 @@ export default function CollectionDetailPage() {
                               )}
                             </>
                           ) : (
-                            <p className="text-sm font-medium text-slate-900">{subProduct.name}</p>
+                            <p className="text-sm font-medium text-[#0B1F33]">{subProduct.name}</p>
                           )}
                         </div>
                       ))}
@@ -1159,14 +1316,14 @@ export default function CollectionDetailPage() {
                           variant="destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Supprimer collection
+                          Supprimer product
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Êtes-vous sûr ?</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Cette action ne peut pas être annulée. Cela supprimera définitivement la collection "{collection.name}".
+                            Cette action ne peut pas être annulée. Cela supprimera définitivement le produit "{product.name}".
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -1208,7 +1365,7 @@ export default function CollectionDetailPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
                 Toutes les sous-catégories associées seront également supprimées.
-                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les products utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -1230,7 +1387,7 @@ export default function CollectionDetailPage() {
               <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les products utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

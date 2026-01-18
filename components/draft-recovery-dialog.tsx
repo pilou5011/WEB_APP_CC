@@ -39,8 +39,8 @@ export function DraftRecoveryDialog({
           <AlertDialogTitle>Brouillon détecté</AlertDialogTitle>
           <AlertDialogDescription className="space-y-3">
             <p>
-              Vous aviez commencé une mise à jour de stock le{' '}
-              <span className="font-semibold text-slate-900">{formatDate(draftDate)}</span>.
+              Vous aviez commencé un brouillon le{' '}
+              <span className="font-semibold text-[#0B1F33]">{formatDate(draftDate)}</span>.
             </p>
             <p>
               Voulez-vous reprendre là où vous vous étiez arrêté ?

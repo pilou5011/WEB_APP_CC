@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { supabase, DraftStockUpdateData } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes in milliseconds
 const LOCAL_STORAGE_PREFIX = 'stock_update_draft_';
@@ -38,6 +39,11 @@ export function useStockUpdateDraft(clientId: string) {
   // Save to server (upsert)
   const saveDraftToServer = useCallback(async (data: DraftStockUpdateData) => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const dataString = JSON.stringify(data);
       
       // Skip if data hasn't changed
@@ -51,6 +57,8 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (fetchError && fetchError.code !== 'PGRST116') {
@@ -65,7 +73,8 @@ export function useStockUpdateDraft(clientId: string) {
             draft_data: data,
             updated_at: new Date().toISOString()
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .eq('company_id', companyId);
 
         if (updateError) throw updateError;
         console.log('[Draft] Updated server draft for client:', clientId);
@@ -75,6 +84,7 @@ export function useStockUpdateDraft(clientId: string) {
           .from('draft_stock_updates')
           .insert([{
             client_id: clientId,
+            company_id: companyId,
             draft_data: data
           }]);
 
@@ -107,10 +117,17 @@ export function useStockUpdateDraft(clientId: string) {
   // Load draft from server
   const loadDraftFromServer = useCallback(async (): Promise<DraftStockUpdateData | null> => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('draft_stock_updates')
         .select('*')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -147,10 +164,17 @@ export function useStockUpdateDraft(clientId: string) {
 
     // Check server
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('draft_stock_updates')
         .select('client_id, created_at')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .maybeSingle();
 
       if (error && error.code !== 'PGRST116') {
@@ -174,6 +198,11 @@ export function useStockUpdateDraft(clientId: string) {
   // Delete drafts (both local and server)
   const deleteDraft = useCallback(async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       console.log('[Draft] Starting deletion for client:', clientId);
       
       // Delete from localStorage FIRST
@@ -181,11 +210,13 @@ export function useStockUpdateDraft(clientId: string) {
       localStorage.removeItem(key);
       console.log('[Draft] Deleted local draft for client:', clientId);
 
-      // Delete from server - use .select() to get confirmation
+      // Delete from server (soft delete) - use .select() to get confirmation
       const { error, data } = await supabase
         .from('draft_stock_updates')
-        .delete()
+        .update({ deleted_at: new Date().toISOString() })
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null) // Only update non-deleted drafts
         .select();
 
       if (error) {
@@ -203,15 +234,19 @@ export function useStockUpdateDraft(clientId: string) {
         .from('draft_stock_updates')
         .select('id')
         .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .is('deleted_at', null) // Only check non-deleted drafts
         .maybeSingle();
       
       if (verifyData) {
         console.warn('[Draft] WARNING: Draft still exists after deletion attempt! Retrying...');
-        // Try one more time to delete from server
+        // Try one more time to delete from server (soft delete)
         const { error: retryError } = await supabase
           .from('draft_stock_updates')
-          .delete()
-          .eq('client_id', clientId);
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('client_id', clientId)
+          .eq('company_id', companyId)
+          .is('deleted_at', null); // Only update non-deleted drafts
         
         if (retryError) {
           console.error('[Draft] Retry deletion also failed:', retryError);
@@ -237,33 +272,33 @@ export function useStockUpdateDraft(clientId: string) {
 
   // Check if data is empty (no need to save)
   const isDraftEmpty = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any collection form has data
-    const hasCollectionData = Object.values(data.perCollectionForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== '' || form.collection_info !== ''
+    // Check if any product form has data
+    const hasProductData = Object.values(data.perProductForm).some(
+      form => form.counted_stock !== '' || form.stock_added !== '' || form.product_info !== ''
     );
 
     // Check if any sub-product form has data
     const hasSubProductData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Check if any adjustments exist
     const hasAdjustments = data.pendingAdjustments.length > 0;
 
-    return !hasCollectionData && !hasSubProductData && !hasAdjustments;
+    return !hasProductData && !hasSubProductData && !hasAdjustments;
   }, []);
 
   // Check if draft has meaningful data that warrants showing recovery dialog
-  // Only check counted_stock and cards_added (stock update fields), ignore collection_info
+  // Only check counted_stock and stock_added (stock update fields), ignore product_info
   const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any collection form has stock data (not just collection_info)
-    const hasStockData = Object.values(data.perCollectionForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+    // Check if any product form has stock data (not just product_info)
+    const hasStockData = Object.values(data.perProductForm).some(
+      form => form.counted_stock !== '' || form.stock_added !== ''
     );
 
     // Check if any sub-product form has stock data
     const hasSubProductStockData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.cards_added !== ''
+      form => form.counted_stock !== '' || form.stock_added !== ''
     ) : false;
 
     // Adjustments also count as meaningful data

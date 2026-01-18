@@ -1,10 +1,11 @@
-/**
+﻿/**
  * Utility functions for generating and storing PDFs in Supabase Storage
  * This ensures documents are frozen in time and don't change when data is updated
  */
 
 import { supabase } from './supabase';
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment } from './supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment } from './supabase';
+import { getCurrentUserCompanyId } from './auth-helpers';
 
 const STORAGE_BUCKET = 'documents'; // Bucket name in Supabase Storage
 
@@ -105,8 +106,8 @@ export async function generateAndSaveInvoicePDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  collections: Collection[],
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  products: Product[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null,
   adjustments: InvoiceAdjustment[]
 ): Promise<string | null> {
@@ -131,10 +132,20 @@ export async function generateAndSaveInvoicePDF(
     
     if (url) {
       // Update invoice record with PDF path
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ invoice_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;
@@ -151,8 +162,8 @@ export async function generateAndSaveStockReportPDF(
   invoice: Invoice,
   client: Client,
   stockUpdates: StockUpdate[],
-  collections: Collection[],
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  products: Product[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   userProfile: UserProfile | null
 ): Promise<string | null> {
   try {
@@ -168,10 +179,20 @@ export async function generateAndSaveStockReportPDF(
     const url = await uploadPDF(pdfBlob, filePath);
     
     if (url) {
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ stock_report_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;
@@ -187,10 +208,10 @@ export async function generateAndSaveStockReportPDF(
 export async function generateAndSaveDepositSlipPDF(
   invoice: Invoice,
   client: Client,
-  clientCollections: (ClientCollection & { collection?: Collection })[],
+  clientProducts: (ClientProduct & { Product?: Product })[],
   stockUpdates: StockUpdate[],
   userProfile: UserProfile | null,
-  collectionInfos: Record<string, string>
+  productInfos: Record<string, string>
 ): Promise<string | null> {
   try {
     const jsPDF = (await import('jspdf')).default;
@@ -205,10 +226,20 @@ export async function generateAndSaveDepositSlipPDF(
     const url = await uploadPDF(pdfBlob, filePath);
     
     if (url) {
-      await supabase
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { error: updateError } = await supabase
         .from('invoices')
         .update({ deposit_slip_pdf_path: filePath })
-        .eq('id', invoice.id);
+        .eq('id', invoice.id)
+        .eq('company_id', companyId);
+      
+      if (updateError) {
+        console.error('Error updating invoice with PDF path:', updateError);
+      }
     }
     
     return url;

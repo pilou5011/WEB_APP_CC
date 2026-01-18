@@ -1,19 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Client, Collection, ClientCollection, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DepositSlipDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { product?: Product })[];
   stockUpdates?: StockUpdate[];
   invoice?: Invoice | null;
   generateMode?: boolean; // Si true, génère un nouveau PDF à chaque fois sans le sauvegarder
@@ -23,7 +24,7 @@ export function DepositSlipDialog({
   open,
   onOpenChange,
   client,
-  clientCollections,
+  clientProducts,
   stockUpdates = [],
   invoice = null,
   generateMode = false
@@ -32,11 +33,12 @@ export function DepositSlipDialog({
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingInfos, setLoadingInfos] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [collectionInfos, setCollectionInfos] = useState<Record<string, string>>({});
+  const [productInfos, setProductInfos] = useState<Record<string, string>>({});
   const [needsInfoInput, setNeedsInfoInput] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -52,7 +54,7 @@ export function DepositSlipDialog({
       if (!generateMode) {
         loadLastInvoiceInfos();
       } else {
-        // En mode génération, charger les collection_info depuis la dernière mise à jour de stock
+        // En mode génération, charger les product_info depuis la dernière mise à jour de stock
         setLoadingInfos(true);
         loadLastStockUpdateInfos().finally(() => {
           setLoadingInfos(false);
@@ -60,7 +62,7 @@ export function DepositSlipDialog({
         setNeedsInfoInput(false); // Ne pas demander les infos en mode génération
       }
     }
-  }, [open, stockUpdates, clientCollections, generateMode]);
+  }, [open, stockUpdates, clientProducts, generateMode]);
 
   // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
   useEffect(() => {
@@ -119,16 +121,22 @@ export function DepositSlipDialog({
     } else {
       // No PDF exists yet - this should not happen if stock was updated correctly
       console.warn('No PDF path found for deposit slip:', invoice?.id);
-      toast.warning('Le bon de dépôt n\'a pas encore été généré. Veuillez mettre à jour le stock pour générer les documents.');
+      toast.warning('Le bon de dépôt n\'est pas trouvé dans les documents générés. Veuillez vérifier votre connexion internet.');
       setGenerating(false);
     }
   };
 
   const loadUserProfile = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
 
@@ -147,57 +155,69 @@ export function DepositSlipDialog({
 
   const loadLastStockUpdateInfos = async (): Promise<void> => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Charger toutes les mises à jour de stock pour ce client
       const { data: allStockUpdates, error: stockUpdatesError } = await supabase
         .from('stock_updates')
         .select('*')
         .eq('client_id', client.id)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false });
 
       if (stockUpdatesError) throw stockUpdatesError;
 
-      // Créer un map pour stocker la dernière collection_info de chaque collection
+      // Créer un map pour stocker la dernière product_info de chaque produit
       const infos: Record<string, string> = {};
-      const processedCollections = new Set<string>();
+      const processedProducts = new Set<string>();
 
       // Parcourir les stock_updates triés par date décroissante
-      // Pour chaque collection, prendre la première occurrence (la plus récente)
-      // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+      // Pour chaque produit, prendre la première occurrence (la plus récente)
+      // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
       (allStockUpdates || []).forEach((update: StockUpdate) => {
-        if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
-          infos[update.collection_id] = update.collection_info || '';
-          processedCollections.add(update.collection_id);
+        if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+          infos[update.product_id] = update.product_info || '';
+          processedProducts.add(update.product_id);
         }
       });
 
-      // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
-      clientCollections.forEach(cc => {
-        if (cc.collection_id && !infos[cc.collection_id]) {
-          infos[cc.collection_id] = '';
+      // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
+      clientProducts.forEach(cp => {
+        if (cp.product_id && !infos[cp.product_id]) {
+          infos[cp.product_id] = '';
         }
       });
 
-      setCollectionInfos(infos);
+      setProductInfos(infos);
     } catch (error) {
       console.error('Error loading last stock update infos:', error);
       // En cas d'erreur, initialiser avec des infos vides
       const infos: Record<string, string> = {};
-      clientCollections.forEach(cc => {
-        if (cc.collection_id) {
-          infos[cc.collection_id] = '';
+      clientProducts.forEach(cp => {
+        if (cp.product_id) {
+          infos[cp.product_id] = '';
         }
       });
-      setCollectionInfos(infos);
+      setProductInfos(infos);
     }
   };
 
   const loadLastInvoiceInfos = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       // Check if there's at least one invoice for this client
       const { data: lastInvoice, error: invoiceError } = await supabase
         .from('invoices')
         .select('id')
         .eq('client_id', client.id)
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -205,32 +225,32 @@ export function DepositSlipDialog({
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
       if (lastInvoice && stockUpdates.length > 0) {
-        // If invoice exists, get collection_info from last stock update for each collection
+        // If invoice exists, get product_info from last stock update for each product
         // (same logic as in the client page)
         const infos: Record<string, string> = {};
-        clientCollections.forEach((cc) => {
-          // Find the last stock update for this collection (most recent, regardless of collection_info)
+        clientProducts.forEach((cp) => {
+          // Find the last stock update for this product (most recent, regardless of product_info)
           const lastUpdate = stockUpdates.find(
             (update: StockUpdate) => 
-              update.collection_id === cc.collection_id
+              update.product_id === cp.product_id
           );
           
-          if (cc.collection_id) {
-            infos[cc.collection_id] = lastUpdate?.collection_info || '';
+          if (cp.product_id) {
+            infos[cp.product_id] = lastUpdate?.product_info || '';
           }
         });
-        setCollectionInfos(infos);
+        setProductInfos(infos);
         setNeedsInfoInput(false);
       } else {
         // No invoice yet or no stock updates, user needs to input infos
         setNeedsInfoInput(true);
         const infos: Record<string, string> = {};
-        clientCollections.forEach(cc => {
-          if (cc.collection_id) {
-            infos[cc.collection_id] = '';
+        clientProducts.forEach(cp => {
+          if (cp.product_id) {
+            infos[cp.product_id] = '';
           }
         });
-        setCollectionInfos(infos);
+        setProductInfos(infos);
       }
     } catch (error) {
       console.error('Error loading last invoice infos:', error);
@@ -408,28 +428,28 @@ export function DepositSlipDialog({
       doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
       yPosition += 10;
 
-      // Tableau des collections
-      const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+      // Tableau des produits
+      const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
       
       const stockUpdatesMap = new Map<string, StockUpdate>();
       stockUpdates.forEach((update) => {
-        if (update.collection_id) {
-          stockUpdatesMap.set(update.collection_id, update);
+        if (update.product_id) {
+          stockUpdatesMap.set(update.product_id, update);
         }
       });
-      
-      const tableData = sortedCollections.map((cc) => {
-        const collectionName = cc.collection?.name || 'Collection';
-        const info = collectionInfos[cc.collection_id || ''] || '';
-        const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-        const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+
+      const tableData = sortedProducts.map((cp) => {
+        const productName = cp.product?.name || 'Produit';
+        const info = productInfos[cp.product_id || ''] || '';
+        const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
+        const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.product?.recommended_sale_price ?? null;
         
         // Use new_stock from stock update if available, otherwise use current_stock
-        const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
-        const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
+        const stockUpdate = stockUpdatesMap.get(cp.product_id || '');
+        const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
         
         return [
-          collectionName,
+          productName,
           info,
           `${effectivePrice.toFixed(2)} €`,
           effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
@@ -452,7 +472,7 @@ export function DepositSlipDialog({
       autoTable(doc, {
         startY: yPosition,
         head: [[
-          'Collection', 
+          'Produit', 
           'Infos', 
           { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
           { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
@@ -532,6 +552,77 @@ export function DepositSlipDialog({
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!client.email) {
+      toast.error('Aucune adresse email renseignée pour ce client');
+      return;
+    }
+
+    if (!pdfBlob) {
+      toast.error('Veuillez patienter, le PDF est en cours de génération');
+      return;
+    }
+
+    try {
+      setSendingEmail(true);
+      
+      // Convertir le blob en base64
+      const reader = new FileReader();
+      reader.readAsDataURL(pdfBlob);
+      
+      reader.onloadend = async () => {
+        const base64data = reader.result?.toString().split(',')[1];
+        
+        if (!base64data) {
+          throw new Error('Erreur de conversion du PDF');
+        }
+        
+        const fileName = `bon_depot_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+        
+        // Déterminer la date de génération : utiliser invoice.created_at si disponible, sinon date actuelle
+        const generationDate = invoice?.created_at 
+          ? new Date(invoice.created_at).toLocaleDateString('fr-FR')
+          : new Date().toLocaleDateString('fr-FR');
+        
+        const response = await fetch('/api/send-invoice', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientEmail: client.email,
+            clientName: client.name,
+            pdfBase64: base64data,
+            fileName: fileName,
+            documentType: 'deposit_slip',
+            creditNoteDate: generationDate, // Réutiliser ce champ pour la date de génération du bon de dépôt
+            senderEmail: userProfile?.email,
+            senderName: `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || undefined,
+            senderCompanyName: userProfile?.company_name_short || userProfile?.company_name || undefined,
+            senderPhone: userProfile?.phone,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Erreur lors de l\'envoi');
+        }
+
+        toast.success(`Bon de dépôt envoyé avec succès à ${client.email}`);
+        setSendingEmail(false);
+      };
+      
+      reader.onerror = () => {
+        throw new Error('Erreur de lecture du PDF');
+      };
+    } catch (error) {
+      console.error('Erreur:', error);
+      toast.error('Erreur lors de l\'envoi de l\'email');
+      setSendingEmail(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
@@ -546,20 +637,20 @@ export function DepositSlipDialog({
           <div className="flex-1 overflow-y-auto p-6">
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque collection :
+                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque produit :
               </p>
-              {clientCollections.map((cc) => (
-                <div key={cc.id}>
-                  <Label htmlFor={`info-${cc.id}`}>
-                    Infos pour {cc.collection?.name || 'Collection'}
+              {clientProducts.map((cp) => (
+                <div key={cp.id}>
+                  <Label htmlFor={`info-${cp.id}`}>
+                    Infos pour {cp.product?.name || 'Produit'}
                   </Label>
                   <Input
-                    id={`info-${cc.id}`}
+                    id={`info-${cp.id}`}
                     type="text"
-                    value={collectionInfos[cc.collection_id || ''] || ''}
-                    onChange={(e) => setCollectionInfos(prev => ({
+                    value={productInfos[cp.product_id || ''] || ''}
+                    onChange={(e) => setProductInfos(prev => ({
                       ...prev,
-                      [cc.collection_id || '']: e.target.value
+                      [cp.product_id || '']: e.target.value
                     }))}
                     placeholder="Ex: Livraison partielle, Retour prévu..."
                     className="mt-1.5"
@@ -600,7 +691,30 @@ export function DepositSlipDialog({
 
         <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
           <div className="flex gap-2">
-            {/* Espace réservé pour d'éventuels boutons futurs */}
+            {client.email && (
+              <Button 
+                variant="outline" 
+                onClick={handleSendEmail}
+                disabled={!pdfBlob || generating || sendingEmail || needsInfoInput}
+              >
+                {sendingEmail ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Envoyer par email
+                  </>
+                )}
+              </Button>
+            )}
+            {!client.email && (
+              <div className="text-sm text-slate-500 italic flex items-center">
+                Aucun email renseigné pour ce client
+              </div>
+            )}
           </div>
           
           <div className="flex gap-3">

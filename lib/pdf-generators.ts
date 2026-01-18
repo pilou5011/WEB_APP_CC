@@ -1,17 +1,22 @@
-/**
+﻿/**
  * PDF Generators Utility
  * 
  * This file contains functions to generate and save PDFs for invoices, stock reports, and deposit slips.
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Collection, ClientCollection, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, EstablishmentType, PaymentMethod, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { formatWeekScheduleData } from '@/components/opening-hours-editor';
+import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
+import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
+import { formatDepartment } from '@/lib/postal-code-utils';
 
 interface GenerateInvoicePDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
-  collections: Collection[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
+  products: Product[];
   stockUpdates: StockUpdate[];
   adjustments: InvoiceAdjustment[];
   userProfile: UserProfile | null;
@@ -20,15 +25,18 @@ interface GenerateInvoicePDFParams {
 interface GenerateStockReportPDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
 }
 
 interface GenerateDepositSlipPDFParams {
   invoice: Invoice;
   client: Client;
-  clientCollections: (ClientCollection & { collection?: Collection })[];
+  clientProducts: (ClientProduct & { Product?: Product })[];
   stockUpdates: StockUpdate[];
+  userProfile: UserProfile | null;
+  allowReplacement?: boolean;
+  existingDepositSlipPdfPath?: string;
 }
 
 interface GenerateCreditNotePDFParams {
@@ -38,13 +46,21 @@ interface GenerateCreditNotePDFParams {
   userProfile: UserProfile | null;
 }
 
+interface GenerateDirectInvoicePDFParams {
+  invoice: Invoice;
+  client: Client;
+  products: Product[];
+  stockDirectSold: StockDirectSold[];
+  userProfile: UserProfile | null;
+}
+
 /**
  * Generate and save invoice PDF
  * This function generates the invoice PDF and saves it to Supabase storage.
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams): Promise<void> {
-  const { invoice, client, clientCollections, collections, stockUpdates, adjustments, userProfile } = params;
+  const { invoice, client, clientProducts, products, stockUpdates, adjustments, userProfile } = params;
 
   // Check if PDF already exists
   if (invoice.invoice_pdf_path) {
@@ -237,16 +253,22 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
-    // 3) Tableau des collections
-    // Filter out sub-products: only include stock updates with collection_id and no sub_product_id
-    const collectionStockUpdates = stockUpdates.filter(update => 
-      update.collection_id && !update.sub_product_id
+    // Titre "Facture N°[numero_facture]" en gras
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`Facture N°${invoiceNumber}`, pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
+    // 3) Tableau des produits
+    // Filter out sub-products: only include stock updates with product_id and no sub_product_id
+    const productStockUpdates = stockUpdates.filter(update => 
+      update.product_id && !update.sub_product_id
     );
     
-    // Sort stock updates by collection display_order
-    const sortedStockUpdates = [...collectionStockUpdates].sort((a, b) => {
-      const aCC = clientCollections.find(cc => cc.collection_id === a.collection_id);
-      const bCC = clientCollections.find(cc => cc.collection_id === b.collection_id);
+    // Sort stock updates by Product display_order
+    const sortedStockUpdates = [...productStockUpdates].sort((a, b) => {
+      const aCC = clientProducts.find(cp => cp.product_id === a.product_id);
+      const bCC = clientProducts.find(cp => cp.product_id === b.product_id);
       const aOrder = aCC?.display_order || 0;
       const bOrder = bCC?.display_order || 0;
       return aOrder - bOrder;
@@ -259,20 +281,20 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     
     // Appliquer la remise proportionnellement à chaque ligne de facture
     const stockRows = sortedStockUpdates.map((update) => {
-      const collection = collections.find(c => c.id === update.collection_id);
-      const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
-      const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
-      const totalHTBeforeDiscount = update.cards_sold * effectivePrice;
+      const Product = products.find(c => c.id === update.product_id);
+      const ClientProduct = clientProducts.find(cp => cp.product_id === update.product_id);
+      const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
+      const totalHTBeforeDiscount = update.stock_sold * effectivePrice;
       // Appliquer la remise proportionnellement à chaque ligne (conforme fiscalement)
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
-        collection?.name || 'Collection',
-        update.collection_info || '', // Infos optionnelles
-        collection?.barcode || '', // Code barre produit
+        Product?.name || 'Product',
+        update.product_info || '', // Infos optionnelles
+        Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
         update.counted_stock.toString(),
-        update.cards_sold.toString(),
+        update.stock_sold.toString(),
         effectivePrice.toFixed(2) + ' €',
         totalHTBeforeDiscount.toFixed(2) + ' €' // Afficher le prix HT avant remise
       ];
@@ -284,7 +306,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const amtBeforeDiscount = isNaN(amt) ? 0 : amt;
       // Appliquer la remise proportionnellement aux ajustements (conforme fiscalement)
       const amtAfterDiscount = amtBeforeDiscount * discountRatio;
-      // Afficher le prix HT avant remise dans la colonne "Prix TOTAL H.T."
+      // Afficher le prix HT avant remise dans la colonne "Total HT"
       const amtStr = amtBeforeDiscount.toFixed(2) + ' €';
       const quantity = adj.quantity || '';
       const unitPrice = adj.unit_price ? (Number(adj.unit_price).toFixed(2) + ' €') : '';
@@ -305,7 +327,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Collection', 'Infos', 'Code Barre\nProduit', 'Marchandise\nremise', 'Marchandise\nreprise', 'Total\nvendu', 'Prix à\nl\'unité', 'Prix TOTAL\nH.T.']],
+      head: [['Produit', 'Infos', 'Code-barres', 'Qté remise', 'Qté reprise', 'Qté vendue', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -332,14 +354,14 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       margin: { left: globalLeftMargin, right: globalRightMargin }
     });
 
-    // Calculer les totaux (uniquement pour les collections, pas les sous-produits)
+    // Calculer les totaux (uniquement pour les produits, pas les sous-produits)
     // Note: discountPercentage et discountRatio sont déjà définis plus haut
     const adjustmentsTotal = adjustments.reduce((sum, adj) => sum + Number(adj.amount || 0), 0);
-    const totalHTBeforeDiscount = collectionStockUpdates.reduce((sum, update) => {
-      const collection = collections.find(c => c.id === update.collection_id);
-      const clientCollection = clientCollections.find(cc => cc.collection_id === update.collection_id);
-      const effectivePrice = clientCollection?.custom_price ?? collection?.price ?? 0;
-      return sum + (update.cards_sold * effectivePrice);
+    const totalHTBeforeDiscount = productStockUpdates.reduce((sum, update) => {
+      const Product = products.find(c => c.id === update.product_id);
+      const ClientProduct = clientProducts.find(cp => cp.product_id === update.product_id);
+      const effectivePrice = ClientProduct?.custom_price ?? Product?.price ?? 0;
+      return sum + (update.stock_sold * effectivePrice);
     }, 0) + adjustmentsTotal;
     
     // Appliquer la remise commerciale sur le HT (conforme fiscalement)
@@ -411,7 +433,24 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
 
     // Conditions de Dépôt-Vente - toujours en bas de page
     const finalSummaryTableY = (doc as any).lastAutoTable.finalY;
-    const conditionsHeight = 4 * 3.5; // Hauteur approximative des 4 lignes de conditions
+    
+    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    
+    // Calculer la largeur disponible en tenant compte des marges gauche et droite
+    const availableWidth = pageWidth - globalLeftMargin - globalRightMargin;
+    
+    // Diviser le texte en lignes adaptées à la largeur disponible
+    // Utiliser doc.splitTextToSize pour diviser le texte correctement selon la largeur en mm
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    
+    const conditionsHeight = conditionsLines.length * 3.5; // Hauteur approximative des lignes de conditions
     const footerY = pageHeight - 20; // Position en bas de page pour les conditions
     
     // Vérifier si le tableau récapitulatif chevaucherait l'espace réservé aux conditions
@@ -421,27 +460,23 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     }
     
     // Toujours placer les conditions en bas de la page actuelle
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
     doc.setTextColor(0, 0, 0);
     
-    const conditionsText = [
-      "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-      "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-      "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-      "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-    ];
-    
-    // Placer les conditions en bas de page (footerY)
-    conditionsText.forEach((line, index) => {
-      doc.text(line, globalLeftMargin, footerY + (index * 3.5));
+    // Placer les conditions en bas de page (footerY) avec marge droite
+    conditionsLines.forEach((line: string, index: number) => {
+      doc.text(line, globalLeftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
     });
 
     // Generate PDF blob
     const pdfBlobData = doc.output('blob');
 
     // Save PDF to storage
-    const filePath = `invoices/${invoice.id}/invoice_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
+    const invoiceDate = new Date(invoice.created_at);
+    const year = invoiceDate.getFullYear();
+    const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
+    const day = String(invoiceDate.getDate()).padStart(2, '0');
+    const fileName = `invoice_${year}_${month}_${day}.pdf`;
+    const filePath = `invoices/${invoice.id}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('documents')
@@ -450,25 +485,47 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         upsert: false // Never overwrite - factures are immutable
       });
 
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     if (uploadError) {
-      // Check if error is due to file already existing
       if (uploadError.message?.includes('already exists') || 
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
-        console.log('PDF already exists, not overwriting (facture is immutable):', filePath);
+        console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
+        // Si le fichier existe déjà dans le storage mais que invoice_pdf_path est NULL dans la DB,
+        // on peut le définir une seule fois
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ invoice_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId)
+          .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Invoice PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
-      // Update invoice with PDF path ONLY if it doesn't exist yet
+      // Mettre à jour invoice_pdf_path uniquement si elle est NULL (immuabilité contractuelle)
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ invoice_pdf_path: filePath })
         .eq('id', invoice.id)
-        .is('invoice_pdf_path', null); // Only update if invoice_pdf_path is null
+        .eq('company_id', companyId)
+        .is('invoice_pdf_path', null);  // Mettre à jour UNIQUEMENT si invoice_pdf_path est NULL
       
       if (updateError) {
-        console.warn('Error updating invoice with PDF path:', updateError);
+        console.error('Error updating invoice with PDF path:', updateError);
+        throw updateError;
       } else {
         console.log('Invoice PDF saved successfully:', filePath);
       }
@@ -485,7 +542,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
  * It only saves if the PDF doesn't already exist (immutability).
  */
 export async function generateAndSaveStockReportPDF(params: GenerateStockReportPDFParams): Promise<void> {
-  const { invoice, client, clientCollections, stockUpdates } = params;
+  const { invoice, client, clientProducts, stockUpdates } = params;
 
   // Check if PDF already exists
   if (invoice.stock_report_pdf_path) {
@@ -494,27 +551,36 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
   }
 
   try {
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     // Load required data
     const { data: userProfile } = await supabase
       .from('user_profile')
       .select('*')
+      .eq('company_id', companyId)
       .limit(1)
       .maybeSingle();
 
     const { data: subProducts } = await supabase
       .from('sub_products')
-      .select('*');
+      .select('*')
+      .eq('company_id', companyId);
 
     const { data: clientSubProducts } = await supabase
       .from('client_sub_products')
       .select('*')
-      .eq('client_id', client.id);
+      .eq('client_id', client.id)
+      .eq('company_id', companyId);
 
     // Get previous invoice date
     const { data: previousInvoice } = await supabase
       .from('invoices')
       .select('created_at')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .lt('created_at', invoice.created_at)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -527,6 +593,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       .from('stock_updates')
       .select('*')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
     // Import jsPDF dynamically
@@ -701,11 +768,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     yPosition += 10;
 
     // Create maps for stock updates
-    const stockUpdatesByCollectionId = new Map<string, StockUpdate>();
+    const stockUpdatesByProductId = new Map<string, StockUpdate>();
     const stockUpdatesBySubProductId = new Map<string, StockUpdate>();
     stockUpdates.forEach(update => {
-      if (update.collection_id) {
-        stockUpdatesByCollectionId.set(update.collection_id, update);
+      if (update.product_id) {
+        stockUpdatesByProductId.set(update.product_id, update);
       }
       if (update.sub_product_id) {
         stockUpdatesBySubProductId.set(update.sub_product_id, update);
@@ -713,13 +780,13 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     });
 
     // Create maps for last new_stock
-    const lastNewStockByCollectionId = new Map<string, number>();
+    const lastNewStockByProductId = new Map<string, number>();
     const lastNewStockBySubProductId = new Map<string, number>();
     
     (historicalStockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.collection_id && !update.sub_product_id) {
-        if (!lastNewStockByCollectionId.has(update.collection_id)) {
-          lastNewStockByCollectionId.set(update.collection_id, update.new_stock);
+      if (update.product_id && !update.sub_product_id) {
+        if (!lastNewStockByProductId.has(update.product_id)) {
+          lastNewStockByProductId.set(update.product_id, update.new_stock);
         }
       }
       if (update.sub_product_id) {
@@ -729,27 +796,27 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       }
     });
 
-    // Create map of sub-products by collection
-    const subProductsByCollectionId = new Map<string, SubProduct[]>();
+    // Create map of sub-products by Product
+    const subProductsByProductId = new Map<string, SubProduct[]>();
     (subProducts || []).forEach(sp => {
-      if (!subProductsByCollectionId.has(sp.collection_id)) {
-        subProductsByCollectionId.set(sp.collection_id, []);
+      if (!subProductsByProductId.has(sp.product_id)) {
+        subProductsByProductId.set(sp.product_id, []);
       }
-      subProductsByCollectionId.get(sp.collection_id)!.push(sp);
+      subProductsByProductId.get(sp.product_id)!.push(sp);
     });
 
     const tableData: any[] = [];
-    const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
-    sortedCollections.forEach((cc) => {
-      const collectionName = cc.collection?.name || 'Collection';
+    sortedProducts.forEach((cp) => {
+      const productName = cp.Product?.name || 'Product';
       const info = '';
-      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+      const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesByCollectionId.get(cc.collection_id || '');
-      const collectionSubProducts = subProductsByCollectionId.get(cc.collection_id || '') || [];
-      const hasSubProducts = collectionSubProducts.length > 0;
+      const stockUpdate = stockUpdatesByProductId.get(cp.product_id || '');
+      const productSubProducts = subProductsByProductId.get(cp.product_id || '') || [];
+      const hasSubProducts = productSubProducts.length > 0;
       
       let previousStock: number;
       let countedStock: number;
@@ -762,7 +829,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         let totalSubProductNewDeposit = 0;
         let totalSubProductReassort = 0;
         
-        collectionSubProducts.forEach(sp => {
+        productSubProducts.forEach(sp => {
           const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
           
           let subProductPreviousStock: number;
@@ -771,7 +838,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           let subProductReassort: number;
           
           if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
             const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
                                    subProductStockUpdate.counted_stock !== undefined;
             
@@ -784,7 +851,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             } else if (hasCountedStock && hasNewDeposit) {
               subProductPreviousStock = subProductStockUpdate.previous_stock;
               subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.cards_added;
+              subProductReassort = subProductStockUpdate.stock_added;
               subProductNewDeposit = subProductStockUpdate.new_stock;
             } else {
               const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
@@ -813,12 +880,12 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         newDeposit = totalSubProductNewDeposit;
       } else {
         if (stockUpdate) {
-          const hasNewDeposit = stockUpdate.cards_added > 0;
+          const hasNewDeposit = stockUpdate.stock_added > 0;
           const hasCountedStock = stockUpdate.counted_stock !== null && 
                                  stockUpdate.counted_stock !== undefined;
           
           if (hasCountedStock && !hasNewDeposit) {
-            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
@@ -826,17 +893,17 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           } else if (hasCountedStock && hasNewDeposit) {
             previousStock = stockUpdate.previous_stock;
             countedStock = stockUpdate.counted_stock;
-            reassort = stockUpdate.cards_added;
+            reassort = stockUpdate.stock_added;
             newDeposit = stockUpdate.new_stock;
           } else {
-            const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
             previousStock = lastNewStock;
             countedStock = lastNewStock;
             reassort = 0;
             newDeposit = lastNewStock;
           }
         } else {
-          const lastNewStock = lastNewStockByCollectionId.get(cc.collection_id || '') || 0;
+          const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
           previousStock = lastNewStock;
           countedStock = lastNewStock;
           reassort = 0;
@@ -844,8 +911,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         }
       }
       
-      const collectionRow = [
-        collectionName,
+      const productRow = [
+        productName,
         info,
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
@@ -855,11 +922,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         newDeposit.toString()
       ];
       
-      tableData.push(collectionRow);
+      tableData.push(productRow);
 
       // Add sub-products
       if (hasSubProducts) {
-        collectionSubProducts.forEach(sp => {
+        productSubProducts.forEach(sp => {
           const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
           
           let subProductPreviousStock: number;
@@ -868,7 +935,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           let subProductReassort: number;
 
           if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.cards_added > 0;
+            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
             const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
                                    subProductStockUpdate.counted_stock !== undefined;
             
@@ -881,7 +948,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             } else if (hasCountedStock && hasNewDeposit) {
               subProductPreviousStock = subProductStockUpdate.previous_stock;
               subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.cards_added;
+              subProductReassort = subProductStockUpdate.stock_added;
               subProductNewDeposit = subProductStockUpdate.new_stock;
             } else {
               const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
@@ -920,10 +987,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const fixedColumnsWidth = tableWidth * (0.15 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08);
-    const collectionColumnWidth = tableWidth - fixedColumnsWidth;
+    const productColumnWidth = tableWidth - fixedColumnsWidth;
     
     const columnWidths = [
-      collectionColumnWidth,
+      productColumnWidth,
       tableWidth * 0.15,
       tableWidth * 0.08,
       tableWidth * 0.08,
@@ -936,10 +1003,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Collection', 
+        'Product', 
         'Infos', 
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Ancien\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Stock\ncompté', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Réassort', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1033,14 +1100,29 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           uploadError.message?.includes('duplicate') ||
           uploadError.message?.includes('409')) {
         console.log('PDF already exists, not overwriting:', filePath);
+        // Mettre à jour stock_report_pdf_path même si le fichier existe déjà
+        const { error: updateError } = await supabase
+          .from('invoices')
+          .update({ stock_report_pdf_path: filePath })
+          .eq('id', invoice.id)
+          .eq('company_id', companyId);
+        
+        if (updateError) {
+          console.error('Error updating invoice with PDF path:', updateError);
+          throw updateError;
+        } else {
+          console.log('Stock report PDF path updated (file already existed):', filePath);
+        }
       } else {
         throw uploadError;
       }
     } else if (uploadData) {
+      // Mettre à jour stock_report_pdf_path
       const { error: updateError } = await supabase
         .from('invoices')
         .update({ stock_report_pdf_path: filePath })
         .eq('id', invoice.id)
+        .eq('company_id', companyId)
         .is('stock_report_pdf_path', null);
       
       if (updateError) {
@@ -1058,51 +1140,67 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
 /**
  * Generate and save deposit slip PDF
  * This function generates the deposit slip PDF and saves it to Supabase storage.
- * It only saves if the PDF doesn't already exist (immutability).
+ * It supports immutability by default, or replacement mode when allowReplacement is true.
  */
-export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<void> {
-  const { invoice, client, clientCollections, stockUpdates } = params;
+export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipPDFParams): Promise<string> {
+  const { invoice, client, clientProducts, stockUpdates, userProfile, allowReplacement, existingDepositSlipPdfPath } = params;
 
   // Check if PDF already exists
-  if (invoice.deposit_slip_pdf_path) {
+  if (invoice.deposit_slip_pdf_path && !allowReplacement) {
     console.log('Deposit slip PDF already exists, skipping generation:', invoice.deposit_slip_pdf_path);
-    return;
+    return invoice.deposit_slip_pdf_path;
   }
 
   try {
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
+
     // Load required data
     const { data: userProfile } = await supabase
       .from('user_profile')
       .select('*')
+      .eq('company_id', companyId)
       .limit(1)
       .maybeSingle();
 
-    // Charger les collection_info depuis la dernière mise à jour de stock de chaque collection
-    // (même logique que dans le dialog "Générer un bon de dépôt")
+    // Créer un map pour stocker la dernière product_info de chaque Product
+    const productInfos: Record<string, string> = {};
+    const processedProducts = new Set<string>();
+
+    // PRIORITÉ 1: Utiliser les stockUpdates passés en paramètre (les plus récents, venant d'être insérés)
+    // Parcourir les stock_updates passés en paramètre
+    // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
+    (stockUpdates || []).forEach((update: StockUpdate) => {
+      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+        productInfos[update.product_id] = update.product_info || '';
+        processedProducts.add(update.product_id);
+      }
+    });
+
+    // PRIORITÉ 2: Compléter avec les stock_updates de la base de données pour les produits qui n'ont pas encore d'info
+    // (pour les cas où on régénère un bon de dépôt et qu'on veut les infos des mises à jour précédentes)
     const { data: allStockUpdates } = await supabase
       .from('stock_updates')
       .select('*')
       .eq('client_id', client.id)
+      .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
-    // Créer un map pour stocker la dernière collection_info de chaque collection
-    const collectionInfos: Record<string, string> = {};
-    const processedCollections = new Set<string>();
-
-    // Parcourir les stock_updates triés par date décroissante
-    // Pour chaque collection, prendre la première occurrence (la plus récente)
-    // IMPORTANT: Ne prendre que les stock_updates pour les collections (pas les sous-produits)
+    // Parcourir les stock_updates de la base de données triés par date décroissante
+    // Pour chaque Product qui n'a pas encore d'info, prendre la première occurrence (la plus récente)
     (allStockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.collection_id && !update.sub_product_id && !processedCollections.has(update.collection_id)) {
-        collectionInfos[update.collection_id] = update.collection_info || '';
-        processedCollections.add(update.collection_id);
+      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
+        productInfos[update.product_id] = update.product_info || '';
+        processedProducts.add(update.product_id);
       }
     });
 
-    // Initialiser les infos vides pour les collections qui n'ont pas de stock_update
-    clientCollections.forEach(cc => {
-      if (cc.collection_id && !collectionInfos[cc.collection_id]) {
-        collectionInfos[cc.collection_id] = '';
+    // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
+    clientProducts.forEach(cp => {
+      if (cp.product_id && !productInfos[cp.product_id]) {
+        productInfos[cp.product_id] = '';
       }
     });
 
@@ -1260,7 +1358,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     // Date
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, 15, yPosition);
+  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
     yPosition += 10;
 
     // Titre "Bon de dépôt"
@@ -1269,28 +1367,30 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
 
-    // Tableau des collections
-    const sortedCollections = [...clientCollections].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    // Tableau des produits
+    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
     const stockUpdatesMap = new Map<string, StockUpdate>();
     stockUpdates.forEach((update) => {
-      if (update.collection_id) {
-        stockUpdatesMap.set(update.collection_id, update);
+      if (update.product_id) {
+        stockUpdatesMap.set(update.product_id, update);
       }
     });
     
-    const tableData = sortedCollections.map((cc) => {
-      const collectionName = cc.collection?.name || 'Collection';
-      const info = collectionInfos[cc.collection_id || ''] || '';
-      const effectivePrice = cc.custom_price ?? cc.collection?.price ?? 0;
-      const effectiveRecommendedSalePrice = cc.custom_recommended_sale_price ?? cc.collection?.recommended_sale_price ?? null;
+    const tableData = sortedProducts.map((cp) => {
+      const productName = cp.Product?.name || 'Product';
+      const info = productInfos[cp.product_id || ''] || '';
+      const barcode = cp.Product?.barcode || ''; // Code barre produit
+      const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
+      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesMap.get(cc.collection_id || '');
-      const stock = stockUpdate ? stockUpdate.new_stock.toString() : cc.current_stock.toString();
+      const stockUpdate = stockUpdatesMap.get(cp.product_id || '');
+      const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
       
       return [
-        collectionName,
+        productName,
         info,
+        barcode, // Code barre produit
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
         stock
@@ -1302,21 +1402,23 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const tableWidth = pageWidth - marginLeft - marginRight;
     
     const columnWidths = [
-      tableWidth * 0.35,
-      tableWidth * 0.30,
-      tableWidth * 0.10,
-      tableWidth * 0.10,
-      tableWidth * 0.15
+      tableWidth * 0.20, // Product
+      tableWidth * 0.25, // Infos
+      tableWidth * 0.25, // Code barre produit
+      tableWidth * 0.10, // Prix cession HT
+      tableWidth * 0.10, // Prix conseillé TTC
+      tableWidth * 0.10  // Qté remise
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Collection', 
-        'Infos', 
-        { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        'Produit', 
+        'Infos',
+        { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1338,68 +1440,111 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] },
-        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }
+        0: { halign: 'left', cellWidth: columnWidths[0] }, // Produit
+        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
+        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix conseillé TTC
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Qté remise
       }
     });
 
     // Conditions de Dépôt-Vente en bas de page
     const footerY = pageHeight - 20;
     
+    // Définir les marges pour les conditions générales
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const availableWidth = pageWidth - leftMargin - rightMargin;
+    
+    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    
+    // Diviser le texte en lignes adaptées à la largeur disponible
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    
     doc.setTextColor(0, 0, 0);
     
-    const conditionsText = [
-      "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-      "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-      "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-      "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-    ];
-    
-    conditionsText.forEach((line, index) => {
-      doc.text(line, 15, footerY + (index * 3.5));
+    conditionsLines.forEach((line: string, index: number) => {
+      doc.text(line, leftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
     });
 
     const pdfBlobData = doc.output('blob');
-    const filePath = `invoices/${invoice.id}/deposit_slip_${new Date(invoice.created_at).toISOString().split('T')[0]}.pdf`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, pdfBlobData, {
-        contentType: 'application/pdf',
-        upsert: false
-      });
+    // Compute target folder and base name
+    const folder =
+      (allowReplacement && (existingDepositSlipPdfPath || invoice.deposit_slip_pdf_path))
+        ? (existingDepositSlipPdfPath || invoice.deposit_slip_pdf_path)!.split('/').slice(0, -1).join('/')
+        : `invoices/${invoice.id}`;
+    const baseDate = new Date(invoice.created_at).toISOString().split('T')[0];
+    const baseName = `deposit_slip_${baseDate}`;
 
-    if (uploadError) {
-      if (uploadError.message?.includes('already exists') || 
-          uploadError.message?.includes('duplicate') ||
-          uploadError.message?.includes('409')) {
-        console.log('PDF already exists, not overwriting:', filePath);
-      } else {
+    const isDuplicateUploadError = (msg?: string) =>
+      !!msg && (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('409'));
+
+    let finalFilePath: string | null = null;
+    for (let i = 0; i < 50; i++) {
+      const suffix = i === 0 ? '' : `_${i + 1}`;
+      const candidate = `${folder}/${baseName}${suffix}.pdf`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('documents')
+        .upload(candidate, pdfBlobData, {
+          contentType: 'application/pdf',
+          upsert: false
+        });
+
+      if (uploadError) {
+        if (isDuplicateUploadError(uploadError.message)) {
+          continue;
+        }
         throw uploadError;
       }
-    } else if (uploadData) {
-      const { error: updateError } = await supabase
-        .from('invoices')
-        .update({ deposit_slip_pdf_path: filePath })
-        .eq('id', invoice.id)
-        .is('deposit_slip_pdf_path', null);
-      
-      if (updateError) {
-        console.warn('Error updating invoice with PDF path:', updateError);
-      } else {
-        console.log('Deposit slip PDF saved successfully:', filePath);
-      }
+
+      finalFilePath = candidate;
+      break;
     }
+
+    if (!finalFilePath) {
+      throw new Error('Impossible de générer un nom de fichier unique pour le bon de dépôt');
+    }
+
+    // Mettre à jour deposit_slip_pdf_path (toujours en mode remplacement, sinon uniquement si NULL)
+    let query = supabase
+      .from('invoices')
+      .update({ deposit_slip_pdf_path: finalFilePath })
+      .eq('id', invoice.id)
+      .eq('company_id', companyId);
+
+    if (!allowReplacement) {
+      query = query.is('deposit_slip_pdf_path', null);
+    }
+
+    const { error: updateError } = await query;
+    if (updateError) {
+      if (!allowReplacement) {
+        console.warn('Error updating invoice with PDF path (likely already set):', updateError);
+      } else {
+        throw updateError;
+      }
+    } else {
+      console.log('Deposit slip PDF saved successfully:', finalFilePath);
+    }
+
+    return finalFilePath;
   } catch (error) {
     console.error('Error generating deposit slip PDF:', error);
     throw error;
   }
 }
+
+// Replacement flow is handled by generateAndSaveDepositSlipPDF via allowReplacement=true.
 
 /**
  * Generate and save credit note PDF
@@ -1419,9 +1564,15 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     // Load user profile if not provided
     let profile = userProfile;
     if (!profile) {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data: userProfileData } = await supabase
         .from('user_profile')
         .select('*')
+        .eq('company_id', companyId)
         .limit(1)
         .maybeSingle();
       profile = userProfileData;
@@ -1635,7 +1786,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Produits et prestations', 'Qté', 'Prix à l\'unité', 'Prix Total HT']],
+      head: [['Produits et prestations', 'Qté', 'PU HT', 'Total HT']],
       body: tableData,
       theme: 'grid',
       headStyles: {
@@ -1725,10 +1876,16 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
       }
     } else if (uploadData) {
       // Update credit note with PDF path ONLY if it doesn't exist yet
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error: updateError } = await supabase
         .from('credit_notes')
         .update({ credit_note_pdf_path: filePath })
         .eq('id', creditNote.id)
+        .eq('company_id', companyId)
         .is('credit_note_pdf_path', null); // Only update if credit_note_pdf_path is null
       
       if (updateError) {
@@ -1743,3 +1900,353 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
   }
 }
 
+interface GenerateClientInfoPDFParams {
+  client: Client;
+  establishmentType: EstablishmentType | null;
+  paymentMethod: PaymentMethod | null;
+  tourName?: string | null;
+}
+
+/**
+ * Generate client information sheet PDF - optimized for single page
+ */
+export async function generateClientInfoPDF(
+  params: GenerateClientInfoPDFParams
+): Promise<Blob> {
+  const { client, establishmentType, paymentMethod, tourName } = params;
+
+  try {
+    const jsPDF = (await import('jspdf')).default;
+    const doc = new jsPDF();
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 12;
+    const contentWidth = pageWidth - 2 * margin;
+    const columnGap = 8;
+    const columnWidth = (contentWidth - columnGap) / 2;
+
+    let yPosition = margin + 10;
+
+    /* --------------------------------------------------
+     * Utils
+     * -------------------------------------------------- */
+    const splitText = (
+      text: string,
+      maxWidth: number,
+      fontSize: number
+    ): string[] => {
+      if (!text) return [];
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(fontSize);
+      return doc.splitTextToSize(text, maxWidth);
+    };
+
+    /* --------------------------------------------------
+     * HEADER
+     * -------------------------------------------------- */
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(30);
+    doc.setTextColor('#013258');
+    doc.text(client.name || 'Non renseigné', pageWidth / 2, yPosition, {
+      align: 'center',
+    });
+
+    yPosition += 8;
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(16);
+    doc.setTextColor('#1873c0');
+    doc.text('Fiche Client', pageWidth / 2, yPosition, { align: 'center' });
+
+    yPosition += 10;
+
+    doc.setFillColor('#013258');
+    doc.roundedRect(5, yPosition, pageWidth - 10, 2, 1, 1, 'F');
+    doc.roundedRect(5, yPosition + 3, pageWidth - 10, 2, 1, 1, 'F');
+
+    yPosition += 15;
+
+    /* --------------------------------------------------
+     * Section helper (padding contenu symétrique)
+     * -------------------------------------------------- */
+    const addSection = (
+      title: string,
+      fields: Array<{ label: string; value: string; fullWidth?: boolean }>
+    ) => {
+      const sectionX = 8;
+      const sectionWidth = pageWidth - sectionX * 2;
+
+      const paddingHorizontal = 4;
+      const paddingVertical = 8; // 🔴 padding HAUT = BAS (contenu uniquement) - augmenté pour éviter que le contenu touche les bords
+
+      const titleHeight = 6;
+      const sectionGap = 8;
+      const lineHeight = 5;
+      const fieldSpacing = 2; // Espacement vertical entre chaque label
+
+      const sectionStartY = yPosition;
+
+      // 🔑 Début du contenu (APRÈS le titre)
+      const contentStartY =
+        sectionStartY + titleHeight + paddingVertical;
+
+      /* ----------------------------
+       * 1️⃣ Calcul hauteur contenu
+       * ---------------------------- */
+      let leftY = contentStartY;
+      let rightY = contentStartY;
+      let cursorLeft = true;
+
+      fields.forEach(field => {
+        const isFull = field.fullWidth;
+        const value = field.value || 'Non renseigné';
+
+        const availableWidth = isFull
+          ? sectionWidth - paddingHorizontal * 2
+          : columnWidth;
+
+        const label = `${field.label.trim()} : `;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        const labelWidth = doc.getTextWidth(label);
+
+        const valueLines = splitText(
+          value,
+          availableWidth - labelWidth,
+          9
+        );
+
+        const blockHeight =
+          Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
+
+        if (isFull) {
+          const y = Math.max(leftY, rightY);
+          leftY = y + blockHeight;
+          rightY = leftY;
+          cursorLeft = true;
+        } else if (cursorLeft) {
+          leftY += blockHeight;
+          cursorLeft = false;
+        } else {
+          rightY += blockHeight;
+          const maxY = Math.max(leftY, rightY);
+          leftY = maxY;
+          rightY = maxY;
+          cursorLeft = true;
+        }
+      });
+
+      const contentEndY = Math.max(leftY, rightY);
+      // Retirer le fieldSpacing du dernier élément pour avoir un padding symétrique
+      const contentHeight = contentEndY - contentStartY - fieldSpacing;
+
+      /* ----------------------------
+       * 2️⃣ Hauteur section (clé)
+       * ---------------------------- */
+      const sectionHeight =
+        titleHeight +
+        paddingVertical +
+        contentHeight +
+        paddingVertical;
+
+      /* ----------------------------
+       * 3️⃣ Cadre
+       * ---------------------------- */
+      doc.setDrawColor('#dbe7f3');
+      doc.setFillColor('#FFFFFF');
+      doc.roundedRect(
+        sectionX,
+        sectionStartY,
+        sectionWidth,
+        sectionHeight,
+        4,
+        4,
+        'FD'
+      );
+
+      /* ----------------------------
+       * 4️⃣ Titre (hors symétrie)
+       * ---------------------------- */
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor('#1873c0');
+
+      const titleWidth = doc.getTextWidth(title) + 6;
+      doc.setFillColor('#FFFFFF');
+      doc.rect(sectionX + 4, sectionStartY - 2, titleWidth, titleHeight, 'F');
+      doc.text(title, sectionX + 7, sectionStartY + 1);
+
+      /* ----------------------------
+       * 5️⃣ Rendu contenu
+       * ---------------------------- */
+      doc.setFontSize(10);
+      doc.setTextColor('#013258');
+
+      leftY = contentStartY;
+      rightY = contentStartY;
+      cursorLeft = true;
+
+      fields.forEach(field => {
+        const isFull = field.fullWidth;
+        const value = field.value || 'Non renseigné';
+
+        const x = isFull
+          ? sectionX + paddingHorizontal
+          : cursorLeft
+          ? sectionX + paddingHorizontal
+          : sectionX + paddingHorizontal + columnWidth + columnGap;
+
+        const y = isFull
+          ? Math.max(leftY, rightY)
+          : cursorLeft
+          ? leftY
+          : rightY;
+
+        const availableWidth = isFull
+          ? sectionWidth - paddingHorizontal * 2
+          : columnWidth;
+
+        const label = `${field.label.trim()} : `;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(label, x, y);
+
+        const labelWidth = doc.getTextWidth(label);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const valueLines = splitText(
+          value,
+          availableWidth - labelWidth,
+          10
+        );
+
+        valueLines.forEach((line, i) => {
+          // Pour "Horaires d'ouverture", mettre les valeurs sur une nouvelle ligne
+          const isOpeningHours = field.label === "Horaires d'ouverture";
+          const xPos = isOpeningHours ? x : (i === 0 ? x + labelWidth : x);
+          const yPos = isOpeningHours ? y + (i + 1) * lineHeight : y + i * lineHeight;
+          doc.setFontSize(10);
+          doc.text(line, xPos, yPos);
+        });
+
+        // Pour "Horaires d'ouverture", ajouter une ligne supplémentaire pour l'espacement
+        const isOpeningHours = field.label === "Horaires d'ouverture";
+        const blockHeight =
+          Math.max(1, valueLines.length) * lineHeight + fieldSpacing + (isOpeningHours ? lineHeight : 0);
+
+        if (isFull) {
+          leftY = y + blockHeight;
+          rightY = leftY;
+          cursorLeft = true;
+        } else if (cursorLeft) {
+          leftY = y + blockHeight;
+          cursorLeft = false;
+        } else {
+          rightY = y + blockHeight;
+          const maxY = Math.max(leftY, rightY);
+          leftY = maxY;
+          rightY = maxY;
+          cursorLeft = true;
+        }
+      });
+
+      yPosition = sectionStartY + sectionHeight + sectionGap;
+    };
+
+    /* --------------------------------------------------
+     * Sections
+     * -------------------------------------------------- */
+
+    addSection('Informations générales', [
+      { label: 'Nom Commercial', value: client.name || '' },
+      { label: 'Nom Société', value: client.company_name || '' },
+      { label: "Type d'établissement", value: establishmentType?.name || '' },
+      { label: 'Numéro client', value: client.client_number || '' },
+      { label: 'Nom de la tournée', value: tourName || '' },
+    ]);
+
+    addSection('Coordonnées', [
+      { 
+        label: 'Adresse', 
+        value: [
+          client.street_address,
+          client.postal_code,
+          client.city
+        ].filter(Boolean).join(' '), 
+        fullWidth: true 
+      },
+      { 
+        label: 'Téléphone 1', 
+        value: [
+          client.phone,
+          client.phone_1_info
+        ].filter(Boolean).join(' - ') || ''
+      },
+      { 
+        label: 'Téléphone 2', 
+        value: [
+          client.phone_2,
+          client.phone_2_info
+        ].filter(Boolean).join(' - ') || ''
+      },
+      { 
+        label: 'Téléphone 3', 
+        value: [
+          client.phone_3,
+          client.phone_3_info
+        ].filter(Boolean).join(' - ') || ''
+      },
+      { label: 'Email', value: client.email || '' },
+    ]);
+
+    addSection('Informations légales', [
+      { label: 'Numéro SIRET', value: client.siret_number || '' },
+      { label: 'Numéro TVA', value: client.tva_number || '' },
+    ]);
+
+    const complementaryFields: any[] = [];
+
+    if (client.opening_hours) {
+      const data = formatWeekScheduleData(client.opening_hours);
+      if (data.length) {
+        complementaryFields.push({
+          label: "Horaires d'ouverture",
+          value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
+          fullWidth: true,
+        });
+      }
+    }
+
+    if (client.market_days_schedule) {
+      const data = formatMarketDaysScheduleData(client.market_days_schedule);
+      if (data.length) {
+        complementaryFields.push({
+          label: 'Jour(s) de marché',
+          value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
+          fullWidth: true,
+        });
+      }
+    }
+
+    if (client.comment) {
+      complementaryFields.push({
+        label: 'Commentaire',
+        value: client.comment,
+        fullWidth: true,
+      });
+    }
+
+    complementaryFields.push({
+      label: 'Règlement',
+      value: paymentMethod?.name || '',
+    });
+
+    addSection('Informations complémentaires', complementaryFields);
+
+    return doc.output('blob');
+  } catch (error) {
+    console.error('Error generating client info PDF:', error);
+    throw error;
+  }
+}

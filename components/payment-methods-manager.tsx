@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PaymentMethod, supabase } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,19 +48,37 @@ export function PaymentMethodsManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre méthode avec le même nom existe déjà (non supprimée)
+      if (editName.trim() !== editingMethod.name) {
+        const { data: existing } = await supabase
+          .from('payment_methods')
+          .select('id')
+          .eq('name', editName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingMethod.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { error } = await supabase
         .from('payment_methods')
         .update({ name: editName.trim() })
-        .eq('id', editingMethod.id);
+        .eq('id', editingMethod.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        setSubmitting(false);
-        return;
+        throw error;
       }
 
       toast.success('Méthode de paiement modifiée avec succès');
@@ -84,10 +103,16 @@ export function PaymentMethodsManager({
 
     setSubmitting(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
         .from('payment_methods')
-        .delete()
-        .eq('id', deletingMethod.id);
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingMethod.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 

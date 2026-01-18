@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, Collection, CollectionCategory, CollectionSubcategory } from '@/lib/supabase';
+import { supabase, Product, ProductCategory, ProductSubcategory } from '@/lib/supabase';
+import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -19,10 +20,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { toast } from 'sonner';
 import { CategoriesManager } from '@/components/categories-manager';
 
-export default function CollectionsPage() {
+export default function ProductsPage() {
   const router = useRouter();
-  const [collections, setCollections] = useState<Collection[]>([]);
-  const [filteredCollections, setFilteredCollections] = useState<Collection[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
@@ -42,8 +43,8 @@ export default function CollectionsPage() {
   const [subProducts, setSubProducts] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
   const [deleteSubProductIndex, setDeleteSubProductIndex] = useState<number | null>(null);
-  const [categories, setCategories] = useState<CollectionCategory[]>([]);
-  const [subcategories, setSubcategories] = useState<CollectionSubcategory[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [subcategories, setSubcategories] = useState<ProductSubcategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newSubcategoryName, setNewSubcategoryName] = useState('');
   const [showNewCategoryInput, setShowNewCategoryInput] = useState(false);
@@ -51,26 +52,33 @@ export default function CollectionsPage() {
   const [addingNewCategory, setAddingNewCategory] = useState(false);
   const [addingNewSubcategory, setAddingNewSubcategory] = useState(false);
   const [manageCategoriesDialogOpen, setManageCategoriesDialogOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<CollectionCategory | null>(null);
-  const [editingSubcategory, setEditingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ProductCategory | null>(null);
+  const [editingSubcategory, setEditingSubcategory] = useState<ProductSubcategory | null>(null);
   const [editCategoryName, setEditCategoryName] = useState('');
   const [editSubcategoryName, setEditSubcategoryName] = useState('');
-  const [deletingCategory, setDeletingCategory] = useState<CollectionCategory | null>(null);
-  const [deletingSubcategory, setDeletingSubcategory] = useState<CollectionSubcategory | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<ProductCategory | null>(null);
+  const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
   useEffect(() => {
-    loadCollections();
+    loadProducts();
     loadCategories();
     loadSubcategories();
   }, []);
 
   const loadCategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -82,9 +90,16 @@ export default function CollectionsPage() {
 
   const loadSubcategories = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name');
 
       if (error) throw error;
@@ -106,20 +121,34 @@ export default function CollectionsPage() {
 
     setAddingNewCategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une catégorie avec le même nom existe déjà (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_categories')
+        .select('id')
+        .eq('name', newCategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette catégorie existe déjà');
+        setAddingNewCategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_categories')
-        .insert([{ name: newCategoryName.trim() }])
+        .from('product_categories')
+        .insert([{ name: newCategoryName.trim(), company_id: companyId }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette catégorie existe déjà');
-        } else {
-          throw error;
-        }
-        setAddingNewCategory(false);
-        return;
+        throw error;
       }
 
       setCategories([...categories, data].sort((a, b) => a.name.localeCompare(b.name)));
@@ -143,23 +172,39 @@ export default function CollectionsPage() {
 
     setAddingNewSubcategory(true);
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      const { data: existing } = await supabase
+        .from('product_subcategories')
+        .select('id')
+        .eq('category_id', formData.category_id)
+        .eq('name', newSubcategoryName.trim())
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+        setAddingNewSubcategory(false);
+        return;
+      }
+
       const { data, error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .insert([{ 
           category_id: formData.category_id,
+          company_id: companyId,
           name: newSubcategoryName.trim() 
         }])
         .select()
         .single();
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        setAddingNewSubcategory(false);
-        return;
+        throw error;
       }
 
       await loadSubcategories();
@@ -182,18 +227,36 @@ export default function CollectionsPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre catégorie avec le même nom existe déjà (non supprimée)
+      if (editCategoryName.trim() !== editingCategory.name) {
+        const { data: existing } = await supabase
+          .from('product_categories')
+          .select('id')
+          .eq('name', editCategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingCategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Ce nom existe déjà');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
+        .from('product_categories')
         .update({ name: editCategoryName.trim() })
-        .eq('id', editingCategory.id);
+        .eq('id', editingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Ce nom existe déjà');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Catégorie modifiée avec succès');
@@ -210,10 +273,16 @@ export default function CollectionsPage() {
     if (!deletingCategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_categories')
-        .delete()
-        .eq('id', deletingCategory.id);
+        .from('product_categories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingCategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -237,18 +306,37 @@ export default function CollectionsPage() {
     }
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Vérifier si une autre sous-catégorie avec le même nom existe déjà pour cette catégorie (non supprimée)
+      if (editSubcategoryName.trim() !== editingSubcategory.name) {
+        const { data: existing } = await supabase
+          .from('product_subcategories')
+          .select('id')
+          .eq('category_id', editingSubcategory.category_id)
+          .eq('name', editSubcategoryName.trim())
+          .eq('company_id', companyId)
+          .is('deleted_at', null)
+          .neq('id', editingSubcategory.id)
+          .maybeSingle();
+
+        if (existing) {
+          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
+          return;
+        }
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
+        .from('product_subcategories')
         .update({ name: editSubcategoryName.trim() })
-        .eq('id', editingSubcategory.id);
+        .eq('id', editingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) {
-        if (error.code === '23505') {
-          toast.error('Cette sous-catégorie existe déjà pour cette catégorie');
-        } else {
-          throw error;
-        }
-        return;
+        throw error;
       }
 
       toast.success('Sous-catégorie modifiée avec succès');
@@ -265,10 +353,16 @@ export default function CollectionsPage() {
     if (!deletingSubcategory) return;
 
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { error } = await supabase
-        .from('collection_subcategories')
-        .delete()
-        .eq('id', deletingSubcategory.id);
+        .from('product_subcategories')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deletingSubcategory.id)
+        .eq('company_id', companyId);
 
       if (error) throw error;
 
@@ -285,51 +379,58 @@ export default function CollectionsPage() {
     }
   };
 
-  const loadCollections = async () => {
+  const loadProducts = async () => {
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collections')
+        .from('products')
         .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
         .order('name', { ascending: true });
 
       if (error) throw error;
-      setCollections(data || []);
+      setProducts(data || []);
     } catch (error) {
-      console.error('Error loading collections:', error);
-      toast.error('Erreur lors du chargement des collections');
+      console.error('Error loading products:', error);
+      toast.error('Erreur lors du chargement des produits');
     } finally {
       setLoading(false);
     }
   };
 
-  // Filtrer et trier les collections
+  // Filtrer et trier les produits
   useEffect(() => {
-    let filtered: Collection[] = [...collections];
+    let filtered: Product[] = [...products];
 
     // Filtrage par recherche textuelle
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
-      filtered = filtered.filter(collection => {
+      filtered = filtered.filter(product => {
         return (
-          collection.name.toLowerCase().includes(searchLower) ||
-          collection.barcode?.toLowerCase().includes(searchLower) ||
-          collection.price.toString().includes(searchLower) ||
-          collection.recommended_sale_price?.toString().includes(searchLower)
+          product.name.toLowerCase().includes(searchLower) ||
+          product.barcode?.toLowerCase().includes(searchLower) ||
+          product.price.toString().includes(searchLower) ||
+          product.recommended_sale_price?.toString().includes(searchLower)
         );
       });
     }
 
     // Filtrage par catégorie
     if (selectedCategories.length > 0) {
-      filtered = filtered.filter(collection => {
-        return collection.category_id && selectedCategories.includes(collection.category_id);
+      filtered = filtered.filter(product => {
+        return product.category_id && selectedCategories.includes(product.category_id);
       });
     }
 
     // Filtrage par sous-catégorie
     if (selectedSubcategories.length > 0) {
-      filtered = filtered.filter(collection => {
-        return collection.subcategory_id && selectedSubcategories.includes(collection.subcategory_id);
+      filtered = filtered.filter(product => {
+        return product.subcategory_id && selectedSubcategories.includes(product.subcategory_id);
       });
     }
 
@@ -337,23 +438,23 @@ export default function CollectionsPage() {
     const sorted = [...filtered];
     sorted.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 
-    setFilteredCollections(sorted);
-  }, [collections, searchTerm, selectedCategories, selectedSubcategories]);
+    setFilteredProducts(sorted);
+  }, [products, searchTerm, selectedCategories, selectedSubcategories]);
 
-  // Grouper les collections par catégorie
-  const collectionsByCategory = () => {
-    const grouped: Record<string, Collection[]> = {};
-    const noCategory: Collection[] = [];
+  // Grouper les produits par catégorie
+  const productsByCategory = () => {
+    const grouped: Record<string, Product[]> = {};
+    const noCategory: Product[] = [];
     
-    filteredCollections.forEach(collection => {
-      const categoryId = collection.category_id;
+    filteredProducts.forEach(product => {
+      const categoryId = product.category_id;
       if (categoryId) {
         if (!grouped[categoryId]) {
           grouped[categoryId] = [];
         }
-        grouped[categoryId].push(collection);
+        grouped[categoryId].push(product);
       } else {
-        noCategory.push(collection);
+        noCategory.push(product);
       }
     });
 
@@ -366,12 +467,12 @@ export default function CollectionsPage() {
     });
 
     // Créer un objet ordonné avec les catégories triées
-    const ordered: Record<string, Collection[]> = {};
+    const ordered: Record<string, Product[]> = {};
     sortedCategoryIds.forEach(categoryId => {
       ordered[categoryId] = grouped[categoryId];
     });
 
-    // Ajouter les collections sans catégorie à la fin
+    // Ajouter les produits sans catégorie à la fin
     if (noCategory.length > 0) {
       ordered['no-category'] = noCategory;
     }
@@ -414,10 +515,16 @@ export default function CollectionsPage() {
         return;
       }
 
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
       const { data, error } = await supabase
-        .from('collections')
+        .from('products')
         .insert([{
           name: formData.name,
+          company_id: companyId,
           price: price,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
@@ -434,7 +541,8 @@ export default function CollectionsPage() {
         const validSubProducts = subProducts.filter(sp => sp.trim() !== '');
         if (validSubProducts.length > 0) {
           const subProductsToInsert = validSubProducts.map(name => ({
-            collection_id: data.id,
+            product_id: data.id,
+            company_id: companyId,
             name: name.trim()
           }));
 
@@ -446,8 +554,8 @@ export default function CollectionsPage() {
         }
       }
 
-      toast.success('Collection ajoutée avec succès');
-      await loadCollections();
+      toast.success('Produit ajouté avec succès');
+      await loadProducts();
       setDialogOpen(false);
       setFormData({ name: '', price: '', recommended_sale_price: '', barcode: '', category_id: '', subcategory_id: '' });
       setHasSubProducts(false);
@@ -455,8 +563,8 @@ export default function CollectionsPage() {
       setShowNewCategoryInput(false);
       setShowNewSubcategoryInput(false);
     } catch (error) {
-      console.error('Error creating collection:', error);
-      toast.error('Erreur lors de la création de la collection');
+      console.error('Error creating product:', error);
+      toast.error('Erreur lors de la création du produit');
     } finally {
       setSubmitting(false);
     }
@@ -468,26 +576,18 @@ export default function CollectionsPage() {
       <div className="container mx-auto py-8 px-4 max-w-7xl">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-4xl font-bold text-slate-900 mb-2">Gestion des Collections</h1>
-            <p className="text-slate-600">Collections de cartes de vœux</p>
+            <h1 className="text-4xl font-bold text-[#0B1F33] mb-2">Gestion des Produits</h1>
+            <p className="text-slate-600">Produits</p>
           </div>
 
           <div className="flex gap-3">
-            <Button
-              variant="outline"
-              onClick={() => router.push('/')}
-              className="shadow-lg"
-            >
-              Retour à l'accueil
-            </Button>
-            
             <Button 
               size="lg" 
               className="shadow-lg"
-              onClick={() => router.push('/collections/new')}
+              onClick={() => router.push('/products/new')}
             >
               <Plus className="mr-2 h-5 w-5" />
-              Ajouter une collection
+              Ajouter un produit
             </Button>
           </div>
         </div>
@@ -708,7 +808,7 @@ export default function CollectionsPage() {
           {/* Compteur de résultats */}
           {(searchTerm || selectedCategories.length > 0 || selectedSubcategories.length > 0) && (
             <p className="text-sm text-slate-600">
-              {filteredCollections.length} collection{filteredCollections.length !== 1 ? 's' : ''} trouvée{filteredCollections.length !== 1 ? 's' : ''}
+              {filteredProducts.length} produit{filteredProducts.length !== 1 ? 's' : ''} trouvé{filteredProducts.length !== 1 ? 's' : ''}
               {searchTerm && ` pour "${searchTerm}"`}
             </p>
           )}
@@ -734,7 +834,7 @@ export default function CollectionsPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la catégorie "{deletingCategory?.name}" ?
                 Toutes les sous-catégories associées seront également supprimées.
-                Les collections utilisant cette catégorie ne seront pas supprimées, mais leur catégorie sera réinitialisée.
+                Les produits utilisant cette catégorie ne seront pas supprimés, mais leur catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -756,7 +856,7 @@ export default function CollectionsPage() {
               <AlertDialogTitle>Supprimer cette sous-catégorie ?</AlertDialogTitle>
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir supprimer la sous-catégorie "{deletingSubcategory?.name}" ?
-                Les collections utilisant cette sous-catégorie ne seront pas supprimées, mais leur sous-catégorie sera réinitialisée.
+                Les produits utilisant cette sous-catégorie ne seront pas supprimés, mais leur sous-catégorie sera réinitialisée.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -812,24 +912,24 @@ export default function CollectionsPage() {
               </Card>
             ))}
           </div>
-        ) : filteredCollections.length === 0 ? (
+        ) : filteredProducts.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
               <Package className="h-12 w-12 text-slate-400 mx-auto mb-4" />
               <p className="text-slate-600 text-lg mb-2">
-                {searchTerm ? 'Aucune collection trouvée' : 'Aucune collection'}
+                {searchTerm ? 'Aucun produit trouvé' : 'Aucun produit'}
               </p>
               <p className="text-slate-500 text-sm">
                 {searchTerm 
                   ? `Aucun résultat pour "${searchTerm}". Essayez un autre terme de recherche.`
-                  : 'Commencez par ajouter votre première collection'
+                  : 'Commencez par ajouter votre premier produit'
                 }
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-4">
-            {Object.entries(collectionsByCategory()).map(([categoryId, categoryCollections]) => {
+            {Object.entries(productsByCategory()).map(([categoryId, categoryProducts]) => {
               const category = categoryId === 'no-category' ? null : categories.find(c => c.id === categoryId);
               return (
                 <div key={categoryId} className="space-y-2">
@@ -838,34 +938,34 @@ export default function CollectionsPage() {
                     {category ? category.name : 'Sans catégorie'}
                   </h2>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {categoryCollections.map((collection) => {
-                      const collectionSubcategory = collection.subcategory_id 
-                        ? subcategories.find(s => s.id === collection.subcategory_id)
+                    {categoryProducts.map((product) => {
+                      const productSubcategory = product.subcategory_id 
+                        ? subcategories.find(s => s.id === product.subcategory_id)
                         : null;
                       return (
                         <Card
-                          key={collection.id}
+                          key={product.id}
                           className="hover:shadow-md transition-all duration-200 border-slate-200 cursor-pointer"
-                          onClick={() => router.push(`/collections/${collection.id}`)}
+                          onClick={() => router.push(`/products/${product.id}`)}
                         >
                           <CardHeader className="pb-2 pt-3 px-3">
                             <div className="flex justify-between items-start gap-2">
                               <div className="flex-1 min-w-0">
                                 <CardTitle className="text-base font-semibold leading-tight mb-1.5">
-                                  {collection.name}
+                                  {product.name}
                                 </CardTitle>
                                 <CardDescription className="text-xs text-slate-600 mt-1.5 flex items-center gap-1">
                                   <Euro className="h-3 w-3" />
-                                  <span>{collection.price.toFixed(2)} €</span>
-                                  {collection.recommended_sale_price && (
+                                  <span>{product.price.toFixed(2)} €</span>
+                                  {product.recommended_sale_price && (
                                     <span className="text-slate-400">
-                                      • Conseillé: {collection.recommended_sale_price.toFixed(2)} €
+                                      • Conseillé: {product.recommended_sale_price.toFixed(2)} €
                                     </span>
                                   )}
                                 </CardDescription>
-                                {collectionSubcategory && (
+                                {productSubcategory && (
                                   <p className="text-xs text-slate-400 mt-1">
-                                    {collectionSubcategory.name}
+                                    {productSubcategory.name}
                                   </p>
                                 )}
                               </div>
