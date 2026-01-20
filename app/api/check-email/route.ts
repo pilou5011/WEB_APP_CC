@@ -19,14 +19,21 @@ export async function POST(request: NextRequest) {
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('Configuration Supabase manquante:', {
+      const debugInfo = {
         hasUrl: !!supabaseUrl,
-        hasServiceKey: !!supabaseServiceKey
-      });
+        hasServiceKey: !!supabaseServiceKey,
+        urlLength: supabaseUrl?.length || 0,
+        keyLength: supabaseServiceKey?.length || 0,
+        keyStartsWith: supabaseServiceKey?.substring(0, 10) || 'N/A'
+      };
+      
+      console.error('Configuration Supabase manquante:', debugInfo);
+      
       return NextResponse.json(
         { 
           error: 'Configuration serveur manquante',
-          details: 'SUPABASE_SERVICE_ROLE_KEY doit être configurée dans les variables d\'environnement'
+          details: 'SUPABASE_SERVICE_ROLE_KEY doit être configurée dans les variables d\'environnement',
+          debug: process.env.NODE_ENV === 'development' ? debugInfo : undefined
         },
         { status: 500 }
       );
