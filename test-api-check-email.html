@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test API check-email</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #0070f3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0051cc;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test API check-email</h1>
+        <p>Cet outil permet de tester si l'API <code>/api/check-email</code> fonctionne correctement.</p>
+        
+        <label for="email">Email à tester :</label>
+        <input type="email" id="email" placeholder="test@example.com" value="test@example.com">
+        
+        <button onclick="testAPI()">Tester l'API</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const email = document.getElementById('email').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!email) {
+                resultDiv.innerHTML = '<div class="result error">Veuillez entrer un email</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="result info">Envoi de la requête...</div>';
+            
+            try {
+                const response = await fetch('/api/check-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.exists) {
+                        resultDiv.innerHTML = `
+                            <div class="result success">
+                                ✅ API fonctionne correctement !
+                                
+                                Email: ${data.email}
+                                Existe: ${data.exists}
+                                
+                                → Cet email existe déjà dans la base de données.
+                            </div>
+                        `;
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div class="result success">
+                                ✅ API fonctionne correctement !
+                                
+                                Email: ${data.email}
+                                Existe: ${data.exists}
+                                
+                                → Cet email n'existe pas encore dans la base de données.
+                            </div>
+                        `;
+                    }
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="result error">
+                            ❌ Erreur API (${response.status})
+                            
+                            ${JSON.stringify(data, null, 2)}
+                            
+                            ${data.details ? '\n' + data.details : ''}
+                            
+                            ${data.error === 'Configuration serveur manquante' 
+                                ? '\n\n💡 Solution : Vérifiez que SUPABASE_SERVICE_ROLE_KEY est bien configurée dans .env.local et redémarrez le serveur.' 
+                                : ''}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="result error">
+                        ❌ Erreur réseau
+                        
+                        ${error.message}
+                        
+                        💡 Vérifiez que le serveur Next.js tourne (npm run dev)
+                    </div>
+                `;
+            }
+        }
+        
+        // Permettre de tester avec Enter
+        document.getElementById('email').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testAPI();
+            }
+        });
+    </script>
+</body>
+</html>
+
