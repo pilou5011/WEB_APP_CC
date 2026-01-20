@@ -162,7 +162,10 @@ export default function AuthPage() {
         .eq('id', data.user.id)
         .single();
 
-      if (userError || !userData) {
+      // Vérifier si l'utilisateur existe mais n'a pas d'entreprise
+      const userExistsButNoCompany = userData && (!userData.company_id || userData.company_id === null);
+
+      if (userError || !userData || userExistsButNoCompany) {
         // L'utilisateur n'existe pas encore dans la table users
         // Cela peut arriver si l'utilisateur a créé son compte mais n'a pas encore confirmé son email
         // ou si la création de l'entreprise/utilisateur a échoué lors de l'inscription
@@ -197,7 +200,39 @@ export default function AuthPage() {
             return;
           }
 
-          // Créer l'utilisateur dans la table users
+          // Si l'utilisateur existe déjà mais sans entreprise, le mettre à jour
+          if (userExistsButNoCompany) {
+            const { error: updateUserError } = await supabase
+              .from('users')
+              .update({
+                company_id: companyData.id,
+                role: userData.role || 'admin' // Conserver le rôle existant ou mettre admin par défaut
+              })
+              .eq('id', data.user.id);
+
+            if (updateUserError) {
+              console.error('Error updating user:', updateUserError);
+              await supabase.auth.signOut();
+              toast.error(`Erreur lors de la mise à jour du compte: ${updateUserError.message || 'Erreur inconnue'}`);
+              setLoading(false);
+              return;
+            }
+
+            // Nettoyer les metadata
+            await supabase.auth.updateUser({
+              data: {
+                pending_company_name: null
+              }
+            });
+
+            toast.success('Compte corrigé et connexion réussie !');
+            router.push('/');
+            router.refresh();
+            setLoading(false);
+            return;
+          }
+
+          // Créer l'utilisateur dans la table users (cas où il n'existe pas)
           const { error: createUserError } = await supabase
             .from('users')
             .insert([
@@ -368,16 +403,31 @@ export default function AuthPage() {
       }
 
       // 4. Vérifier que l'email n'existe pas déjà dans la table users
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', trimmedEmail)
-        .maybeSingle();
+      // Utiliser l'API route pour contourner RLS et vérifier correctement
+      try {
+        const checkResponse = await fetch('/api/check-email', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: trimmedEmail }),
+        });
 
-      if (existingUser) {
-        toast.error('Cet email est déjà utilisé. Veuillez vous connecter.');
-        setLoading(false);
-        return;
+        if (checkResponse.ok) {
+          const checkData = await checkResponse.json();
+          if (checkData.exists === true) {
+            toast.error('Un compte est déjà créé avec cet email. Veuillez vous connecter.');
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Si l'API échoue, on continue mais on fera une vérification supplémentaire après signUp
+          const errorData = await checkResponse.json().catch(() => ({}));
+          console.error('Erreur API check-email:', checkResponse.status, errorData);
+        }
+      } catch (apiError) {
+        console.error('Erreur lors de l\'appel à l\'API check-email:', apiError);
+        // On continue mais on fera une vérification supplémentaire après signUp
       }
 
       // ============================================
@@ -385,9 +435,17 @@ export default function AuthPage() {
       // ============================================
 
       // Créer l'utilisateur dans auth (utiliser les valeurs sanitized)
+      // Utiliser l'URL du site actuel pour la redirection après confirmation email
+      const redirectTo = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth`
+        : process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gastonstock.com/auth';
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password: trimmedPassword,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
       });
 
       if (authError) {
@@ -418,6 +476,40 @@ export default function AuthPage() {
       // Vérifier si un email de confirmation est requis
       // Si authData.session est null, cela signifie généralement qu'un email de confirmation est requis
       if (!authData.session) {
+        // VÉRIFICATION CRITIQUE : Vérifier si l'email existe déjà dans la table users
+        // Utiliser l'API route pour contourner RLS
+        try {
+          const doubleCheckResponse = await fetch('/api/check-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: trimmedEmail }),
+          });
+
+          if (doubleCheckResponse.ok) {
+            const doubleCheckData = await doubleCheckResponse.json();
+            if (doubleCheckData.exists === true) {
+              // L'email existe déjà dans users, afficher une erreur
+              toast.error('Un compte est déjà créé avec cet email. Veuillez vous connecter.');
+              setLoading(false);
+              return;
+            }
+          } else {
+            // Si l'API échoue, on ne peut pas continuer en sécurité
+            const errorData = await doubleCheckResponse.json().catch(() => ({}));
+            console.error('Erreur API lors de la double vérification:', doubleCheckResponse.status, errorData);
+            toast.error('Erreur lors de la vérification. Veuillez réessayer ou vous connecter si vous avez déjà un compte.');
+            setLoading(false);
+            return;
+          }
+        } catch (apiError) {
+          console.error('Erreur lors de la double vérification de l\'email:', apiError);
+          toast.error('Erreur lors de la vérification. Veuillez réessayer ou vous connecter si vous avez déjà un compte.');
+          setLoading(false);
+          return;
+        }
+
         // Stocker le nom de l'entreprise dans les metadata de l'utilisateur pour le créer après confirmation
         try {
           await supabase.auth.updateUser({
@@ -454,6 +546,40 @@ export default function AuthPage() {
       // Vérifier que la session est toujours active
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        // VÉRIFICATION CRITIQUE : Vérifier si l'email existe déjà dans la table users
+        // Utiliser l'API route pour contourner RLS
+        try {
+          const doubleCheckResponse = await fetch('/api/check-email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: trimmedEmail }),
+          });
+
+          if (doubleCheckResponse.ok) {
+            const doubleCheckData = await doubleCheckResponse.json();
+            if (doubleCheckData.exists === true) {
+              // L'email existe déjà dans users, afficher une erreur
+              toast.error('Un compte est déjà créé avec cet email. Veuillez vous connecter.');
+              setLoading(false);
+              return;
+            }
+          } else {
+            // Si l'API échoue, on ne peut pas continuer en sécurité
+            const errorData = await doubleCheckResponse.json().catch(() => ({}));
+            console.error('Erreur API lors de la vérification après perte de session:', doubleCheckResponse.status, errorData);
+            toast.error('Erreur lors de la vérification. Veuillez réessayer ou vous connecter si vous avez déjà un compte.');
+            setLoading(false);
+            return;
+          }
+        } catch (apiError) {
+          console.error('Erreur lors de la vérification de l\'email après perte de session:', apiError);
+          toast.error('Erreur lors de la vérification. Veuillez réessayer ou vous connecter si vous avez déjà un compte.');
+          setLoading(false);
+          return;
+        }
+
         // Si la session n'est pas active, l'email de confirmation est probablement requis
         toast.success(
           'Compte créé avec succès ! Veuillez vérifier votre email et cliquer sur le lien de confirmation pour activer votre compte.',
