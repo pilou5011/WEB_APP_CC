@@ -93,12 +93,31 @@ export default function AcceptInvitationPage() {
 
     try {
       // Créer le compte utilisateur dans auth
+      // Utiliser l'URL du site actuel pour la redirection après confirmation email
+      const redirectTo = typeof window !== 'undefined' 
+        ? `${window.location.origin}/auth`
+        : process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gastonstock.com/auth';
+      
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: invitation.email,
         password,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        // Gérer spécifiquement les erreurs de compte déjà existant
+        if (
+          authError.message?.toLowerCase().includes('already registered') ||
+          authError.message?.toLowerCase().includes('user already registered') ||
+          authError.message?.toLowerCase().includes('email already exists') ||
+          authError.message?.toLowerCase().includes('already exists')
+        ) {
+          throw new Error('Un compte est déjà créé avec cet email. Veuillez vous connecter.');
+        }
+        throw authError;
+      }
 
       if (!authData.user) {
         throw new Error('Erreur lors de la création du compte');
