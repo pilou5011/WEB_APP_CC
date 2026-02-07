@@ -18,6 +18,7 @@ interface DepositSlipDialogProps {
   stockUpdates?: StockUpdate[];
   invoice?: Invoice | null;
   generateMode?: boolean; // Si true, génère un nouveau PDF à chaque fois sans le sauvegarder
+  onEmailSent?: () => void; // Callback pour rafraîchir les données après envoi
 }
 
 export function DepositSlipDialog({
@@ -27,7 +28,8 @@ export function DepositSlipDialog({
   clientProducts,
   stockUpdates = [],
   invoice = null,
-  generateMode = false
+  generateMode = false,
+  onEmailSent
 }: DepositSlipDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -609,8 +611,25 @@ export function DepositSlipDialog({
           throw new Error(data.error || 'Erreur lors de l\'envoi');
         }
 
+        // Enregistrer la date d'envoi dans la base de données si une facture est associée
+        if (invoice?.id) {
+          const companyId = await getCurrentUserCompanyId();
+          if (companyId) {
+            await supabase
+              .from('invoices')
+              .update({ deposit_slip_email_sent_at: new Date().toISOString() })
+              .eq('id', invoice.id)
+              .eq('company_id', companyId);
+          }
+        }
+
         toast.success(`Bon de dépôt envoyé avec succès à ${client.email}`);
         setSendingEmail(false);
+        
+        // Appeler le callback pour rafraîchir les données
+        if (onEmailSent) {
+          onEmailSent();
+        }
       };
       
       reader.onerror = () => {

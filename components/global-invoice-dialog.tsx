@@ -17,6 +17,7 @@ interface GlobalInvoiceDialogProps {
   stockUpdates: StockUpdate[];
   products: Product[];
   clientProducts?: (ClientProduct & { Product?: Product })[];
+  onEmailSent?: () => void; // Callback pour rafraîchir les données après envoi
 }
 
 export function GlobalInvoiceDialog({
@@ -26,7 +27,8 @@ export function GlobalInvoiceDialog({
   invoice,
   stockUpdates,
   products,
-  clientProducts = []
+  clientProducts = [],
+  onEmailSent
 }: GlobalInvoiceDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -218,8 +220,23 @@ export function GlobalInvoiceDialog({
           throw new Error(data.error || 'Erreur lors de l\'envoi');
         }
 
+        // Enregistrer la date d'envoi dans la base de données
+        const companyId = await getCurrentUserCompanyId();
+        if (companyId) {
+          await supabase
+            .from('invoices')
+            .update({ invoice_email_sent_at: new Date().toISOString() })
+            .eq('id', invoice.id)
+            .eq('company_id', companyId);
+        }
+
         toast.success(`Facture envoyée avec succès à ${client.email}`);
         setSendingEmail(false);
+        
+        // Appeler le callback pour rafraîchir les données
+        if (onEmailSent) {
+          onEmailSent();
+        }
       };
       
       reader.onerror = () => {
