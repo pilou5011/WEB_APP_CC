@@ -173,6 +173,8 @@ export type Invoice = {
   invoice_pdf_path: string | null;
   stock_report_pdf_path: string | null;
   deposit_slip_pdf_path: string | null;
+  invoice_email_sent_at: string | null; // Date d'envoi de la facture par email
+  deposit_slip_email_sent_at: string | null; // Date d'envoi du bon de dépôt par email
   created_at: string;
 };
 
@@ -327,6 +329,7 @@ export type CreditNote = {
   operation_name: string;
   credit_note_number: string | null;
   credit_note_pdf_path: string | null;
+  email_sent_at: string | null; // Date d'envoi de l'avoir par email
   created_at: string;
 };
 
