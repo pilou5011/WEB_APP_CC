@@ -237,18 +237,22 @@ function SortableProductRow({
           </Button>
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center">
+      <TableCell className="align-middle py-3 text-center bg-[#E8EDF2]">
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCurrentStock}
+          </p>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {cp.current_stock}
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-amber-50" : "align-top py-3 bg-amber-50"}>
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCountedStock}
+          </p>
         ) : (
           <Input
             type="text"
@@ -267,9 +271,11 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center">
+      <TableCell className="align-middle py-3 text-center bg-green-50">
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded - parentCountedStock}
+          </p>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {(() => {
@@ -282,9 +288,11 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-[#E8EDF2]" : "align-top py-3 bg-[#E8EDF2]"}>
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded}
+          </p>
         ) : (
           <Input
             type="text"
@@ -3178,10 +3186,10 @@ export default function ClientDetailPage() {
                           <TableRow className="bg-slate-50">
                             <TableHead className="w-[15%] font-semibold">Produit</TableHead>
                             <TableHead className="w-[5%] font-semibold"></TableHead>
-                            <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2]">Ancien dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-amber-50">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2]">Nouveau dépôt</TableHead>
                             <TableHead className="w-[20%] font-semibold">Info produit pour facture</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
@@ -3266,10 +3274,10 @@ export default function ClientDetailPage() {
                                       <Pencil className="h-4 w-4 text-slate-600 hover:text-[#0B1F33]" />
                                     </Button>
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center">
+                                  <TableCell className="align-middle py-2 text-center bg-[#E8EDF2]">
                                     <p className="text-xs text-slate-500">{currentStock}</p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-top py-2 bg-amber-50">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3285,7 +3293,7 @@ export default function ClientDetailPage() {
                                       className="h-8 text-sm placeholder:text-slate-400"
                                     />
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center">
+                                  <TableCell className="align-middle py-2 text-center bg-green-50">
                                     <p className="text-xs font-medium text-slate-600">
                                       {(() => {
                                         const formData = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '' };
@@ -3296,7 +3304,7 @@ export default function ClientDetailPage() {
                                       })()}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-top py-2 bg-[#E8EDF2]">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
