@@ -786,6 +786,7 @@ export default function ClientDetailPage() {
       const { data: productsData, error: productsError } = await supabase
         .from('products')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -2521,10 +2522,17 @@ export default function ClientDetailPage() {
 
     // Check if product has sub-products
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        toast.error('Non autorisé');
+        return;
+      }
+
       const { data: productSubProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
         .eq('product_id', associateForm.product_id)
+        .eq('company_id', companyId)
         .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
       if (subProductsError) throw subProductsError;
@@ -2568,10 +2576,18 @@ export default function ClientDetailPage() {
     
     // Récupérer TOUS les sous-produits du produit (au cas où certains auraient été ajoutés entre-temps)
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        toast.error('Non autorisé');
+        return;
+      }
+
       const { data: allSubProducts, error: fetchError } = await supabase
         .from('sub_products')
         .select('*')
-        .eq('product_id', associateForm.product_id!);
+        .eq('product_id', associateForm.product_id!)
+        .eq('company_id', companyId)
+        .is('deleted_at', null);
 
       if (fetchError) throw fetchError;
 
