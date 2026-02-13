@@ -793,6 +793,7 @@ export default function ClientDetailPage() {
       const { data: productsData, error: productsError } = await supabase
         .from('products')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -1766,7 +1767,7 @@ export default function ClientDetailPage() {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) throw new Error('Non autorisé');
 
-      // Find the most recent invoice that has a deposit_slip_pdf_path (REQUIRED)
+      // Find the most recent invoice that has a deposit_slip_pdf_path
       const { data: lastInvoiceWithDepositSlip, error: invoiceError } = await supabase
         .from('invoices')
         .select('*')
@@ -1779,9 +1780,11 @@ export default function ClientDetailPage() {
 
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
-      // If no invoice with deposit slip exists, show error
+      // If no invoice with deposit slip exists, open dialog in generation mode
       if (!lastInvoiceWithDepositSlip || !lastInvoiceWithDepositSlip.deposit_slip_pdf_path) {
-        toast.error('Aucune facture avec bon de dépôt trouvée. Veuillez d\'abord mettre à jour le stock pour générer un bon de dépôt.');
+        // Open dialog in generation mode (no invoice selected = generateMode)
+        setSelectedInvoiceForDepositSlip(null);
+        setDepositSlipDialogOpen(true);
         setDepositSlipReplacing(false);
         return;
       }
@@ -2689,10 +2692,17 @@ export default function ClientDetailPage() {
 
     // Check if product has sub-products
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        toast.error('Non autorisé');
+        return;
+      }
+
       const { data: productSubProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
         .eq('product_id', associateForm.product_id)
+        .eq('company_id', companyId)
         .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
       if (subProductsError) throw subProductsError;
