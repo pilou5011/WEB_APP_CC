@@ -1033,6 +1033,34 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       },
       didParseCell: (data: any) => {
         try {
+          const columnIndex = data.column?.index;
+          
+          // Apply column colors only to body cells, not headers
+          if (data.section === 'body') {
+            // Apply column colors to body cells (but preserve sub-product styling for column 0)
+            if (columnIndex === 4) { // Ancien dépôt
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [232, 237, 242]; // #E8EDF2
+            } else if (columnIndex === 5) { // Stock compté
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [255, 251, 235]; // amber-50
+            } else if (columnIndex === 6) { // Réassort
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [240, 253, 244]; // green-50
+            } else if (columnIndex === 7) { // Nouveau dépôt
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [232, 237, 242]; // #E8EDF2
+            }
+          }
+          
           if (data.row && data.row.raw && Array.isArray(data.row.raw)) {
             const row = data.row.raw;
             const hasName = row[0] && row[0] !== '';
@@ -1047,7 +1075,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               
-              data.cell.styles.fillColor = [245, 247, 250];
+              // Only apply sub-product background to non-colored columns (0, 1, 2, 3)
+              if (columnIndex !== undefined && columnIndex < 4) {
+                data.cell.styles.fillColor = [245, 247, 250];
+              }
               
               if (data.column && data.column.index === 0) {
                 if (!data.cell.styles.lineColor) {
@@ -1074,10 +1105,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         1: { cellWidth: columnWidths[1], halign: 'left' },
         2: { cellWidth: columnWidths[2], halign: 'center' },
         3: { cellWidth: columnWidths[3], halign: 'center' },
-        4: { cellWidth: columnWidths[4], halign: 'center' },
-        5: { cellWidth: columnWidths[5], halign: 'center' },
-        6: { cellWidth: columnWidths[6], halign: 'center' },
-        7: { cellWidth: columnWidths[7], halign: 'center' }
+        4: { cellWidth: columnWidths[4], halign: 'center', fillColor: [232, 237, 242] }, // Ancien dépôt - #E8EDF2
+        5: { cellWidth: columnWidths[5], halign: 'center', fillColor: [255, 251, 235] }, // Stock compté - amber-50
+        6: { cellWidth: columnWidths[6], halign: 'center', fillColor: [240, 253, 244] }, // Réassort - green-50
+        7: { cellWidth: columnWidths[7], halign: 'center', fillColor: [232, 237, 242] }  // Nouveau dépôt - #E8EDF2
       },
       styles: {
         lineColor: [0, 0, 0],

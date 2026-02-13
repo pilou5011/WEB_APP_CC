@@ -135,7 +135,9 @@ function SortableProductRow({
   onDelete,
   subProducts,
   onAdjustStock,
-  clientId
+  clientId,
+  expandedProductInfoId,
+  setExpandedProductInfoId
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -157,6 +159,8 @@ function SortableProductRow({
   subProducts: Record<string, SubProduct[]>;
   onAdjustStock: () => void;
   clientId: string;
+  expandedProductInfoId: string | null;
+  setExpandedProductInfoId: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const {
     attributes,
@@ -172,6 +176,33 @@ function SortableProductRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  // Handle Escape key and click outside to close expanded cell
+  const expandedCellRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (expandedProductInfoId === cp.id) {
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setExpandedProductInfoId(null);
+        }
+      };
+      
+      const handleClickOutside = (e: MouseEvent) => {
+        if (expandedCellRef.current && !expandedCellRef.current.contains(e.target as Node)) {
+          setExpandedProductInfoId(null);
+        }
+      };
+      
+      window.addEventListener('keydown', handleEscape);
+      document.addEventListener('mousedown', handleClickOutside);
+      
+      return () => {
+        window.removeEventListener('keydown', handleEscape);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [expandedProductInfoId, cp.id, setExpandedProductInfoId]);
 
   return (
     <TableRow
@@ -206,18 +237,22 @@ function SortableProductRow({
           </Button>
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center">
+      <TableCell className="align-middle py-3 text-center bg-[#E8EDF2]">
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCurrentStock}
+          </p>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {cp.current_stock}
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-amber-50" : "align-top py-3 bg-amber-50"}>
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCountedStock}
+          </p>
         ) : (
           <Input
             type="text"
@@ -236,9 +271,11 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center">
+      <TableCell className="align-middle py-3 text-center bg-green-50">
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded - parentCountedStock}
+          </p>
         ) : (
           <p className="text-sm font-medium text-slate-600">
             {(() => {
@@ -251,9 +288,11 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center" : "align-top py-3"}>
+      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-[#E8EDF2]" : "align-top py-3 bg-[#E8EDF2]"}>
         {hasSubProducts ? (
-          <></>
+          <p className="text-sm font-medium text-slate-600">
+            {parentCardsAdded}
+          </p>
         ) : (
           <Input
             type="text"
@@ -273,17 +312,41 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-top py-3">
-        <Input
-          type="text"
-          value={perProductForm[cp.id]?.product_info || ''}
-          onChange={(e) => {
-            const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-            setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
-          }}
-          placeholder="......"
-          className="h-9 placeholder:text-slate-400"
-        />
+      <TableCell className="align-top py-3 relative">
+        <div className="relative">
+          {expandedProductInfoId === cp.id ? (
+            <div 
+              ref={expandedCellRef}
+              className="absolute left-0 top-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1 w-[200px]"
+            >
+              <Input
+                type="text"
+                value={perProductForm[cp.id]?.product_info || ''}
+                onChange={(e) => {
+                  const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+                  setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
+                }}
+                placeholder="..........."
+                className="text-base placeholder:text-slate-400 w-full h-8 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 border-0 shadow-none"
+                autoFocus
+              />
+            </div>
+          ) : null}
+          <Input
+            type="text"
+            value={perProductForm[cp.id]?.product_info || ''}
+            onChange={(e) => {
+              const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+              setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
+            }}
+            onFocus={() => setExpandedProductInfoId(cp.id)}
+            placeholder=".............."
+            className={cn(
+              "text-sm placeholder:text-slate-400 transition-all",
+              expandedProductInfoId === cp.id ? "opacity-0" : "h-9 opacity-100"
+            )}
+          />
+        </div>
       </TableCell>
       <TableCell className="align-top py-3 text-right">
         <div>
@@ -456,6 +519,9 @@ export default function ClientDetailPage() {
   const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>({});
   // Form per sub-product: { [subProductId]: { counted_stock, stock_added } }
   const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string }>>({});
+  
+  // Track which product_info cell is expanded
+  const [expandedProductInfoId, setExpandedProductInfoId] = useState<string | null>(null);
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -3136,10 +3202,10 @@ export default function ClientDetailPage() {
                           <TableRow className="bg-slate-50">
                             <TableHead className="w-[15%] font-semibold">Produit</TableHead>
                             <TableHead className="w-[5%] font-semibold"></TableHead>
-                            <TableHead className="w-[10%] font-semibold">Ancien dépôt</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Stock compté</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Réassort</TableHead>
-                            <TableHead className="w-[12%] font-semibold">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2]">Ancien dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-amber-50">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2]">Nouveau dépôt</TableHead>
                             <TableHead className="w-[20%] font-semibold">Info produit pour facture</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
@@ -3198,6 +3264,8 @@ export default function ClientDetailPage() {
                               subProducts={subProducts}
                               onAdjustStock={() => handleAdjustStockClick('product', cp.id)}
                               clientId={clientId}
+                              expandedProductInfoId={expandedProductInfoId}
+                              setExpandedProductInfoId={setExpandedProductInfoId}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
@@ -3222,10 +3290,10 @@ export default function ClientDetailPage() {
                                       <Pencil className="h-4 w-4 text-slate-600 hover:text-[#0B1F33]" />
                                     </Button>
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center">
+                                  <TableCell className="align-middle py-2 text-center bg-[#E8EDF2]">
                                     <p className="text-xs text-slate-500">{currentStock}</p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-top py-2 bg-amber-50">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3241,7 +3309,7 @@ export default function ClientDetailPage() {
                                       className="h-8 text-sm placeholder:text-slate-400"
                                     />
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center">
+                                  <TableCell className="align-middle py-2 text-center bg-green-50">
                                     <p className="text-xs font-medium text-slate-600">
                                       {(() => {
                                         const formData = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '' };
@@ -3252,7 +3320,7 @@ export default function ClientDetailPage() {
                                       })()}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-top py-2 bg-[#E8EDF2]">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
