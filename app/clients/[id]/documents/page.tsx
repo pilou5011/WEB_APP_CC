@@ -793,6 +793,7 @@ export default function ClientDetailPage() {
       const { data: productsData, error: productsError } = await supabase
         .from('products')
         .select('*')
+        .eq('company_id', companyId)
         .is('deleted_at', null)
         .order('name');
 
@@ -953,6 +954,40 @@ export default function ClientDetailPage() {
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fonction pour recharger uniquement les documents (invoices et credit_notes)
+  const reloadDocuments = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) return;
+
+      // Recharger les invoices
+      const { data: invoicesData, error: invoicesError } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (!invoicesError) {
+        setGlobalInvoices(invoicesData || []);
+      }
+
+      // Recharger les credit notes
+      const { data: creditNotesData, error: creditNotesError } = await supabase
+        .from('credit_notes')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+
+      if (!creditNotesError) {
+        setCreditNotes(creditNotesData || []);
+      }
+    } catch (error) {
+      console.error('Error reloading documents:', error);
     }
   };
 
@@ -1732,7 +1767,7 @@ export default function ClientDetailPage() {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) throw new Error('Non autorisé');
 
-      // Find the most recent invoice that has a deposit_slip_pdf_path (REQUIRED)
+      // Find the most recent invoice that has a deposit_slip_pdf_path
       const { data: lastInvoiceWithDepositSlip, error: invoiceError } = await supabase
         .from('invoices')
         .select('*')
@@ -1745,9 +1780,11 @@ export default function ClientDetailPage() {
 
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
-      // If no invoice with deposit slip exists, show error
+      // If no invoice with deposit slip exists, open dialog in generation mode
       if (!lastInvoiceWithDepositSlip || !lastInvoiceWithDepositSlip.deposit_slip_pdf_path) {
-        toast.error('Aucune facture avec bon de dépôt trouvée. Veuillez d\'abord mettre à jour le stock pour générer un bon de dépôt.');
+        // Open dialog in generation mode (no invoice selected = generateMode)
+        setSelectedInvoiceForDepositSlip(null);
+        setDepositSlipDialogOpen(true);
         setDepositSlipReplacing(false);
         return;
       }
@@ -2655,10 +2692,17 @@ export default function ClientDetailPage() {
 
     // Check if product has sub-products
     try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        toast.error('Non autorisé');
+        return;
+      }
+
       const { data: productSubProducts, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
         .eq('product_id', associateForm.product_id)
+        .eq('company_id', companyId)
         .is('deleted_at', null); // Filtrer uniquement les sous-produits non supprimés
 
       if (subProductsError) throw subProductsError;
@@ -3132,9 +3176,22 @@ export default function ClientDetailPage() {
                                     setSelectedGlobalInvoice(invoice);
                                     setGlobalInvoiceDialogOpen(true);
                                   }}
+                                  className="relative"
                                 >
                                   <FileText className="mr-2 h-4 w-4" />
                                   Facture
+                                  {invoice.invoice_pdf_path && (
+                                    <span 
+                                      className={`ml-2 h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm ${
+                                        invoice.invoice_email_sent_at ? 'bg-green-500' : 'bg-red-500'
+                                      }`} 
+                                      title={
+                                        invoice.invoice_email_sent_at 
+                                          ? `Envoyé le ${new Date(invoice.invoice_email_sent_at).toLocaleDateString('fr-FR')}`
+                                          : 'Non envoyé par email - Cliquez pour envoyer'
+                                      }
+                                    />
+                                  )}
                                 </Button>
                                 {invoice.stock_report_pdf_path && (
                                   <Button
@@ -3158,9 +3215,20 @@ export default function ClientDetailPage() {
                                       setSelectedInvoiceForDepositSlip(invoice);
                                       setDepositSlipDialogOpen(true);
                                     }}
+                                    className="relative"
                                   >
                                     <ClipboardList className="mr-2 h-4 w-4" />
                                     Bon de dépôt
+                                    <span 
+                                      className={`ml-2 h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm ${
+                                        invoice.deposit_slip_email_sent_at ? 'bg-green-500' : 'bg-red-500'
+                                      }`} 
+                                      title={
+                                        invoice.deposit_slip_email_sent_at 
+                                          ? `Envoyé le ${new Date(invoice.deposit_slip_email_sent_at).toLocaleDateString('fr-FR')}`
+                                          : 'Non envoyé par email - Cliquez pour envoyer'
+                                      }
+                                    />
                                   </Button>
                                 )}
                               </div>
@@ -3193,6 +3261,8 @@ export default function ClientDetailPage() {
                           invoice_pdf_path: realInvoice?.invoice_pdf_path || null,
                           stock_report_pdf_path: realInvoice?.stock_report_pdf_path || null,
                           deposit_slip_pdf_path: realInvoice?.deposit_slip_pdf_path || null,
+                          invoice_email_sent_at: realInvoice?.invoice_email_sent_at || null,
+                          deposit_slip_email_sent_at: realInvoice?.deposit_slip_email_sent_at || null,
                           created_at: stockUpdate.created_at
                         };
                         
@@ -3239,9 +3309,20 @@ export default function ClientDetailPage() {
                                       setRecentStockUpdatesWithoutInvoice(stockUpdate.stockUpdates);
                                       setDepositSlipDialogOpen(true);
                                     }}
+                                    className="relative"
                                   >
                                     <ClipboardList className="mr-2 h-4 w-4" />
                                     Bon de dépôt
+                                    <span 
+                                      className={`ml-2 h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm ${
+                                        tempInvoice.deposit_slip_email_sent_at ? 'bg-green-500' : 'bg-red-500'
+                                      }`} 
+                                      title={
+                                        tempInvoice.deposit_slip_email_sent_at 
+                                          ? `Envoyé le ${new Date(tempInvoice.deposit_slip_email_sent_at).toLocaleDateString('fr-FR')}`
+                                          : 'Non envoyé par email - Cliquez pour envoyer'
+                                      }
+                                    />
                                   </Button>
                                 )}
                               </div>
@@ -3288,9 +3369,22 @@ export default function ClientDetailPage() {
                                     setSelectedCreditNote(creditNote);
                                     setCreditNotePreviewDialogOpen(true);
                                   }}
+                                  className="relative"
                                 >
                                   <FileText className="mr-2 h-4 w-4" />
                                   Avoir
+                                  {creditNote.credit_note_pdf_path && (
+                                    <span 
+                                      className={`ml-2 h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm ${
+                                        creditNote.email_sent_at ? 'bg-green-500' : 'bg-red-500'
+                                      }`} 
+                                      title={
+                                        creditNote.email_sent_at 
+                                          ? `Envoyé le ${new Date(creditNote.email_sent_at).toLocaleDateString('fr-FR')}`
+                                          : 'Non envoyé par email - Cliquez pour envoyer'
+                                      }
+                                    />
+                                  )}
                                 </Button>
                               </div>
                             </div>
@@ -3330,6 +3424,7 @@ export default function ClientDetailPage() {
             stockUpdates={stockUpdates.filter(u => u.invoice_id === selectedGlobalInvoice.id)}
             products={allProducts}
             clientProducts={clientProducts}
+            onEmailSent={reloadDocuments}
           />
         )}
 
@@ -3691,6 +3786,7 @@ export default function ClientDetailPage() {
             }
             invoice={selectedInvoiceForDepositSlip}
             generateMode={!selectedInvoiceForDepositSlip} // Mode génération si pas d'invoice sélectionnée (bouton "Générer un bon de dépôt")
+            onEmailSent={reloadDocuments}
           />
         )}
 
@@ -3741,6 +3837,7 @@ export default function ClientDetailPage() {
               client={client}
               creditNote={selectedCreditNote}
               invoice={relatedInvoice}
+              onEmailSent={reloadDocuments}
             />
           );
         })()}

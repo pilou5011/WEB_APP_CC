@@ -1685,6 +1685,12 @@ export default function ClientDetailPage() {
           total_stock_sold: totalStockSold,
           total_amount: 0,
           invoice_number: null, // No invoice number when amount is 0
+          discount_percentage: null,
+          invoice_pdf_path: null,
+          stock_report_pdf_path: null,
+          deposit_slip_pdf_path: null,
+          invoice_email_sent_at: null,
+          deposit_slip_email_sent_at: null,
           created_at: new Date().toISOString()
         } as Invoice;
         

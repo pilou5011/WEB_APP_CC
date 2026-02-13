@@ -14,6 +14,7 @@ interface CreditNoteDialogProps {
   client: Client;
   creditNote: CreditNote;
   invoice: Invoice;
+  onEmailSent?: () => void; // Callback pour rafraîchir les données après envoi
 }
 
 export function CreditNoteDialog({
@@ -21,7 +22,8 @@ export function CreditNoteDialog({
   onOpenChange,
   client,
   creditNote,
-  invoice
+  invoice,
+  onEmailSent
 }: CreditNoteDialogProps) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -179,8 +181,23 @@ export function CreditNoteDialog({
           throw new Error(data.error || 'Erreur lors de l\'envoi');
         }
 
+        // Enregistrer la date d'envoi dans la base de données
+        const companyId = await getCurrentUserCompanyId();
+        if (companyId) {
+          await supabase
+            .from('credit_notes')
+            .update({ email_sent_at: new Date().toISOString() })
+            .eq('id', creditNote.id)
+            .eq('company_id', companyId);
+        }
+
         toast.success(`Avoir envoyé avec succès à ${client.email}`);
         setSendingEmail(false);
+        
+        // Appeler le callback pour rafraîchir les données
+        if (onEmailSent) {
+          onEmailSent();
+        }
       };
       
       reader.onerror = () => {

@@ -357,6 +357,8 @@ export default function InvoicePage() {
       invoice_pdf_path: null,
       stock_report_pdf_path: null,
       deposit_slip_pdf_path: null,
+      invoice_email_sent_at: null,
+      deposit_slip_email_sent_at: null,
       created_at: new Date().toISOString()
     };
 

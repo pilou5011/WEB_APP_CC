@@ -1033,6 +1033,34 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       },
       didParseCell: (data: any) => {
         try {
+          const columnIndex = data.column?.index;
+          
+          // Apply column colors only to body cells, not headers
+          if (data.section === 'body') {
+            // Apply column colors to body cells (but preserve sub-product styling for column 0)
+            if (columnIndex === 4) { // Ancien dépôt
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [232, 237, 242]; // #E8EDF2
+            } else if (columnIndex === 5) { // Stock compté
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [255, 251, 235]; // amber-50
+            } else if (columnIndex === 6) { // Réassort
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [240, 253, 244]; // green-50
+            } else if (columnIndex === 7) { // Nouveau dépôt
+              if (!data.cell.styles) {
+                data.cell.styles = {};
+              }
+              data.cell.styles.fillColor = [232, 237, 242]; // #E8EDF2
+            }
+          }
+          
           if (data.row && data.row.raw && Array.isArray(data.row.raw)) {
             const row = data.row.raw;
             const hasName = row[0] && row[0] !== '';
@@ -1047,7 +1075,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               
-              data.cell.styles.fillColor = [245, 247, 250];
+              // Only apply sub-product background to non-colored columns (0, 1, 2, 3)
+              if (columnIndex !== undefined && columnIndex < 4) {
+                data.cell.styles.fillColor = [245, 247, 250];
+              }
               
               if (data.column && data.column.index === 0) {
                 if (!data.cell.styles.lineColor) {
@@ -1074,10 +1105,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         1: { cellWidth: columnWidths[1], halign: 'left' },
         2: { cellWidth: columnWidths[2], halign: 'center' },
         3: { cellWidth: columnWidths[3], halign: 'center' },
-        4: { cellWidth: columnWidths[4], halign: 'center' },
-        5: { cellWidth: columnWidths[5], halign: 'center' },
-        6: { cellWidth: columnWidths[6], halign: 'center' },
-        7: { cellWidth: columnWidths[7], halign: 'center' }
+        4: { cellWidth: columnWidths[4], halign: 'center', fillColor: [232, 237, 242] }, // Ancien dépôt - #E8EDF2
+        5: { cellWidth: columnWidths[5], halign: 'center', fillColor: [255, 251, 235] }, // Stock compté - amber-50
+        6: { cellWidth: columnWidths[6], halign: 'center', fillColor: [240, 253, 244] }, // Réassort - green-50
+        7: { cellWidth: columnWidths[7], halign: 'center', fillColor: [232, 237, 242] }  // Nouveau dépôt - #E8EDF2
       },
       styles: {
         lineColor: [0, 0, 0],
@@ -2087,6 +2118,14 @@ export async function generateClientInfoPDF(
       cursorLeft = true;
 
       fields.forEach(field => {
+        // Ignorer les champs vides (utilisés pour forcer l'alignement)
+        if (!field.label && !field.value) {
+          // Mettre à jour cursorLeft pour forcer le suivant à gauche
+          // Mais ne pas mettre à jour les positions Y pour éviter l'espace
+          cursorLeft = true;
+          return;
+        }
+        
         const isFull = field.fullWidth;
         const value = field.value || 'Non renseigné';
 
@@ -2155,6 +2194,91 @@ export async function generateClientInfoPDF(
     };
 
     /* --------------------------------------------------
+     * Utils - Formatage
+     * -------------------------------------------------- */
+    const formatPhoneNumber = (phone: string | null): string => {
+      if (!phone) return '';
+      // Enlever tous les espaces et caractères non numériques
+      const digits = phone.replace(/\D/g, '');
+      // Ajouter un espace tous les 2 chiffres
+      return digits.match(/.{1,2}/g)?.join(' ') || phone;
+    };
+
+    const formatTVANumber = (tva: string | null): string => {
+      if (!tva) return '';
+      // Enlever tous les espaces
+      let cleaned = tva.replace(/\s/g, '').toUpperCase();
+      
+      // Vérifier si c'est un numéro TVA français (commence par FR)
+      if (cleaned.startsWith('FR')) {
+        // Format: FR XX XXX XXX XXX
+        // FR = code pays (2 caractères)
+        // XX = clé informatique (2 caractères)
+        // XXX XXX XXX = SIREN (9 chiffres en 3 blocs de 3)
+        const countryCode = cleaned.substring(0, 2); // FR
+        const rest = cleaned.substring(2); // Le reste après FR
+        
+        if (rest.length >= 2) {
+          const key = rest.substring(0, 2); // Clé informatique
+          const siren = rest.substring(2).replace(/\D/g, ''); // SIREN (chiffres uniquement)
+          
+          if (siren.length >= 9) {
+            // Formater le SIREN en 3 blocs de 3
+            const sirenFormatted = siren.substring(0, 9).match(/.{1,3}/g)?.join(' ') || siren.substring(0, 9);
+            return `${countryCode} ${key} ${sirenFormatted}`;
+          } else if (siren.length > 0) {
+            // Si le SIREN n'a pas 9 chiffres, on formate ce qu'on a
+            return `${countryCode} ${key} ${siren}`;
+          } else {
+            return `${countryCode} ${key}`;
+          }
+        } else {
+          return cleaned;
+        }
+      }
+      
+      // Si ce n'est pas un numéro TVA français, retourner tel quel
+      return cleaned;
+    };
+
+    const formatSIRETNumber = (siret: string | null): string => {
+      if (!siret) return '';
+      // Enlever tous les espaces et caractères non numériques
+      const digits = siret.replace(/\D/g, '');
+      
+      // Accepter les SIRET de 14 chiffres ou plus (on prend les 14 premiers)
+      if (digits.length >= 14) {
+        // Format: XXX XXX XXX XXXXX
+        // 9 premiers = SIREN (en 3 blocs de 3 chiffres)
+        // 5 derniers = NIC (en bloc de 5)
+        const siren = digits.substring(0, 9);
+        const nic = digits.substring(9, 14);
+        
+        // Formater le SIREN en 3 blocs de 3 chiffres exactement
+        const block1 = siren.substring(0, 3);
+        const block2 = siren.substring(3, 6);
+        const block3 = siren.substring(6, 9);
+        const sirenFormatted = `${block1} ${block2} ${block3}`;
+        
+        return `${sirenFormatted} ${nic}`;
+      }
+      
+      // Si la longueur est inférieure à 14, essayer de formater ce qu'on a
+      if (digits.length >= 9) {
+        const siren = digits.substring(0, 9);
+        const block1 = siren.substring(0, 3);
+        const block2 = siren.substring(3, 6);
+        const block3 = siren.substring(6, 9);
+        const sirenFormatted = `${block1} ${block2} ${block3}`;
+        const remaining = digits.substring(9);
+        return remaining ? `${sirenFormatted} ${remaining}` : sirenFormatted;
+      }
+      
+      // Si moins de 9 chiffres, retourner tel quel
+      return siret;
+    };
+
+    /* --------------------------------------------------
      * Sections
      * -------------------------------------------------- */
 
@@ -2179,21 +2303,21 @@ export async function generateClientInfoPDF(
       { 
         label: 'Téléphone 1', 
         value: [
-          client.phone,
+          formatPhoneNumber(client.phone),
           client.phone_1_info
         ].filter(Boolean).join(' - ') || ''
       },
       { 
         label: 'Téléphone 2', 
         value: [
-          client.phone_2,
+          formatPhoneNumber(client.phone_2),
           client.phone_2_info
         ].filter(Boolean).join(' - ') || ''
       },
       { 
         label: 'Téléphone 3', 
         value: [
-          client.phone_3,
+          formatPhoneNumber(client.phone_3),
           client.phone_3_info
         ].filter(Boolean).join(' - ') || ''
       },
@@ -2201,46 +2325,104 @@ export async function generateClientInfoPDF(
     ]);
 
     addSection('Informations légales', [
-      { label: 'Numéro SIRET', value: client.siret_number || '' },
-      { label: 'Numéro TVA', value: client.tva_number || '' },
+      { label: 'Numéro SIRET', value: formatSIRETNumber(client.siret_number) },
+      { label: 'Numéro de TVA ', value: formatTVANumber(client.tva_number) },
     ]);
 
     const complementaryFields: any[] = [];
 
+    // Toutes les informations complémentaires à gauche, en dessous de "Horaires d'ouverture"
+    
+    // Horaires d'ouverture à gauche
     if (client.opening_hours) {
       const data = formatWeekScheduleData(client.opening_hours);
       if (data.length) {
         complementaryFields.push({
           label: "Horaires d'ouverture",
           value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
-          fullWidth: true,
+          fullWidth: false, // Colonne gauche
+        });
+        // Ajouter un champ vide à droite pour forcer les suivants à gauche
+        complementaryFields.push({
+          label: '',
+          value: '',
+          fullWidth: false,
         });
       }
     }
 
+    // Jour(s) de marché à gauche
     if (client.market_days_schedule) {
       const data = formatMarketDaysScheduleData(client.market_days_schedule);
       if (data.length) {
         complementaryFields.push({
           label: 'Jour(s) de marché',
           value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
-          fullWidth: true,
+          fullWidth: false, // Colonne gauche
+        });
+        // Ajouter un champ vide à droite pour forcer le suivant à gauche
+        complementaryFields.push({
+          label: '',
+          value: '',
+          fullWidth: false,
         });
       }
     }
 
+    // Commentaire à gauche
     if (client.comment) {
       complementaryFields.push({
         label: 'Commentaire',
         value: client.comment,
-        fullWidth: true,
+        fullWidth: false, // Colonne gauche
+      });
+      // Ajouter un champ vide à droite pour forcer le suivant à gauche
+      complementaryFields.push({
+        label: '',
+        value: '',
+        fullWidth: false,
       });
     }
 
+    // Règlement à gauche
     complementaryFields.push({
       label: 'Règlement',
       value: paymentMethod?.name || '',
+      fullWidth: false, // Colonne gauche
     });
+    // Ajouter un champ vide à droite pour forcer le suivant à gauche
+    complementaryFields.push({
+      label: '',
+      value: '',
+      fullWidth: false,
+    });
+
+    // Fréquence de passage à gauche
+    if (client.visit_frequency_number && client.visit_frequency_unit) {
+      complementaryFields.push({
+        label: 'Fréquence de passage',
+        value: `${client.visit_frequency_number} ${client.visit_frequency_unit}`,
+        fullWidth: false, // Colonne gauche
+      });
+      // Ajouter un champ vide à droite pour forcer le suivant à gauche
+      complementaryFields.push({
+        label: '',
+        value: '',
+        fullWidth: false,
+      });
+    }
+
+    // Temps moyen à gauche
+    if ((client.average_time_hours !== null && client.average_time_hours !== undefined) ||
+        (client.average_time_minutes !== null && client.average_time_minutes !== undefined)) {
+      const hours = client.average_time_hours || 0;
+      const minutes = client.average_time_minutes || 0;
+      complementaryFields.push({
+        label: 'Temps moyen',
+        value: `${hours}h${minutes.toString().padStart(2, '0')}`,
+        fullWidth: false, // Colonne gauche
+      });
+    }
 
     addSection('Informations complémentaires', complementaryFields);
 
