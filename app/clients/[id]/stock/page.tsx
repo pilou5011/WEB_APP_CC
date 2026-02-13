@@ -135,7 +135,9 @@ function SortableProductRow({
   onDelete,
   subProducts,
   onAdjustStock,
-  clientId
+  clientId,
+  expandedProductInfoId,
+  setExpandedProductInfoId
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -157,6 +159,8 @@ function SortableProductRow({
   subProducts: Record<string, SubProduct[]>;
   onAdjustStock: () => void;
   clientId: string;
+  expandedProductInfoId: string | null;
+  setExpandedProductInfoId: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
   const {
     attributes,
@@ -172,6 +176,33 @@ function SortableProductRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  // Handle Escape key and click outside to close expanded cell
+  const expandedCellRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (expandedProductInfoId === cp.id) {
+      const handleEscape = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setExpandedProductInfoId(null);
+        }
+      };
+      
+      const handleClickOutside = (e: MouseEvent) => {
+        if (expandedCellRef.current && !expandedCellRef.current.contains(e.target as Node)) {
+          setExpandedProductInfoId(null);
+        }
+      };
+      
+      window.addEventListener('keydown', handleEscape);
+      document.addEventListener('mousedown', handleClickOutside);
+      
+      return () => {
+        window.removeEventListener('keydown', handleEscape);
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [expandedProductInfoId, cp.id, setExpandedProductInfoId]);
 
   return (
     <TableRow
@@ -273,17 +304,41 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-top py-3">
-        <Input
-          type="text"
-          value={perProductForm[cp.id]?.product_info || ''}
-          onChange={(e) => {
-            const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-            setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
-          }}
-          placeholder="......"
-          className="h-9 placeholder:text-slate-400"
-        />
+      <TableCell className="align-top py-3 relative">
+        <div className="relative">
+          {expandedProductInfoId === cp.id ? (
+            <div 
+              ref={expandedCellRef}
+              className="absolute left-0 top-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1 w-[200px]"
+            >
+              <Input
+                type="text"
+                value={perProductForm[cp.id]?.product_info || ''}
+                onChange={(e) => {
+                  const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+                  setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
+                }}
+                placeholder="..........."
+                className="text-base placeholder:text-slate-400 w-full h-8 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 border-0 shadow-none"
+                autoFocus
+              />
+            </div>
+          ) : null}
+          <Input
+            type="text"
+            value={perProductForm[cp.id]?.product_info || ''}
+            onChange={(e) => {
+              const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+              setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
+            }}
+            onFocus={() => setExpandedProductInfoId(cp.id)}
+            placeholder=".............."
+            className={cn(
+              "text-sm placeholder:text-slate-400 transition-all",
+              expandedProductInfoId === cp.id ? "opacity-0" : "h-9 opacity-100"
+            )}
+          />
+        </div>
       </TableCell>
       <TableCell className="align-top py-3 text-right">
         <div>
@@ -456,6 +511,9 @@ export default function ClientDetailPage() {
   const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>({});
   // Form per sub-product: { [subProductId]: { counted_stock, stock_added } }
   const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string }>>({});
+  
+  // Track which product_info cell is expanded
+  const [expandedProductInfoId, setExpandedProductInfoId] = useState<string | null>(null);
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -3182,6 +3240,8 @@ export default function ClientDetailPage() {
                               subProducts={subProducts}
                               onAdjustStock={() => handleAdjustStockClick('product', cp.id)}
                               clientId={clientId}
+                              expandedProductInfoId={expandedProductInfoId}
+                              setExpandedProductInfoId={setExpandedProductInfoId}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
