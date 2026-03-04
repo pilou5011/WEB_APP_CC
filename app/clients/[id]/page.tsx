@@ -495,8 +495,9 @@ export default function ClientDetailPage() {
   // Combobox state for product selector
   const [productComboboxOpen, setProductComboboxOpen] = useState(false);
 
-  // Initialize draft management hook
-  const draft = useStockUpdateDraft(clientId);
+  // Initialize draft management hook (DISABLED - this is not the stock page)
+  // We only use it to check for drafts, never to save
+  const draft = useStockUpdateDraft(clientId, false);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -675,27 +676,29 @@ export default function ClientDetailPage() {
   }, [associateForm.product_id]);
 
   // Auto-save draft whenever form data changes (but not during submission or before draft check)
-  useEffect(() => {
-    // Don't autosave until we've checked for existing draft
-    if (!draftCheckDoneRef.current) {
-      console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
-      return;
-    }
-    
-    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
-    if (draftRecoveryOpen) {
-      console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
-      return;
-    }
-    
-    if (!loading && client && clientProducts.length > 0 && !submitting) {
-      draft.autoSave({
-        perProductForm,
-        perSubProductForm,
-        pendingAdjustments
-      });
-    }
-  }, [perProductForm, perSubProductForm, pendingAdjustments, loading, client, clientProducts.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // DISABLED: This is not the stock page, so we should never save drafts here
+  // The draft_stock_updates table should only be modified on the "Facturer (dépôt)" page
+  // useEffect(() => {
+  //   // Don't autosave until we've checked for existing draft
+  //   if (!draftCheckDoneRef.current) {
+  //     console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
+  //     return;
+  //   }
+  //   
+  //   // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+  //   if (draftRecoveryOpen) {
+  //     console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
+  //     return;
+  //   }
+  //   
+  //   if (!loading && client && clientProducts.length > 0 && !submitting) {
+  //     draft.autoSave({
+  //       perProductForm,
+  //       perSubProductForm,
+  //       pendingAdjustments
+  //     });
+  //   }
+  // }, [perProductForm, perSubProductForm, pendingAdjustments, loading, client, clientProducts.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 

@@ -11,7 +11,7 @@ export interface DraftInfo {
   source: 'local' | 'server';
 }
 
-export function useInvoiceDraft(clientId: string) {
+export function useInvoiceDraft(clientId: string, isActiveTab: boolean = true) {
   const syncTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastSyncDataRef = useRef<string>('');
 
@@ -38,6 +38,12 @@ export function useInvoiceDraft(clientId: string) {
 
   // Save to server (upsert)
   const saveDraftToServer = useCallback(async (data: DraftInvoiceData) => {
+    // Only save if we're on the active tab
+    if (!isActiveTab) {
+      console.log('[Draft Invoice] Not saving: not on active tab');
+      return;
+    }
+
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
@@ -96,7 +102,7 @@ export function useInvoiceDraft(clientId: string) {
     } catch (error) {
       console.error('[Draft Invoice] Error saving to server:', error);
     }
-  }, [clientId]);
+  }, [clientId, isActiveTab]);
 
   // Load draft from localStorage
   const loadDraftLocally = useCallback((): DraftInvoiceData | null => {
@@ -292,6 +298,12 @@ export function useInvoiceDraft(clientId: string) {
 
   // Auto-save function (saves to local immediately, syncs to server periodically)
   const autoSave = useCallback((data: DraftInvoiceData) => {
+    // Only save if we're on the active tab
+    if (!isActiveTab) {
+      console.log('[Draft Invoice] AutoSave: Not saving - not on active tab');
+      return;
+    }
+
     // Don't save if data is empty
     if (isDraftEmpty(data)) {
       console.log('[Draft Invoice] AutoSave: Data is empty, not saving');
@@ -301,10 +313,23 @@ export function useInvoiceDraft(clientId: string) {
     console.log('[Draft Invoice] AutoSave: Saving draft data', data);
     // Save to localStorage immediately
     saveDraftLocally(data);
-  }, [saveDraftLocally, isDraftEmpty]);
+    // Also save to server immediately (not just periodically)
+    saveDraftToServer(data).catch(err => 
+      console.error('[Draft Invoice] Error in immediate server save:', err)
+    );
+  }, [saveDraftLocally, isDraftEmpty, isActiveTab, saveDraftToServer]);
 
-  // Setup periodic sync to server
+  // Setup periodic sync to server (only if active tab)
   useEffect(() => {
+    if (!isActiveTab) {
+      // Clear any existing timer if we're not on the active tab
+      if (syncTimerRef.current) {
+        clearInterval(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+      return;
+    }
+
     // Function to perform sync
     const syncToServer = async () => {
       try {
@@ -338,11 +363,14 @@ export function useInvoiceDraft(clientId: string) {
         clearInterval(syncTimerRef.current);
       }
     };
-  }, [clientId, getLocalStorageKey, saveDraftToServer, isDraftEmpty]);
+  }, [clientId, getLocalStorageKey, saveDraftToServer, isDraftEmpty, isActiveTab]);
 
-  // Cleanup on unmount - perform final sync
+  // Cleanup on unmount - perform final sync (only if active tab)
   useEffect(() => {
     return () => {
+      if (!isActiveTab) {
+        return;
+      }
       const key = getLocalStorageKey();
       const stored = localStorage.getItem(key);
       if (stored) {
@@ -360,7 +388,7 @@ export function useInvoiceDraft(clientId: string) {
         }
       }
     };
-  }, [getLocalStorageKey, saveDraftToServer, isDraftEmpty]);
+  }, [getLocalStorageKey, saveDraftToServer, isDraftEmpty, isActiveTab]);
 
   return {
     autoSave,
