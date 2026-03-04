@@ -9,6 +9,35 @@
 import { Client, Invoice, Product, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
+// Helper to add page numbers like "1/2" at bottom-right of each page
+function addPageNumbers(doc: any) {
+  try {
+    const pageCount = doc.getNumberOfPages();
+    if (!pageCount || pageCount <= 0) return;
+
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      const footerMarginRight = 15;
+      const footerMarginBottom = 8;
+
+      const label = `${i}/${pageCount}`;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(30, 30, 30);
+
+      doc.text(label, pageWidth - footerMarginRight, pageHeight - footerMarginBottom, {
+        align: 'right'
+      } as any);
+    }
+  } catch (e) {
+    console.error('Error adding page numbers to PDF:', e);
+  }
+}
+
 interface GenerateDirectInvoicePDFParams {
   invoice: Invoice;
   client: Client;
@@ -290,14 +319,57 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     summaryRows.push(['TVA 20%', tva.toFixed(2) + ' €']);
     summaryRows.push(['TOTAL T.T.C A PAYER', totalTTC.toFixed(2) + ' €']);
     
+    // Calculer la hauteur approximative nécessaire pour le bloc récapitulatif
+    // Le nombre de lignes dépend de la présence d'une remise commerciale :
+    // - Avec remise : 5 lignes (TOTAL H.T. avant remise, Remise, TOTAL H.T., TVA 20%, TOTAL T.T.C)
+    // - Sans remise : 3 lignes (TOTAL H.T., TVA 20%, TOTAL T.T.C)
+    // Hauteur par ligne : fontSize 10 + cellPadding 1.5 (haut et bas) = environ 5.5mm par ligne
+    const rowHeight = 5.5;
+    const numberOfRows = summaryRows.length; // Utiliser le nombre réel de lignes
+    const totalBlockHeight = numberOfRows * rowHeight + 6; // +6 pour les bordures supérieure et inférieure et espacement
+    
+    // Calculer la hauteur des conditions AVANT de vérifier l'espace disponible
+    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    
+    // Calculer la largeur disponible en tenant compte des marges gauche et droite
+    const availableWidth = pageWidth - globalLeftMargin - globalRightMargin;
+    
+    // Diviser le texte en lignes adaptées à la largeur disponible
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    const conditionsHeight = conditionsLines.length * 3.5; // Hauteur approximative des lignes de conditions
+    const footerY = pageHeight - 20; // Position en bas de page pour les conditions
+    const marginBetweenBlockAndConditions = 5; // Marge entre le bloc et les conditions
+    
+    // Vérifier si le bloc + les conditions peuvent tenir sur la page actuelle
+    const currentPageHeight = doc.internal.pageSize.getHeight();
+    const totalNeededHeight = totalBlockHeight + marginBetweenBlockAndConditions + conditionsHeight;
+    const availableHeight = footerY - finalTableY; // Espace disponible jusqu'à la position des conditions
+    
+    // Si le bloc + les conditions ne peuvent pas tenir, créer une nouvelle page AVANT de dessiner le bloc
+    let startYForSummary = finalTableY;
+    if (totalNeededHeight > availableHeight && availableHeight > 0) {
+      doc.addPage();
+      startYForSummary = 20; // Commencer en haut de la nouvelle page
+    }
+    
     autoTable(doc, {
-      startY: finalTableY,
+      startY: startYForSummary,
       body: summaryRows,
       theme: 'plain',
       bodyStyles: {
         fontSize: 10,
         fontStyle: 'bold',
-        textColor: [0, 0, 0]
+        textColor: [0, 0, 0],
+        cellPadding: 1.5, // Réduit pour rendre les lignes plus fines
+        // Empêcher la division de chaque ligne entre les pages
+        rowPageBreak: 'avoid'
       },
       columnStyles: {
         0: { halign: 'left' },
@@ -320,32 +392,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     });
 
     // Conditions de Dépôt-Vente - toujours en bas de page
-    const finalSummaryTableY = (doc as any).lastAutoTable.finalY;
-    
-    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
-    const getDefaultConditions = (companyName: string | null): string => {
-      const company = companyName || 'Votre Société';
-      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
-    };
-    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
-    
-    // Calculer la largeur disponible en tenant compte des marges gauche et droite
-    const availableWidth = pageWidth - globalLeftMargin - globalRightMargin;
-    
-    // Diviser le texte en lignes adaptées à la largeur disponible
-    // Utiliser doc.splitTextToSize pour diviser le texte correctement selon la largeur en mm
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
-    
-    const conditionsHeight = conditionsLines.length * 3.5; // Hauteur approximative des lignes de conditions
-    const footerY = pageHeight - 20; // Position en bas de page pour les conditions
-    
-    // Vérifier si le tableau récapitulatif chevaucherait l'espace réservé aux conditions
-    // Si oui, créer une nouvelle page pour placer les conditions en bas
-    if (finalSummaryTableY + 10 > footerY - conditionsHeight) {
-      doc.addPage();
-    }
+    // (Les conditions ont déjà été calculées plus haut, on les réutilise)
     
     // Toujours placer les conditions en bas de la page actuelle
     doc.setTextColor(0, 0, 0);
@@ -354,6 +401,9 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     conditionsLines.forEach((line: string, index: number) => {
       doc.text(line, globalLeftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
     });
+
+    // Add page numbers (footer) before generating the blob
+    addPageNumbers(doc);
 
     // Convertir le PDF en blob
     const pdfBlob = doc.output('blob');

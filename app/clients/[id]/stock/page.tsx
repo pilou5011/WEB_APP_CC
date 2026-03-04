@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
@@ -403,7 +403,11 @@ function SortableProductRow({
 export default function ClientDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const clientId = params.id as string;
+  
+  // Determine if we're on the stock page (Facturer (dépôt))
+  const isActiveTab = pathname?.endsWith('/stock') ?? true;
 
   const [client, setClient] = useState<Client | null>(null);
   const [stockUpdates, setStockUpdates] = useState<StockUpdate[]>([]);
@@ -560,8 +564,8 @@ export default function ClientDetailPage() {
   // Combobox state for product selector
   const [productComboboxOpen, setProductComboboxOpen] = useState(false);
 
-  // Initialize draft management hook
-  const draft = useStockUpdateDraft(clientId);
+  // Initialize draft management hook (only save when on this tab)
+  const draft = useStockUpdateDraft(clientId, isActiveTab);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -616,7 +620,7 @@ export default function ClientDetailPage() {
   };
 
   useEffect(() => {
-    // Reset draft check flag when clientId changes (navigating to different client)
+    // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
     draftCheckDoneRef.current = false;
     
     // Check for draft BEFORE loading client data
@@ -684,7 +688,7 @@ export default function ClientDetailPage() {
     };
     
     initPage();
-  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clientId, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Initialize sub-product forms when subProducts data is loaded
@@ -956,8 +960,10 @@ export default function ClientDetailPage() {
       setStockUpdates(updatesData || []);
 
       // Initialize per-product form defaults with last product_info
+      // Preserve existing form data to avoid losing user input
+      const currentForm = perProductForm;
+      const currentSubProductForm = perSubProductForm;
       const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
-      const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
       
       cpWithTyped.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
@@ -966,19 +972,24 @@ export default function ClientDetailPage() {
             update.product_id === cp.product_id
         );
         
+        // Preserve existing form data if it exists, otherwise use defaults
+        const existingForm = currentForm[cp.id];
         initialForm[cp.id] = { 
-          counted_stock: '', 
-          stock_added: '', 
-          reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          counted_stock: existingForm?.counted_stock || '', 
+          stock_added: existingForm?.stock_added || '', 
+          reassort: existingForm?.reassort || '',
+          product_info: existingForm?.product_info || lastUpdate?.product_info || '' 
         };
       });
 
-      // Initialize sub-product forms - wait for subProducts state to be set, will be initialized on next render
-      // (subProducts state is set asynchronously, so we'll initialize the form in a useEffect)
+      // Preserve existing sub-product form data (don't reset it)
+      // Only initialize new sub-products if needed, but keep existing data
+      setPerSubProductForm((prev) => {
+        // Keep all existing sub-product form data
+        return { ...prev };
+      });
 
       setPerProductForm(initialForm);
-      setPerSubProductForm(initialSubProductForm);
 
       // Load global invoices
       const { data: invoicesData, error: invoicesError } = await supabase
