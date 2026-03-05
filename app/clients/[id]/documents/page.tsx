@@ -135,7 +135,9 @@ function SortableProductRow({
   onDelete,
   subProducts,
   onAdjustStock,
-  clientId
+  clientId,
+  lastStockUpdatesByProduct,
+  lastStockUpdatesBySubProduct
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -157,6 +159,8 @@ function SortableProductRow({
   subProducts: Record<string, SubProduct[]>;
   onAdjustStock: () => void;
   clientId: string;
+  lastStockUpdatesByProduct: Record<string, StockUpdate>;
+  lastStockUpdatesBySubProduct: Record<string, StockUpdate>;
 }) {
   const {
     attributes,
@@ -211,7 +215,11 @@ function SortableProductRow({
           <></>
         ) : (
           <p className="text-sm font-medium text-slate-600">
-            {cp.current_stock}
+            {(() => {
+              // Utiliser uniquement le dernier stock_update.new_stock
+              const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+              return lastUpdate ? lastUpdate.new_stock : 0;
+            })()}
           </p>
         )}
       </TableCell>
@@ -345,6 +353,9 @@ export default function ClientDetailPage() {
 
   const [client, setClient] = useState<Client | null>(null);
   const [stockUpdates, setStockUpdates] = useState<StockUpdate[]>([]);
+  // Maps pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
+  const [lastStockUpdatesByProduct, setLastStockUpdatesByProduct] = useState<Record<string, StockUpdate>>({});
+  const [lastStockUpdatesBySubProduct, setLastStockUpdatesBySubProduct] = useState<Record<string, StockUpdate>>({});
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [clientProducts, setClientProducts] = useState<(ClientProduct & { product?: Product })[]>([]);
   const [subProducts, setSubProducts] = useState<Record<string, SubProduct[]>>({}); // product_id -> SubProduct[]
@@ -500,8 +511,9 @@ export default function ClientDetailPage() {
   // Combobox state for product selector
   const [productComboboxOpen, setProductComboboxOpen] = useState(false);
 
-  // Initialize draft management hook
-  const draft = useStockUpdateDraft(clientId);
+  // Initialize draft management hook (DISABLED - this is not the stock page)
+  // We only use it to check for drafts, never to save
+  const draft = useStockUpdateDraft(clientId, false);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -680,27 +692,29 @@ export default function ClientDetailPage() {
   }, [associateForm.product_id]);
 
   // Auto-save draft whenever form data changes (but not during submission or before draft check)
-  useEffect(() => {
-    // Don't autosave until we've checked for existing draft
-    if (!draftCheckDoneRef.current) {
-      console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
-      return;
-    }
-    
-    // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
-    if (draftRecoveryOpen) {
-      console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
-      return;
-    }
-    
-    if (!loading && client && clientProducts.length > 0 && !submitting) {
-      draft.autoSave({
-        perProductForm,
-        perSubProductForm,
-        pendingAdjustments
-      });
-    }
-  }, [perProductForm, perSubProductForm, pendingAdjustments, loading, client, clientProducts.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // DISABLED: This is not the stock page, so we should never save drafts here
+  // The draft_stock_updates table should only be modified on the "Facturer (dépôt)" page
+  // useEffect(() => {
+  //   // Don't autosave until we've checked for existing draft
+  //   if (!draftCheckDoneRef.current) {
+  //     console.log('[Draft] AutoSave disabled: waiting for draft check to complete');
+  //     return;
+  //   }
+  //   
+  //   // Don't autosave while the recovery dialog is open (user hasn't made a choice yet)
+  //   if (draftRecoveryOpen) {
+  //     console.log('[Draft] AutoSave disabled: draft recovery dialog is open');
+  //     return;
+  //   }
+  //   
+  //   if (!loading && client && clientProducts.length > 0 && !submitting) {
+  //     draft.autoSave({
+  //       perProductForm,
+  //       perSubProductForm,
+  //       pendingAdjustments
+  //     });
+  //   }
+  // }, [perProductForm, perSubProductForm, pendingAdjustments, loading, client, clientProducts.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -896,6 +910,33 @@ export default function ClientDetailPage() {
       if (updatesError) throw updatesError;
       setStockUpdates(updatesData || []);
 
+      // Créer un map optimisé pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
+      // Inclure tous les stock_updates, y compris ceux avec invoice_id = null
+      const lastStockUpdatesByProductMap: Record<string, StockUpdate> = {};
+      const lastStockUpdatesBySubProductMap: Record<string, StockUpdate> = {};
+      
+      (updatesData || []).forEach((update: StockUpdate) => {
+        if (update.product_id && !update.sub_product_id) {
+          // Produit sans sous-produit
+          const key = update.product_id;
+          if (!lastStockUpdatesByProductMap[key] || 
+              new Date(update.created_at) > new Date(lastStockUpdatesByProductMap[key].created_at)) {
+            lastStockUpdatesByProductMap[key] = update;
+          }
+        } else if (update.sub_product_id) {
+          // Sous-produit
+          const key = update.sub_product_id;
+          if (!lastStockUpdatesBySubProductMap[key] || 
+              new Date(update.created_at) > new Date(lastStockUpdatesBySubProductMap[key].created_at)) {
+            lastStockUpdatesBySubProductMap[key] = update;
+          }
+        }
+      });
+      
+      // Stocker ces maps dans le state
+      setLastStockUpdatesByProduct(lastStockUpdatesByProductMap);
+      setLastStockUpdatesBySubProduct(lastStockUpdatesBySubProductMap);
+
       // Initialize per-product form defaults with last product_info
       const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
       const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
@@ -1054,7 +1095,9 @@ export default function ClientDetailPage() {
 
           totalCountedStock += parseInt(formData.counted_stock) || 0;
           totalStockAdded += parseInt(formData.stock_added) || 0;
-          totalPreviousStock += csp.current_stock || 0;
+          // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+          const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+          totalPreviousStock += lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
         }
 
         if (!hasAnySubProductData) continue;
@@ -1068,7 +1111,7 @@ export default function ClientDetailPage() {
         const newDeposit = totalStockAdded;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const stockAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = perProductForm[cp.id]?.product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1126,10 +1169,12 @@ export default function ClientDetailPage() {
           }
         }
 
-        const previousStock = cp.current_stock;
+        // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+        const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+        const previousStock = lastUpdate ? lastUpdate.new_stock : 0;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const stockAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = form.product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1371,7 +1416,9 @@ export default function ClientDetailPage() {
               const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
               const hasNewDeposit = formData?.stock_added && formData.stock_added.trim() !== '';
 
-              const previousStock = csp.current_stock;
+              // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+              const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+              const previousStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
               
               // Déterminer le nouveau stock et le stock compté pour ce sous-produit
               let newStock: number;
@@ -1390,7 +1437,7 @@ export default function ClientDetailPage() {
                 }
                 
                 const stockSold = Math.max(0, previousStock - countedStock);
-                const stockAdded = Math.max(0, newStock - countedStock);
+                const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
 
                 totalStockAdded += stockAdded;
                 totalStockSold += stockSold;
@@ -1461,10 +1508,12 @@ export default function ClientDetailPage() {
 
             const countedStock = parseInt(form.counted_stock);
             const newDeposit = parseInt(form.stock_added);
-            const previousStock = cp.current_stock;
+            // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+            const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+            const previousStock = lastUpdate ? lastUpdate.new_stock : 0;
             const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
-            const stockAdded = Math.max(0, newStock - countedStock);
+            const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
             const productInfo = form.product_info || '';
             // Calculer le prix effectif du produit
             const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1552,12 +1601,38 @@ export default function ClientDetailPage() {
             .eq('invoice_id', invoiceData.id)
             .eq('company_id', companyId);
 
+          // Recharger les clientProducts avec les display_order à jour avant de générer les PDFs
+          const { data: updatedClientProducts, error: cpReloadError } = await supabase
+            .from('client_products')
+            .select(`
+              *,
+              product:products(*)
+            `)
+            .eq('client_id', clientId)
+            .eq('company_id', companyId)
+            .is('deleted_at', null)
+            .order('display_order', { ascending: true });
+
+          if (cpReloadError) {
+            console.error('Error reloading clientProducts for PDF generation:', cpReloadError);
+            // Continuer avec les clientProducts existants en cas d'erreur
+          }
+
+          // Utiliser les clientProducts mis à jour si disponibles, sinon utiliser ceux du state
+          const clientProductsToUse = updatedClientProducts || clientProducts;
+
+          // Transformer clientProducts pour inclure Product (majuscule) attendu par pdf-generators.ts
+          const clientProductsForPdf = (clientProductsToUse || []).map((cp: any) => ({
+            ...cp,
+            Product: cp.Product ?? cp.product ?? undefined,
+          }));
+
           // Générer les 3 PDFs en parallèle
           await Promise.all([
             generateAndSaveInvoicePDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               products: allProducts,
               stockUpdates: insertedStockUpdates,
               adjustments: invoiceAdjustments || [],
@@ -1566,13 +1641,13 @@ export default function ClientDetailPage() {
             generateAndSaveStockReportPDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               stockUpdates: insertedStockUpdates
             }),
             generateAndSaveDepositSlipPDF({
               invoice: invoiceData,
               client,
-              clientProducts,
+              clientProducts: clientProductsForPdf,
               stockUpdates: insertedStockUpdates,
               userProfile: userProfile || null
             })
@@ -2068,11 +2143,14 @@ export default function ClientDetailPage() {
           toast.error('Produit non trouvé');
           return;
         }
+        // Utiliser uniquement le dernier stock_update.new_stock
+        const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+        const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
         setItemToAdjust({
           type: 'product',
           id: cp.id,
           name: cp.product?.name || 'Product',
-          currentStock: cp.current_stock || 0,
+          currentStock,
           productId: cp.product_id
         });
       } else if (type === 'sub-product') {
@@ -2081,8 +2159,9 @@ export default function ClientDetailPage() {
           toast.error('Sous-produit non trouvé');
           return;
         }
-        const csp = clientSubProducts[sp.id];
-        const currentStock = csp ? (csp.current_stock || 0) : 0;
+        // Utiliser uniquement le dernier stock_update.new_stock
+        const lastUpdate = lastStockUpdatesBySubProduct[sp.id];
+        const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
         setItemToAdjust({
           type: 'sub-product',
           id: sp.id,
@@ -3436,11 +3515,16 @@ export default function ClientDetailPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir dissocier le produit "{productToDelete?.product?.name}" de ce client ?
                 Cette action est irréversible.
-                {productToDelete && productToDelete.current_stock > 0 && (
-                  <span className="block mt-2 text-orange-600 font-medium">
-                    ⚠️ Attention : Ce produit a encore {productToDelete.current_stock} unité(s) en stock.
-                  </span>
-                )}
+                {productToDelete && (() => {
+                  // Utiliser uniquement le dernier stock_update.new_stock
+                  const lastUpdate = lastStockUpdatesByProduct[productToDelete.product_id || ''];
+                  const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
+                  return currentStock > 0 ? (
+                    <span className="block mt-2 text-orange-600 font-medium">
+                      ⚠️ Attention : Ce produit a encore {currentStock} unité(s) en stock.
+                    </span>
+                  ) : null;
+                })()}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

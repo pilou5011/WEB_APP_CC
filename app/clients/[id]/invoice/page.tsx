@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, Product, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,11 @@ interface InvoiceRow {
 export default function InvoicePage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const clientId = params.id as string;
+  
+  // Determine if we're on the invoice page (Facturer (compte ferme))
+  const isActiveTab = pathname?.endsWith('/invoice') ?? true;
 
   const [client, setClient] = useState<Client | null>(null);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
@@ -59,15 +63,15 @@ export default function InvoicePage() {
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
 
-  // Draft recovery
-  const draft = useInvoiceDraft(clientId);
+  // Draft recovery (only save when on this tab)
+  const draft = useInvoiceDraft(clientId, isActiveTab);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
 
   useEffect(() => {
-    // Reset draft check flag when clientId changes (navigating to different client)
+    // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
     draftCheckDoneRef.current = false;
     
     // Check for draft BEFORE loading client data
@@ -118,7 +122,7 @@ export default function InvoicePage() {
     };
     
     initPage();
-  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clientId, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     setLoading(true);

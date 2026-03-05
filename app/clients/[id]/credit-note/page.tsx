@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, Invoice, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
@@ -22,7 +22,11 @@ import { useCreditNoteDraft } from '@/hooks/use-credit-note-draft';
 export default function CreditNotePage() {
   const router = useRouter();
   const params = useParams();
+  const pathname = usePathname();
   const clientId = params.id as string;
+  
+  // Determine if we're on the credit-note page (Créer un avoir)
+  const isActiveTab = pathname?.endsWith('/credit-note') ?? true;
 
   const [client, setClient] = useState<Client | null>(null);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
@@ -47,15 +51,15 @@ export default function CreditNotePage() {
   const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
   const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
-  // Draft recovery
-  const draft = useCreditNoteDraft(clientId);
+  // Draft recovery (only save when on this tab)
+  const draft = useCreditNoteDraft(clientId, isActiveTab);
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
 
   useEffect(() => {
-    // Reset draft check flag when clientId changes (navigating to different client)
+    // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
     draftCheckDoneRef.current = false;
     
     // Check for draft BEFORE loading client data
@@ -105,7 +109,7 @@ export default function CreditNotePage() {
     };
     
     initPage();
-  }, [clientId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [clientId, pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     try {
