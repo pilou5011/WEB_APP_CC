@@ -40,7 +40,7 @@ export default function ClientLayout({
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-slate-200 bg-slate-50 p-4">
+      <aside className="sticky top-16 h-[calc(100vh-4rem)] w-64 border-r border-slate-200 bg-slate-50 p-4 overflow-y-auto">
         <nav className="space-y-2">
           {navItems.map((item) => {
             const Icon = item.icon;

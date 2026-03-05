@@ -137,7 +137,9 @@ function SortableProductRow({
   onAdjustStock,
   clientId,
   expandedProductInfoId,
-  setExpandedProductInfoId
+  setExpandedProductInfoId,
+  lastStockUpdatesByProduct,
+  lastStockUpdatesBySubProduct
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -161,6 +163,8 @@ function SortableProductRow({
   clientId: string;
   expandedProductInfoId: string | null;
   setExpandedProductInfoId: React.Dispatch<React.SetStateAction<string | null>>;
+  lastStockUpdatesByProduct: Record<string, StockUpdate>;
+  lastStockUpdatesBySubProduct: Record<string, StockUpdate>;
 }) {
   const {
     attributes,
@@ -244,7 +248,11 @@ function SortableProductRow({
           </p>
         ) : (
           <p className="text-sm font-medium text-slate-600">
-            {cp.current_stock}
+            {(() => {
+              // Utiliser uniquement le dernier stock_update.new_stock
+              const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+              return lastUpdate ? lastUpdate.new_stock : 0;
+            })()}
           </p>
         )}
       </TableCell>
@@ -411,6 +419,9 @@ export default function ClientDetailPage() {
 
   const [client, setClient] = useState<Client | null>(null);
   const [stockUpdates, setStockUpdates] = useState<StockUpdate[]>([]);
+  // Maps pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
+  const [lastStockUpdatesByProduct, setLastStockUpdatesByProduct] = useState<Record<string, StockUpdate>>({});
+  const [lastStockUpdatesBySubProduct, setLastStockUpdatesBySubProduct] = useState<Record<string, StockUpdate>>({});
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [clientProducts, setClientProducts] = useState<(ClientProduct & { product?: Product })[]>([]);
   const [subProducts, setSubProducts] = useState<Record<string, SubProduct[]>>({}); // product_id -> SubProduct[]
@@ -949,6 +960,7 @@ export default function ClientDetailPage() {
       }
 
       // Load stock updates to get last product_info for each product
+      // Récupérer tous les stock_updates pour avoir l'historique complet
       const { data: updatesData, error: updatesError } = await supabase
         .from('stock_updates')
         .select('*')
@@ -959,11 +971,44 @@ export default function ClientDetailPage() {
       if (updatesError) throw updatesError;
       setStockUpdates(updatesData || []);
 
+      // Créer un map optimisé pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
+      // Structure: { 'product_id': lastStockUpdate, 'sub_product_id': lastStockUpdate }
+      // Inclure tous les stock_updates, y compris ceux avec invoice_id = null
+      const lastStockUpdatesByProductMap: Record<string, StockUpdate> = {};
+      const lastStockUpdatesBySubProductMap: Record<string, StockUpdate> = {};
+      
+      (updatesData || []).forEach((update: StockUpdate) => {
+        if (update.product_id && !update.sub_product_id) {
+          // Produit sans sous-produit
+          const key = update.product_id;
+          if (!lastStockUpdatesByProductMap[key] || 
+              new Date(update.created_at) > new Date(lastStockUpdatesByProductMap[key].created_at)) {
+            lastStockUpdatesByProductMap[key] = update;
+          }
+        } else if (update.sub_product_id) {
+          // Sous-produit
+          const key = update.sub_product_id;
+          if (!lastStockUpdatesBySubProductMap[key] || 
+              new Date(update.created_at) > new Date(lastStockUpdatesBySubProductMap[key].created_at)) {
+            lastStockUpdatesBySubProductMap[key] = update;
+          }
+        }
+      });
+      
+      // Stocker ces maps dans le state
+      setLastStockUpdatesByProduct(lastStockUpdatesByProductMap);
+      setLastStockUpdatesBySubProduct(lastStockUpdatesBySubProductMap);
+
       // Initialize per-product form defaults with last product_info
-      // Preserve existing form data to avoid losing user input
+      // Preserve existing form data to avoid losing user input (unless forms were explicitly cleared)
+      // IMPORTANT: Si perProductForm est vide (objet vide), cela signifie qu'il a été explicitement vidé
+      // et on ne doit PAS préserver les données. On crée des formulaires complètement vides.
       const currentForm = perProductForm;
       const currentSubProductForm = perSubProductForm;
       const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
+      
+      // Si le formulaire a été explicitement vidé (objet vide), ne pas préserver les données
+      const shouldPreserveFormData = Object.keys(currentForm).length > 0;
       
       cpWithTyped.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
@@ -972,24 +1017,39 @@ export default function ClientDetailPage() {
             update.product_id === cp.product_id
         );
         
-        // Preserve existing form data if it exists, otherwise use defaults
-        const existingForm = currentForm[cp.id];
-        initialForm[cp.id] = { 
-          counted_stock: existingForm?.counted_stock || '', 
-          stock_added: existingForm?.stock_added || '', 
-          reassort: existingForm?.reassort || '',
-          product_info: existingForm?.product_info || lastUpdate?.product_info || '' 
-        };
+        // Si le formulaire a été vidé, créer des valeurs vides pour tous les champs sauf product_info
+        if (!shouldPreserveFormData) {
+          initialForm[cp.id] = { 
+            counted_stock: '', 
+            stock_added: '', 
+            reassort: '',
+            product_info: lastUpdate?.product_info || '' 
+          };
+        } else {
+          // Preserve existing form data if it exists, otherwise use defaults
+          const existingForm = currentForm[cp.id];
+          initialForm[cp.id] = { 
+            counted_stock: existingForm?.counted_stock || '', 
+            stock_added: existingForm?.stock_added || '', 
+            reassort: existingForm?.reassort || '',
+            product_info: existingForm?.product_info || lastUpdate?.product_info || '' 
+          };
+        }
       });
 
       // Preserve existing sub-product form data (don't reset it)
       // Only initialize new sub-products if needed, but keep existing data
+      // If perSubProductForm was explicitly cleared (empty object), don't preserve
       setPerSubProductForm((prev) => {
-        // Keep all existing sub-product form data
+        // If prev is empty, return empty (was explicitly cleared)
+        if (Object.keys(prev).length === 0) {
+          return {};
+        }
+        // Otherwise keep all existing sub-product form data
         return { ...prev };
       });
 
-      setPerProductForm(initialForm);
+      //setPerProductForm(initialForm);
 
       // Load global invoices
       const { data: invoicesData, error: invoicesError } = await supabase
@@ -1090,7 +1150,9 @@ export default function ClientDetailPage() {
 
           totalCountedStock += parseInt(formData.counted_stock) || 0;
           totalStockAdded += parseInt(formData.stock_added) || 0;
-          totalPreviousStock += csp.current_stock || 0;
+          // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+          const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+          totalPreviousStock += lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
         }
 
         if (!hasAnySubProductData) continue;
@@ -1104,7 +1166,7 @@ export default function ClientDetailPage() {
         const newDeposit = totalStockAdded;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const stockAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = perProductForm[cp.id]?.product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1162,10 +1224,12 @@ export default function ClientDetailPage() {
           }
         }
 
-        const previousStock = cp.current_stock;
+        // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+        const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+        const previousStock = lastUpdate ? lastUpdate.new_stock : 0;
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
-        const stockAdded = Math.max(0, newStock - countedStock);
+        const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = form.product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1408,7 +1472,9 @@ export default function ClientDetailPage() {
               const hasCountedStock = formData?.counted_stock && formData.counted_stock.trim() !== '';
               const hasNewDeposit = formData?.stock_added && formData.stock_added.trim() !== '';
 
-              const previousStock = csp.current_stock;
+              // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+              const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+              const previousStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
               
               // Déterminer le nouveau stock et le stock compté pour ce sous-produit
               let newStock: number;
@@ -1427,7 +1493,7 @@ export default function ClientDetailPage() {
                 }
                 
                 const stockSold = Math.max(0, previousStock - countedStock);
-                const stockAdded = Math.max(0, newStock - countedStock);
+                const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
 
                 totalStockAdded += stockAdded;
                 totalStockSold += stockSold;
@@ -1498,10 +1564,12 @@ export default function ClientDetailPage() {
 
             const countedStock = parseInt(form.counted_stock);
             const newDeposit = parseInt(form.stock_added);
-            const previousStock = cp.current_stock;
+            // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+            const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+            const previousStock = lastUpdate ? lastUpdate.new_stock : 0;
             const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
-            const stockAdded = Math.max(0, newStock - countedStock);
+            const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
             const productInfo = form.product_info || '';
             // Calculer le prix effectif du produit
             const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
@@ -1588,9 +1656,29 @@ export default function ClientDetailPage() {
             .eq('invoice_id', invoiceData.id)
             .eq('company_id', companyId);
 
+          // Recharger les clientProducts avec les display_order à jour avant de générer les PDFs
+          const { data: updatedClientProducts, error: cpReloadError } = await supabase
+            .from('client_products')
+            .select(`
+              *,
+              product:products(*)
+            `)
+            .eq('client_id', clientId)
+            .eq('company_id', companyId)
+            .is('deleted_at', null)
+            .order('display_order', { ascending: true });
+
+          if (cpReloadError) {
+            console.error('Error reloading clientProducts for PDF generation:', cpReloadError);
+            // Continuer avec les clientProducts existants en cas d'erreur
+          }
+
+          // Utiliser les clientProducts mis à jour si disponibles, sinon utiliser ceux du state
+          const clientProductsToUse = updatedClientProducts || clientProducts;
+
           // Transformer clientProducts pour inclure Product (majuscule) attendu par pdf-generators.ts
           // Les données sont chargées avec product (minuscule) mais les fonctions PDF attendent Product (majuscule)
-          const clientProductsForPdf = (clientProducts || []).map((cp: any) => ({
+          const clientProductsForPdf = (clientProductsToUse || []).map((cp: any) => ({
             ...cp,
             Product: cp.Product ?? cp.product ?? undefined,
           }));
@@ -1638,10 +1726,16 @@ export default function ClientDetailPage() {
               setGlobalInvoiceDialogOpen(true);
             }
           }
+
+          // ✅ Vider les formulaires après succès complet de la génération des PDFs
+          setPerProductForm({});
+          setPerSubProductForm({});
+          setPendingAdjustments([]);
         } catch (pdfError) {
           console.error('Error generating PDFs:', pdfError);
           // Ne pas bloquer le processus si la génération des PDFs échoue
           toast.warning('Les documents PDF n\'ont pas pu être générés automatiquement. Vous pourrez les générer manuellement depuis l\'historique.');
+          // Ne pas vider les formulaires si la génération des PDFs a échoué
         }
       }
 
@@ -1728,10 +1822,8 @@ export default function ClientDetailPage() {
           console.log('[Draft] Draft deletion verified: no draft remains');
         }
         
-        // Réinitialiser les formulaires pour éviter qu'un auto-save recrée le brouillon
-        setPerProductForm({});
-        setPerSubProductForm({});
-        setPendingAdjustments([]);
+        // Les formulaires ont déjà été vidés après le succès de la génération des PDFs
+        // Pas besoin de les réinitialiser à nouveau ici
         
         // Réactiver l'auto-save après un délai pour s'assurer que la suppression est complète
         setTimeout(() => {
@@ -1975,11 +2067,14 @@ export default function ClientDetailPage() {
           toast.error('Produit non trouvé');
           return;
         }
+        // Utiliser uniquement le dernier stock_update.new_stock
+        const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+        const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
         setItemToAdjust({
           type: 'product',
           id: cp.id,
           name: cp.product?.name || 'Produit',
-          currentStock: cp.current_stock || 0,
+          currentStock,
           productId: cp.product_id
         });
       } else if (type === 'sub-product') {
@@ -1988,8 +2083,9 @@ export default function ClientDetailPage() {
           toast.error('Sous-produit non trouvé');
           return;
         }
-        const csp = clientSubProducts[sp.id];
-        const currentStock = csp ? (csp.current_stock || 0) : 0;
+        // Utiliser uniquement le dernier stock_update.new_stock
+        const lastUpdate = lastStockUpdatesBySubProduct[sp.id];
+        const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
         setItemToAdjust({
           type: 'sub-product',
           id: sp.id,
@@ -2142,24 +2238,33 @@ export default function ClientDetailPage() {
           if (allSubProducts && allSubProducts.length > 0) {
             const subProductIds = allSubProducts.map(sp => sp.id);
 
-            // Get all client_sub_products for these sub-products
-            const { data: allClientSubProducts, error: cspError } = await supabase
-              .from('client_sub_products')
-              .select('sub_product_id, current_stock')
+            // Get all stock_updates for these sub-products to calculate parent stock
+            const { data: allSubProductStockUpdates, error: stockUpdatesError } = await supabase
+              .from('stock_updates')
+              .select('sub_product_id, new_stock, created_at')
               .eq('client_id', clientId)
               .eq('company_id', companyId)
               .in('sub_product_id', subProductIds)
-              .is('deleted_at', null);
+              .order('created_at', { ascending: false });
 
-            if (cspError) throw cspError;
+            if (stockUpdatesError) throw stockUpdatesError;
 
-            // Calculate total stock for parent product
+            // Create a map of the last stock_update.new_stock for each sub-product
+            const lastStockBySubProductId = new Map<string, number>();
+            (allSubProductStockUpdates || []).forEach((update: any) => {
+              if (!lastStockBySubProductId.has(update.sub_product_id)) {
+                lastStockBySubProductId.set(update.sub_product_id, update.new_stock);
+              }
+            });
+
+            // Calculate total stock for parent product using stock_updates
             let parentStock = 0;
-            (allClientSubProducts || []).forEach(csp => {
-              if (csp.sub_product_id === itemToAdjust.id) {
+            subProductIds.forEach(subProductId => {
+              if (subProductId === itemToAdjust.id) {
                 parentStock += newStockValue;
               } else {
-                parentStock += csp.current_stock || 0;
+                const lastStock = lastStockBySubProductId.get(subProductId) || 0;
+                parentStock += lastStock;
               }
             });
 
@@ -2176,7 +2281,20 @@ export default function ClientDetailPage() {
             if (cpError) throw cpError;
 
             if (clientProduct) {
-              const previousParentStock = clientProduct.current_stock || 0;
+              // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
+              const { data: lastParentStockUpdate, error: lastParentError } = await supabase
+                .from('stock_updates')
+                .select('new_stock')
+                .eq('client_id', clientId)
+                .eq('company_id', companyId)
+                .eq('product_id', itemToAdjust.productId)
+                .is('sub_product_id', null)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              if (lastParentError) throw lastParentError;
+              const previousParentStock = lastParentStockUpdate?.new_stock || 0;
 
               // Update parent product stock
               const { error: updateParentError } = await supabase
@@ -2869,33 +2987,27 @@ export default function ClientDetailPage() {
 
         if (updateProductError) throw updateProductError;
 
-        // Mettre à jour le stock_update du produit parent avec le total des sous-produits
-        // Récupérer d'abord le dernier stock_update du produit
-        const { data: lastProductStockUpdate, error: fetchStockUpdateError } = await supabase
+        // Créer un stock_update pour le produit parent avec la somme des sous-produits
+        // Ce stock_update représente l'état initial du produit parent lors de l'association
+        const stockUpdateForParentProduct = {
+          client_id: clientId,
+          company_id: companyId,
+          product_id: associateForm.product_id!,
+          sub_product_id: null,
+          previous_stock: 0,
+          counted_stock: 0,
+          stock_sold: 0,
+          stock_added: totalStock,
+          new_stock: totalStock
+        };
+
+        const { error: stockUpdateParentError } = await supabase
           .from('stock_updates')
-          .select('id')
-          .eq('client_id', clientId)
-          .eq('company_id', companyId)
-          .eq('product_id', associateForm.product_id!)
-          .is('sub_product_id', null)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .insert([stockUpdateForParentProduct]);
 
-        if (!fetchStockUpdateError && lastProductStockUpdate) {
-          const { error: updateProductStockUpdateError } = await supabase
-            .from('stock_updates')
-            .update({ 
-              stock_added: totalStock,
-              new_stock: totalStock
-            })
-            .eq('id', lastProductStockUpdate.id)
-            .eq('company_id', companyId);
-
-          if (updateProductStockUpdateError) {
-            console.error('Error updating stock_update for product:', updateProductStockUpdateError);
-            // Ne pas bloquer l'association si la mise à jour du stock_update échoue
-          }
+        if (stockUpdateParentError) {
+          console.error('Error creating stock_update for parent product:', stockUpdateParentError);
+          // Ne pas bloquer l'association si l'insertion du stock_update échoue
         }
 
         // Stock is now managed at client_products and client_sub_products level
@@ -2958,10 +3070,13 @@ export default function ClientDetailPage() {
     return null;
   }
 
-  // Calculate total cards sold from client_products
-  const stockSold = clientProducts.reduce((sum, cp) => {
-    const sold = (cp.initial_stock || 0) - (cp.current_stock || 0);
-    return sum + Math.max(0, sold);
+  // Calculate total cards sold from stock_updates
+  const stockSold = stockUpdates.reduce((sum, update) => {
+    // Ne compter que les stock_sold des produits (pas des sous-produits) et seulement ceux avec invoice_id (ventes facturées)
+    if (update.product_id && !update.sub_product_id && update.invoice_id && update.stock_sold > 0) {
+      return sum + update.stock_sold;
+    }
+    return sum;
   }, 0);
   const amountDue = stockSold * 2;
 
@@ -3240,9 +3355,9 @@ export default function ClientDetailPage() {
 
                         if (hasSubProducts) {
                           productSubProducts.forEach(sp => {
-                            const csp = clientSubProducts[sp.id];
-                            // Inclure tous les sous-produits, même ceux sans client_sub_product (stock = 0)
-                            const subProductStock = csp ? (csp.current_stock || 0) : 0;
+                            // Utiliser uniquement le dernier stock_update.new_stock
+                            const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+                            const subProductStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
                             parentCurrentStock += subProductStock;
                             const formData = perSubProductForm[sp.id];
                             if (formData) {
@@ -3267,6 +3382,8 @@ export default function ClientDetailPage() {
                               parentCurrentStock={parentCurrentStock}
                               perProductForm={perProductForm}
                               setPerProductForm={setPerProductForm}
+                              lastStockUpdatesByProduct={lastStockUpdatesByProduct}
+                              lastStockUpdatesBySubProduct={lastStockUpdatesBySubProduct}
                               clientSubProducts={clientSubProducts}
                               perSubProductForm={perSubProductForm}
                               setPerSubProductForm={setPerSubProductForm}
@@ -3280,10 +3397,9 @@ export default function ClientDetailPage() {
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
-                              const csp = clientSubProducts[sp.id];
-                              // Afficher tous les sous-produits, même s'ils n'ont pas encore de client_sub_product
-                              // (ils seront créés automatiquement lors du chargement)
-                              const currentStock = csp ? (csp.current_stock || 0) : 0;
+                              // Utiliser uniquement le dernier stock_update.new_stock
+                              const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
+                              const currentStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
                               
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
@@ -3302,7 +3418,9 @@ export default function ClientDetailPage() {
                                     </Button>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center bg-[#E8EDF2]">
-                                    <p className="text-xs text-slate-500">{currentStock}</p>
+                                    <p className="text-xs text-slate-500">
+                                      {currentStock}
+                                    </p>
                                   </TableCell>
                                   <TableCell className="align-top py-2 bg-amber-50">
                                     <Input
@@ -3732,11 +3850,16 @@ export default function ClientDetailPage() {
               <AlertDialogDescription>
                 Êtes-vous sûr de vouloir dissocier le produit "{productToDelete?.product?.name}" de ce client ?
                 Cette action est irréversible.
-                {productToDelete && productToDelete.current_stock > 0 && (
-                  <span className="block mt-2 text-orange-600 font-medium">
-                    ⚠️ Attention : Ce produit a encore {productToDelete.current_stock} unité(s) en stock.
-                  </span>
-                )}
+                {productToDelete && (() => {
+                  // Utiliser uniquement le dernier stock_update.new_stock
+                  const lastUpdate = lastStockUpdatesByProduct[productToDelete.product_id || ''];
+                  const currentStock = lastUpdate ? lastUpdate.new_stock : 0;
+                  return currentStock > 0 ? (
+                    <span className="block mt-2 text-orange-600 font-medium">
+                      ⚠️ Attention : Ce produit a encore {currentStock} unité(s) en stock.
+                    </span>
+                  ) : null;
+                })()}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

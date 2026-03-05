@@ -617,13 +617,15 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     const { data: subProducts } = await supabase
       .from('sub_products')
       .select('*')
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .is('deleted_at', null);
 
     const { data: clientSubProducts } = await supabase
       .from('client_sub_products')
       .select('*')
       .eq('client_id', client.id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .is('deleted_at', null);
 
     // Get previous invoice date
     const { data: previousInvoice } = await supabase
@@ -829,34 +831,55 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       }
     });
 
-    // Create maps for last new_stock
-    const lastNewStockByProductId = new Map<string, number>();
-    const lastNewStockBySubProductId = new Map<string, number>();
+    // Créer un map des client_sub_products non supprimés pour vérification rapide
+    // DOIT être créé AVANT d'être utilisé dans subProductsByProductId
+    const clientSubProductsMap = new Map<string, any>();
+    (clientSubProducts || []).forEach(csp => {
+      if (!csp.deleted_at) {
+        clientSubProductsMap.set(csp.sub_product_id, csp);
+      }
+    });
+
+    // Create maps for the *last* stock update per product / sub-product
+    // On parcourt l'historique trié par created_at DESC, donc la première entrée rencontrée est la plus récente
+    const lastStockUpdateByProductId = new Map<string, StockUpdate>();
+    const lastStockUpdateBySubProductId = new Map<string, StockUpdate>();
     
     (historicalStockUpdates || []).forEach((update: StockUpdate) => {
       if (update.product_id && !update.sub_product_id) {
-        if (!lastNewStockByProductId.has(update.product_id)) {
-          lastNewStockByProductId.set(update.product_id, update.new_stock);
+        if (!lastStockUpdateByProductId.has(update.product_id)) {
+          lastStockUpdateByProductId.set(update.product_id, update);
         }
       }
       if (update.sub_product_id) {
-        if (!lastNewStockBySubProductId.has(update.sub_product_id)) {
-          lastNewStockBySubProductId.set(update.sub_product_id, update.new_stock);
+        if (!lastStockUpdateBySubProductId.has(update.sub_product_id)) {
+          lastStockUpdateBySubProductId.set(update.sub_product_id, update);
         }
       }
     });
 
     // Create map of sub-products by Product
+    // Filtrer uniquement les sous-produits non supprimés ET qui existent dans client_sub_products non supprimés
     const subProductsByProductId = new Map<string, SubProduct[]>();
     (subProducts || []).forEach(sp => {
-      if (!subProductsByProductId.has(sp.product_id)) {
-        subProductsByProductId.set(sp.product_id, []);
+      // Vérifier que le sous-produit n'est pas supprimé ET qu'il existe dans client_sub_products non supprimé
+      if (!sp.deleted_at && clientSubProductsMap.has(sp.id)) {
+        if (!subProductsByProductId.has(sp.product_id)) {
+          subProductsByProductId.set(sp.product_id, []);
+        }
+        subProductsByProductId.get(sp.product_id)!.push(sp);
       }
-      subProductsByProductId.get(sp.product_id)!.push(sp);
     });
 
     const tableData: any[] = [];
-    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    // Filtrer les clientProducts pour ne garder que ceux non supprimés
+    // ET vérifier que le produit lui-même (dans la table products) n'est pas supprimé
+    const activeClientProducts = clientProducts.filter(cp => 
+      !cp.deleted_at && 
+      cp.Product && 
+      !cp.Product.deleted_at
+    );
+    const sortedProducts = [...activeClientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
     sortedProducts.forEach((cp) => {
       const productName = cp.Product?.name || 'Product';
@@ -864,100 +887,77 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
       const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesByProductId.get(cp.product_id || '');
       const productSubProducts = subProductsByProductId.get(cp.product_id || '') || [];
       const hasSubProducts = productSubProducts.length > 0;
       
       let previousStock: number;
-      let countedStock: number;
+      let countedStock: number | null;
       let newDeposit: number;
-      let reassort: number;
+      let reassort: number | null;
       
       if (hasSubProducts) {
+        // Produit avec sous-produits : déterminer si AU MOINS un sous-produit a été modifié pour cette facture
+        // Filtrer uniquement les sous-produits non supprimés dans client_sub_products
+        const activeProductSubProducts = productSubProducts.filter(sp => clientSubProductsMap.has(sp.id));
         let totalSubProductCountedStock = 0;
         let totalSubProductPreviousStock = 0;
         let totalSubProductNewDeposit = 0;
         let totalSubProductReassort = 0;
+        let hasInvoiceUpdateForAnySubProduct = false;
         
-        productSubProducts.forEach(sp => {
-          const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
-          
-          let subProductPreviousStock: number;
-          let subProductCountedStock: number;
-          let subProductNewDeposit: number;
-          let subProductReassort: number;
-          
-          if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
-            const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
-                                   subProductStockUpdate.counted_stock !== undefined;
-            
-            if (hasCountedStock && !hasNewDeposit) {
-              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-              subProductPreviousStock = lastNewStock;
-              subProductCountedStock = lastNewStock;
-              subProductReassort = 0;
-              subProductNewDeposit = lastNewStock;
-            } else if (hasCountedStock && hasNewDeposit) {
-              subProductPreviousStock = subProductStockUpdate.previous_stock;
-              subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.stock_added;
-              subProductNewDeposit = subProductStockUpdate.new_stock;
-            } else {
-              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-              subProductPreviousStock = lastNewStock;
-              subProductCountedStock = lastNewStock;
-              subProductReassort = 0;
-              subProductNewDeposit = lastNewStock;
-            }
+        activeProductSubProducts.forEach(sp => {
+          const invoiceSubUpdate = stockUpdatesBySubProductId.get(sp.id);
+          if (invoiceSubUpdate) {
+            hasInvoiceUpdateForAnySubProduct = true;
+            totalSubProductPreviousStock += invoiceSubUpdate.previous_stock || 0;
+            totalSubProductCountedStock += invoiceSubUpdate.counted_stock || 0;
+            totalSubProductReassort += invoiceSubUpdate.stock_added || 0;
+            totalSubProductNewDeposit += invoiceSubUpdate.new_stock || 0;
           } else {
-            const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-            subProductPreviousStock = lastNewStock;
-            subProductCountedStock = lastNewStock;
-            subProductReassort = 0;
-            subProductNewDeposit = lastNewStock;
+            // Aucun mouvement sur ce sous-produit pour cette facture → utiliser la dernière mise à jour globale
+            const lastSubUpdate = lastStockUpdateBySubProductId.get(sp.id);
+            if (lastSubUpdate) {
+              // Ancien dépôt et Nouveau dépôt = dernier new_stock, Stock compté et Réassort = "-"
+              totalSubProductPreviousStock += lastSubUpdate.new_stock || 0;
+              totalSubProductNewDeposit += lastSubUpdate.new_stock || 0;
+            }
           }
-          
-          totalSubProductCountedStock += subProductCountedStock;
-          totalSubProductPreviousStock += subProductPreviousStock;
-          totalSubProductNewDeposit += subProductNewDeposit;
-          totalSubProductReassort += subProductReassort;
         });
         
         previousStock = totalSubProductPreviousStock;
-        countedStock = totalSubProductCountedStock;
-        reassort = totalSubProductReassort;
         newDeposit = totalSubProductNewDeposit;
-      } else {
-        if (stockUpdate) {
-          const hasNewDeposit = stockUpdate.stock_added > 0;
-          const hasCountedStock = stockUpdate.counted_stock !== null && 
-                                 stockUpdate.counted_stock !== undefined;
-          
-          if (hasCountedStock && !hasNewDeposit) {
-            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
-            previousStock = lastNewStock;
-            countedStock = lastNewStock;
-            reassort = 0;
-            newDeposit = lastNewStock;
-          } else if (hasCountedStock && hasNewDeposit) {
-            previousStock = stockUpdate.previous_stock;
-            countedStock = stockUpdate.counted_stock;
-            reassort = stockUpdate.stock_added;
-            newDeposit = stockUpdate.new_stock;
-          } else {
-            const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
-            previousStock = lastNewStock;
-            countedStock = lastNewStock;
-            reassort = 0;
-            newDeposit = lastNewStock;
-          }
+
+        if (hasInvoiceUpdateForAnySubProduct) {
+          countedStock = totalSubProductCountedStock;
+          reassort = totalSubProductReassort;
         } else {
-          const lastNewStock = lastNewStockByProductId.get(cp.product_id || '') || 0;
-          previousStock = lastNewStock;
-          countedStock = lastNewStock;
-          reassort = 0;
-          newDeposit = lastNewStock;
+          countedStock = null;
+          reassort = null;
+        }
+      } else {
+        // Produit sans sous-produits
+        const invoiceUpdate = stockUpdatesByProductId.get(cp.product_id || '');
+        const lastProductUpdate = lastStockUpdateByProductId.get(cp.product_id || '');
+
+        if (invoiceUpdate) {
+          // Le produit a été modifié lors de cette mise à jour de stock → utiliser la ligne liée à cette facture
+          previousStock = invoiceUpdate.previous_stock || 0;
+          countedStock = invoiceUpdate.counted_stock || 0;
+          reassort = invoiceUpdate.stock_added || 0;
+          newDeposit = invoiceUpdate.new_stock || 0;
+        } else if (lastProductUpdate) {
+          // Aucun mouvement pour cette facture → utiliser la dernière ligne globale
+          // Ancien dépôt et Nouveau dépôt = dernier new_stock, Stock compté et Réassort = "-"
+          previousStock = lastProductUpdate.new_stock || 0;
+          newDeposit = lastProductUpdate.new_stock || 0;
+          countedStock = null;
+          reassort = null;
+        } else {
+          // Aucun historique → tout à zéro, avec "-" pour Stock compté et Réassort
+          previousStock = 0;
+          newDeposit = 0;
+          countedStock = null;
+          reassort = null;
         }
       }
       
@@ -967,52 +967,44 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
         previousStock.toString(),
-        countedStock.toString(),
-        reassort.toString(),
+        countedStock === null ? '-' : countedStock.toString(),
+        reassort === null ? '-' : reassort.toString(),
         newDeposit.toString()
       ];
       
       tableData.push(productRow);
 
       // Add sub-products
+      // Filtrer uniquement les sous-produits qui existent dans client_sub_products non supprimés
       if (hasSubProducts) {
-        productSubProducts.forEach(sp => {
-          const subProductStockUpdate = stockUpdatesBySubProductId.get(sp.id);
-          
-          let subProductPreviousStock: number;
-          let subProductCountedStock: number;
-          let subProductNewDeposit: number;
-          let subProductReassort: number;
+        const activeSubProducts = productSubProducts.filter(sp => clientSubProductsMap.has(sp.id));
+        activeSubProducts.forEach(sp => {
+          const invoiceSubUpdate = stockUpdatesBySubProductId.get(sp.id);
+          const lastSubUpdate = lastStockUpdateBySubProductId.get(sp.id);
 
-          if (subProductStockUpdate) {
-            const hasNewDeposit = subProductStockUpdate.stock_added > 0;
-            const hasCountedStock = subProductStockUpdate.counted_stock !== null && 
-                                   subProductStockUpdate.counted_stock !== undefined;
-            
-            if (hasCountedStock && !hasNewDeposit) {
-              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-              subProductPreviousStock = lastNewStock;
-              subProductCountedStock = lastNewStock;
-              subProductReassort = 0;
-              subProductNewDeposit = lastNewStock;
-            } else if (hasCountedStock && hasNewDeposit) {
-              subProductPreviousStock = subProductStockUpdate.previous_stock;
-              subProductCountedStock = subProductStockUpdate.counted_stock;
-              subProductReassort = subProductStockUpdate.stock_added;
-              subProductNewDeposit = subProductStockUpdate.new_stock;
-            } else {
-              const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-              subProductPreviousStock = lastNewStock;
-              subProductCountedStock = lastNewStock;
-              subProductReassort = 0;
-              subProductNewDeposit = lastNewStock;
-            }
+          let subProductPreviousStock: number;
+          let subProductCountedStock: number | null;
+          let subProductReassort: number | null;
+          let subProductNewDeposit: number;
+
+          if (invoiceSubUpdate) {
+            // Sous-produit modifié pour cette facture → utiliser la ligne liée à cette facture
+            subProductPreviousStock = invoiceSubUpdate.previous_stock || 0;
+            subProductCountedStock = invoiceSubUpdate.counted_stock || 0;
+            subProductReassort = invoiceSubUpdate.stock_added || 0;
+            subProductNewDeposit = invoiceSubUpdate.new_stock || 0;
+          } else if (lastSubUpdate) {
+            // Aucun mouvement pour cette facture → utiliser la dernière ligne globale
+            // Ancien dépôt et Nouveau dépôt = dernier new_stock, Stock compté et Réassort = "-"
+            subProductPreviousStock = lastSubUpdate.new_stock || 0;
+            subProductNewDeposit = lastSubUpdate.new_stock || 0;
+            subProductCountedStock = null;
+            subProductReassort = null;
           } else {
-            const lastNewStock = lastNewStockBySubProductId.get(sp.id) || 0;
-            subProductPreviousStock = lastNewStock;
-            subProductCountedStock = lastNewStock;
-            subProductNewDeposit = lastNewStock;
-            subProductReassort = 0;
+            subProductPreviousStock = 0;
+            subProductNewDeposit = 0;
+            subProductCountedStock = null;
+            subProductReassort = null;
           }
 
           const subProductName = sp.name || 'Sous-produit';
@@ -1023,8 +1015,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
             '',
             '',
             subProductPreviousStock.toString(),
-            subProductCountedStock.toString(),
-            subProductReassort.toString(),
+            subProductCountedStock === null ? '-' : subProductCountedStock.toString(),
+            subProductReassort === null ? '-' : subProductReassort.toString(),
             subProductNewDeposit.toString()
           ]);
         });
@@ -1456,22 +1448,90 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     // Tableau des produits
     const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
-    const stockUpdatesMap = new Map<string, StockUpdate>();
-    stockUpdates.forEach((update) => {
-      if (update.product_id) {
-        stockUpdatesMap.set(update.product_id, update);
+    // Charger les sous-produits pour tous les produits
+    const productIds = sortedProducts.map(cp => cp.product_id).filter(Boolean) as string[];
+    let subProductsByProductId: Record<string, any[]> = {};
+    
+    if (productIds.length > 0) {
+      const { data: subProductsData, error: subProductsError } = await supabase
+        .from('sub_products')
+        .select('*')
+        .in('product_id', productIds)
+        .eq('company_id', companyId)
+        .is('deleted_at', null);
+      
+      if (subProductsError) throw subProductsError;
+      
+      (subProductsData || []).forEach((sp: any) => {
+        if (!subProductsByProductId[sp.product_id]) {
+          subProductsByProductId[sp.product_id] = [];
+        }
+        subProductsByProductId[sp.product_id].push(sp);
+      });
+    }
+    
+    // Créer des maps pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
+    // Filtrer uniquement les produits/sous-produits non supprimés
+    const lastStockUpdateByProductId = new Map<string, StockUpdate>();
+    const lastStockUpdateBySubProductId = new Map<string, StockUpdate>();
+    
+    // Parcourir tous les stock_updates (de la base de données) triés par date décroissante
+    (allStockUpdates || []).forEach((update: StockUpdate) => {
+      if (update.product_id && !update.sub_product_id) {
+        // Produit sans sous-produit
+        const key = update.product_id;
+        if (!lastStockUpdateByProductId.has(key) || 
+            new Date(update.created_at) > new Date(lastStockUpdateByProductId.get(key)!.created_at)) {
+          // Vérifier que le produit n'est pas supprimé
+          const product = sortedProducts.find(cp => cp.product_id === key);
+          if (product && !product.deleted_at) {
+            lastStockUpdateByProductId.set(key, update);
+          }
+        }
+      } else if (update.sub_product_id) {
+        // Sous-produit
+        const key = update.sub_product_id;
+        if (!lastStockUpdateBySubProductId.has(key) || 
+            new Date(update.created_at) > new Date(lastStockUpdateBySubProductId.get(key)!.created_at)) {
+          // Vérifier que le sous-produit n'est pas supprimé
+          const subProduct = Object.values(subProductsByProductId).flat().find(sp => sp.id === key);
+          if (subProduct && !subProduct.deleted_at) {
+            lastStockUpdateBySubProductId.set(key, update);
+          }
+        }
       }
     });
     
-    const tableData = sortedProducts.map((cp) => {
+    // Filtrer les produits non supprimés avant de créer le tableau
+    const activeProducts = sortedProducts.filter(cp => !cp.deleted_at);
+    
+    const tableData = activeProducts.map((cp) => {
       const productName = cp.Product?.name || 'Product';
       const info = productInfos[cp.product_id || ''] || '';
       const barcode = cp.Product?.barcode || ''; // Code barre produit
       const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
       const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
-      const stockUpdate = stockUpdatesMap.get(cp.product_id || '');
-      const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
+      // Calculer le stock pour "Qté Remise" selon les règles :
+      // - Produit sans sous-produits : dernier new_stock du produit (non supprimé)
+      // - Produit avec sous-produits : somme des derniers new_stock de ses sous-produits (non supprimés)
+      let stock = 0;
+      const productSubProducts = (subProductsByProductId[cp.product_id || ''] || []).filter((sp: any) => !sp.deleted_at);
+      const hasSubProducts = productSubProducts.length > 0;
+      
+      if (hasSubProducts) {
+        // Produit avec sous-produits : somme des new_stock de tous les sous-produits non supprimés
+        productSubProducts.forEach((sp: any) => {
+          const lastSubProductUpdate = lastStockUpdateBySubProductId.get(sp.id);
+          if (lastSubProductUpdate) {
+            stock += lastSubProductUpdate.new_stock || 0;
+          }
+        });
+      } else {
+        // Produit sans sous-produits : dernier new_stock du produit (non supprimé)
+        const lastProductUpdate = lastStockUpdateByProductId.get(cp.product_id || '');
+        stock = lastProductUpdate ? (lastProductUpdate.new_stock || 0) : 0;
+      }
       
       return [
         productName,
@@ -1479,7 +1539,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         barcode, // Code barre produit
         `${effectivePrice.toFixed(2)} €`,
         effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-        stock
+        stock.toString()
       ];
     });
 
