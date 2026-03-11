@@ -2620,7 +2620,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.saint_valentin}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, saint_valentin: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                         <div>
@@ -2630,7 +2630,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.communion}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, communion: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                         <div>
@@ -2640,7 +2640,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.paques}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, paques: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                         <div>
@@ -2650,7 +2650,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.premier_mai}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, premier_mai: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                         <div>
@@ -2660,7 +2660,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.fete_des_meres}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, fete_des_meres: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                         <div>
@@ -2670,7 +2670,7 @@ export default function ClientInfoPage() {
                             min={0}
                             value={cardsQuantities.fete_des_peres}
                             onChange={(e) => setCardsQuantities({ ...cardsQuantities, fete_des_peres: e.target.value })}
-                            className="mt-1.5"
+                            className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                         </div>
                       </div>
@@ -2685,6 +2685,7 @@ export default function ClientInfoPage() {
                               placeholder="Min"
                               value={cardsQuantities.bapteme_min}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, bapteme_min: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <Input
                               type="number"
@@ -2692,6 +2693,7 @@ export default function ClientInfoPage() {
                               placeholder="Max"
                               value={cardsQuantities.bapteme_max}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, bapteme_max: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                         </div>
@@ -2705,6 +2707,7 @@ export default function ClientInfoPage() {
                               placeholder="Min"
                               value={cardsQuantities.mariage_min}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, mariage_min: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <Input
                               type="number"
@@ -2712,6 +2715,7 @@ export default function ClientInfoPage() {
                               placeholder="Max"
                               value={cardsQuantities.mariage_max}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, mariage_max: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                         </div>
@@ -2725,6 +2729,7 @@ export default function ClientInfoPage() {
                               placeholder="Min"
                               value={cardsQuantities.anniversaire_mariage_min}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, anniversaire_mariage_min: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <Input
                               type="number"
@@ -2732,6 +2737,7 @@ export default function ClientInfoPage() {
                               placeholder="Max"
                               value={cardsQuantities.anniversaire_mariage_max}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, anniversaire_mariage_max: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                         </div>
@@ -2745,6 +2751,7 @@ export default function ClientInfoPage() {
                               placeholder="Min"
                               value={cardsQuantities.retraite_min}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, retraite_min: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <Input
                               type="number"
@@ -2752,6 +2759,7 @@ export default function ClientInfoPage() {
                               placeholder="Max"
                               value={cardsQuantities.retraite_max}
                               onChange={(e) => setCardsQuantities({ ...cardsQuantities, retraite_max: e.target.value })}
+                              className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                           </div>
                         </div>
