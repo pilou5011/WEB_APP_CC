@@ -12,8 +12,13 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: 'Gestion Dépôts-Ventes',
+  title: 'Gaston Stock',
   description: 'Application de gestion dépôts-ventes',
+  icons: {
+    icon: '/logo_onglet_internet.png',
+    shortcut: '/logo_onglet_internet.png',
+    apple: '/logo_onglet_internet.png',
+  },
 };
 
 export default function RootLayout({
