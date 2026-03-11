@@ -107,6 +107,7 @@ export type Client = {
   email: string | null;
   comment: string | null;
   tour_name_id: string | null;
+  cards_quantities: any | null;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;

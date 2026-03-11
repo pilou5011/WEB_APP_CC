@@ -2529,6 +2529,47 @@ export async function generateClientInfoPDF(
 
     addSection('Informations complémentaires', complementaryFields);
 
+    /* --------------------------------------------------
+     * Cartes occasions spéciales
+     * -------------------------------------------------- */
+    const cardsLabels: Record<string, string> = {
+      saint_valentin: 'Saint-Valentin',
+      communion: 'Communion',
+      paques: 'Pâques',
+      premier_mai: '1er mai',
+      fete_des_meres: "Fête des mères",
+      fete_des_peres: "Fête des pères",
+      bapteme: 'Baptême',
+      mariage: 'Mariage',
+      anniversaire_mariage: 'Anniversaire de mariage',
+      retraite: 'Retraite',
+    };
+
+    const cardsFields: Array<{ label: string; value: string }> = [];
+    if (client.cards_quantities && Array.isArray(client.cards_quantities)) {
+      for (const item of client.cards_quantities as any[]) {
+        if (!item || typeof item !== 'object') continue;
+        const label = cardsLabels[item.event] || item.event;
+        const value =
+          item.value != null
+            ? String(item.value)
+            : item.min != null && item.max != null
+              ? `${item.min} - ${item.max}`
+              : item.min != null
+                ? `≥ ${item.min}`
+                : item.max != null
+                  ? `≤ ${item.max}`
+                  : null;
+        if (value != null) {
+          cardsFields.push({ label, value });
+        }
+      }
+    }
+
+    if (cardsFields.length > 0) {
+      addSection('Cartes occasions spéciales', cardsFields);
+    }
+
     return doc.output('blob');
   } catch (error) {
     console.error('Error generating client info PDF:', error);

@@ -32,6 +32,122 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i.toString().padStart(
 // Options de minutes - identiques aux horaires d'ouverture
 const MINUTE_OPTIONS = ['00', '15', '30', '45'];
 
+type CardsQuantitiesForm = {
+  saint_valentin: string;
+  communion: string;
+  paques: string;
+  premier_mai: string;
+  fete_des_meres: string;
+  fete_des_peres: string;
+  bapteme_min: string;
+  bapteme_max: string;
+  mariage_min: string;
+  mariage_max: string;
+  anniversaire_mariage_min: string;
+  anniversaire_mariage_max: string;
+  retraite_min: string;
+  retraite_max: string;
+};
+
+const emptyCardsQuantities: CardsQuantitiesForm = {
+  saint_valentin: '',
+  communion: '',
+  paques: '',
+  premier_mai: '',
+  fete_des_meres: '',
+  fete_des_peres: '',
+  bapteme_min: '',
+  bapteme_max: '',
+  mariage_min: '',
+  mariage_max: '',
+  anniversaire_mariage_min: '',
+  anniversaire_mariage_max: '',
+  retraite_min: '',
+  retraite_max: '',
+};
+
+function parseCardsQuantitiesToForm(cards: any | null): CardsQuantitiesForm {
+  const form: CardsQuantitiesForm = { ...emptyCardsQuantities };
+  if (!Array.isArray(cards)) return form;
+
+  for (const item of cards) {
+    if (!item || typeof item !== 'object') continue;
+    switch (item.event) {
+      case 'saint_valentin':
+        form.saint_valentin = item.value?.toString() ?? '';
+        break;
+      case 'communion':
+        form.communion = item.value?.toString() ?? '';
+        break;
+      case 'paques':
+        form.paques = item.value?.toString() ?? '';
+        break;
+      case 'premier_mai':
+        form.premier_mai = item.value?.toString() ?? '';
+        break;
+      case 'fete_des_meres':
+        form.fete_des_meres = item.value?.toString() ?? '';
+        break;
+      case 'fete_des_peres':
+        form.fete_des_peres = item.value?.toString() ?? '';
+        break;
+      case 'bapteme':
+        form.bapteme_min = item.min?.toString() ?? '';
+        form.bapteme_max = item.max?.toString() ?? '';
+        break;
+      case 'mariage':
+        form.mariage_min = item.min?.toString() ?? '';
+        form.mariage_max = item.max?.toString() ?? '';
+        break;
+      case 'anniversaire_mariage':
+        form.anniversaire_mariage_min = item.min?.toString() ?? '';
+        form.anniversaire_mariage_max = item.max?.toString() ?? '';
+        break;
+      case 'retraite':
+        form.retraite_min = item.min?.toString() ?? '';
+        form.retraite_max = item.max?.toString() ?? '';
+        break;
+    }
+  }
+
+  return form;
+}
+
+function buildCardsQuantitiesFromForm(form: CardsQuantitiesForm): any[] | null {
+  const result: any[] = [];
+
+  const addSingle = (event: string, valueStr: string) => {
+    const n = parseInt(valueStr, 10);
+    if (!isNaN(n)) {
+      result.push({ event, value: n });
+    }
+  };
+
+  const addRange = (event: string, minStr: string, maxStr: string) => {
+    const min = parseInt(minStr, 10);
+    const max = parseInt(maxStr, 10);
+    if (isNaN(min) && isNaN(max)) return;
+    const obj: any = { event };
+    if (!isNaN(min)) obj.min = min;
+    if (!isNaN(max)) obj.max = max;
+    result.push(obj);
+  };
+
+  addSingle('saint_valentin', form.saint_valentin);
+  addSingle('communion', form.communion);
+  addSingle('paques', form.paques);
+  addSingle('premier_mai', form.premier_mai);
+  addSingle('fete_des_meres', form.fete_des_meres);
+  addSingle('fete_des_peres', form.fete_des_peres);
+
+  addRange('bapteme', form.bapteme_min, form.bapteme_max);
+  addRange('mariage', form.mariage_min, form.mariage_max);
+  addRange('anniversaire_mariage', form.anniversaire_mariage_min, form.anniversaire_mariage_max);
+  addRange('retraite', form.retraite_min, form.retraite_max);
+
+  return result.length ? result : null;
+}
+
 export default function ClientInfoPage() {
   const router = useRouter();
   const params = useParams();
@@ -76,6 +192,7 @@ export default function ClientInfoPage() {
   const [openingHours, setOpeningHours] = useState<WeekSchedule>(getDefaultWeekSchedule());
   const [marketDaysSchedule, setMarketDaysSchedule] = useState<MarketDaysSchedule>(getDefaultMarketDaysSchedule());
   const [vacationPeriods, setVacationPeriods] = useState<VacationPeriod[]>([]);
+  const [cardsQuantities, setCardsQuantities] = useState<CardsQuantitiesForm>(emptyCardsQuantities);
   const [formData, setFormData] = useState({
     name: '',
     company_name: '',
@@ -188,6 +305,10 @@ export default function ClientInfoPage() {
       } else {
         setTourNameName('');
       }
+
+      setCardsQuantities(
+        parseCardsQuantitiesToForm((data as any).cards_quantities ?? null)
+      );
 
       // Charger les horaires d'ouverture et fusionner avec le schedule par défaut
       const defaultSchedule = getDefaultWeekSchedule();
@@ -846,6 +967,12 @@ export default function ClientInfoPage() {
       return true;
     }
 
+    const currentCards = buildCardsQuantitiesFromForm(cardsQuantities);
+    const clientCards = (client as any).cards_quantities ?? null;
+    if (JSON.stringify(currentCards || null) !== JSON.stringify(clientCards || null)) {
+      return true;
+    }
+    
     return false;
   };
 
@@ -928,6 +1055,9 @@ export default function ClientInfoPage() {
     } else {
       setVacationPeriods([]);
     }
+    setCardsQuantities(
+      parseCardsQuantitiesToForm((client as any).cards_quantities ?? null)
+    );
     setShowNewTypeInput(false);
     setNewTypeName('');
   };
@@ -1077,6 +1207,7 @@ export default function ClientInfoPage() {
           email: formData.email || null,
           comment: formData.comment || null,
           tour_name_id: formData.tour_name_id || null,
+          cards_quantities: buildCardsQuantitiesFromForm(cardsQuantities),
           updated_at: new Date().toISOString()
         })
         .eq('id', clientId)
@@ -1585,6 +1716,46 @@ export default function ClientInfoPage() {
                       <p className="text-base font-medium mt-1 whitespace-pre-wrap">
                         {client.comment || <span className="text-slate-400">Non renseigné</span>}
                       </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Nombre de cartes</Label>
+                      <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-200">
+                        {client.cards_quantities && Array.isArray(client.cards_quantities) && client.cards_quantities.length > 0 ? (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm font-medium">
+                            {(() => {
+                              const labels: Record<string, string> = {
+                                saint_valentin: 'Saint-Valentin',
+                                communion: 'Communion',
+                                paques: 'Pâques',
+                                premier_mai: '1er mai',
+                                fete_des_meres: "Fête des mères",
+                                fete_des_peres: "Fête des pères",
+                                bapteme: 'Baptême',
+                                mariage: 'Mariage',
+                                anniversaire_mariage: 'Anniversaire de mariage',
+                                retraite: 'Retraite',
+                              };
+                              return (client.cards_quantities as any[]).map((item: any, i: number) => {
+                                const label = labels[item.event] || item.event;
+                                const value = item.value != null
+                                  ? String(item.value)
+                                  : (item.min != null && item.max != null)
+                                    ? `${item.min} - ${item.max}`
+                                    : item.min != null ? `≥ ${item.min}` : item.max != null ? `≤ ${item.max}` : null;
+                                return value != null ? (
+                                  <React.Fragment key={i}>
+                                    <div className="text-slate-600">{label}</div>
+                                    <div className="text-slate-800">{value}</div>
+                                  </React.Fragment>
+                                ) : null;
+                              }).filter(Boolean);
+                            })()}
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">Non renseigné</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2434,6 +2605,157 @@ export default function ClientInfoPage() {
                         placeholder="Informations supplémentaires..."
                         className="mt-1.5 min-h-24"
                       />
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <Label className="text-base font-medium block">Nombre de cartes</Label>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <Label>Saint-Valentin</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.saint_valentin}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, saint_valentin: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                        <div>
+                          <Label>Communion</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.communion}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, communion: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                        <div>
+                          <Label>Pâques</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.paques}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, paques: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                        <div>
+                          <Label>1er mai</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.premier_mai}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, premier_mai: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                        <div>
+                          <Label>Fête des mères</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.fete_des_meres}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, fete_des_meres: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                        <div>
+                          <Label>Fête des pères</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={cardsQuantities.fete_des_peres}
+                            onChange={(e) => setCardsQuantities({ ...cardsQuantities, fete_des_peres: e.target.value })}
+                            className="mt-1.5"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Baptême</Label>
+                          <div className="flex gap-2 mt-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Min"
+                              value={cardsQuantities.bapteme_min}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, bapteme_min: e.target.value })}
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Max"
+                              value={cardsQuantities.bapteme_max}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, bapteme_max: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label>Mariage</Label>
+                          <div className="flex gap-2 mt-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Min"
+                              value={cardsQuantities.mariage_min}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, mariage_min: e.target.value })}
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Max"
+                              value={cardsQuantities.mariage_max}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, mariage_max: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label>Anniversaire de mariage</Label>
+                          <div className="flex gap-2 mt-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Min"
+                              value={cardsQuantities.anniversaire_mariage_min}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, anniversaire_mariage_min: e.target.value })}
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Max"
+                              value={cardsQuantities.anniversaire_mariage_max}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, anniversaire_mariage_max: e.target.value })}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label>Retraite</Label>
+                          <div className="flex gap-2 mt-1.5">
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Min"
+                              value={cardsQuantities.retraite_min}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, retraite_min: e.target.value })}
+                            />
+                            <Input
+                              type="number"
+                              min={0}
+                              placeholder="Max"
+                              value={cardsQuantities.retraite_max}
+                              onChange={(e) => setCardsQuantities({ ...cardsQuantities, retraite_max: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
