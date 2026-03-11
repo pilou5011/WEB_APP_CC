@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PDF Generators Utility
  * 
  * This file contains functions to generate and save PDFs for invoices, stock reports, and deposit slips.
@@ -2072,7 +2072,7 @@ export async function generateClientInfoPDF(
     const doc = new jsPDF();
 
     const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 12;
+    const margin = 4;
     const contentWidth = pageWidth - 2 * margin;
     const columnGap = 8;
     const columnWidth = (contentWidth - columnGap) / 2;
@@ -2096,6 +2096,27 @@ export async function generateClientInfoPDF(
     /* --------------------------------------------------
      * HEADER
      * -------------------------------------------------- */
+    // Premier contact en haut à gauche (nom + téléphone)
+    const contactName = client.phone_1_info?.trim() || null;
+    const contactPhone = client.phone?.trim()
+      ? client.phone.replace(/\D/g, '').match(/.{1,2}/g)?.join(' ') || client.phone
+      : null;
+    if (contactName || contactPhone) {
+      const leftX = margin;
+      let contactY = margin + 6;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor('#013258');
+      if (contactName) {
+        doc.text(contactName, leftX, contactY, { align: 'left' });
+        contactY += 5;
+      }
+      if (contactPhone) {
+        doc.setFont('helvetica', 'normal');
+        doc.text(contactPhone, leftX, contactY, { align: 'left' });
+      }
+    }
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(30);
     doc.setTextColor('#013258');
@@ -2110,7 +2131,7 @@ export async function generateClientInfoPDF(
     doc.setTextColor('#1873c0');
     doc.text('Fiche Client', pageWidth / 2, yPosition, { align: 'center' });
 
-    yPosition += 10;
+    yPosition += 6;
 
     doc.setFillColor('#013258');
     doc.roundedRect(5, yPosition, pageWidth - 10, 2, 1, 1, 'F');
@@ -2123,7 +2144,7 @@ export async function generateClientInfoPDF(
      * -------------------------------------------------- */
     const addSection = (
       title: string,
-      fields: Array<{ label: string; value: string; fullWidth?: boolean }>
+      fields: Array<{ label: string; value: string; fullWidth?: boolean; column?: 'left' | 'right' }>
     ) => {
       const sectionX = 8;
       const sectionWidth = pageWidth - sectionX * 2;
@@ -2171,14 +2192,18 @@ export async function generateClientInfoPDF(
         const blockHeight =
           Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
 
+        const forceColumn = field.column;
+
         if (isFull) {
           const y = Math.max(leftY, rightY);
           leftY = y + blockHeight;
           rightY = leftY;
           cursorLeft = true;
-        } else if (cursorLeft) {
+        } else if (forceColumn === 'right') {
+          rightY += blockHeight;
+        } else if (forceColumn === 'left' || cursorLeft) {
           leftY += blockHeight;
-          cursorLeft = false;
+          if (!forceColumn) cursorLeft = false;
         } else {
           rightY += blockHeight;
           const maxY = Math.max(leftY, rightY);
@@ -2249,18 +2274,20 @@ export async function generateClientInfoPDF(
         
         const isFull = field.fullWidth;
         const value = field.value || 'Non renseigné';
+        const forceColumn = field.column;
+        const useRight = !isFull && (forceColumn === 'right' || (!forceColumn && !cursorLeft));
 
         const x = isFull
           ? sectionX + paddingHorizontal
-          : cursorLeft
-          ? sectionX + paddingHorizontal
-          : sectionX + paddingHorizontal + columnWidth + columnGap;
+          : useRight
+          ? sectionX + paddingHorizontal + columnWidth + columnGap
+          : sectionX + paddingHorizontal;
 
         const y = isFull
           ? Math.max(leftY, rightY)
-          : cursorLeft
-          ? leftY
-          : rightY;
+          : useRight
+          ? rightY
+          : leftY;
 
         const availableWidth = isFull
           ? sectionWidth - paddingHorizontal * 2
@@ -2299,9 +2326,11 @@ export async function generateClientInfoPDF(
           leftY = y + blockHeight;
           rightY = leftY;
           cursorLeft = true;
-        } else if (cursorLeft) {
+        } else if (forceColumn === 'right') {
+          rightY = y + blockHeight;
+        } else if (forceColumn === 'left' || cursorLeft) {
           leftY = y + blockHeight;
-          cursorLeft = false;
+          if (!forceColumn) cursorLeft = false;
         } else {
           rightY = y + blockHeight;
           const maxY = Math.max(leftY, rightY);
@@ -2409,6 +2438,8 @@ export async function generateClientInfoPDF(
       { label: "Type d'établissement", value: establishmentType?.name || '' },
       { label: 'Numéro client', value: client.client_number || '' },
       { label: 'Nom de la tournée', value: tourName || '' },
+      { label: 'Numéro SIRET', value: formatSIRETNumber(client.siret_number) },
+      { label: 'Numéro de TVA', value: formatTVANumber(client.tva_number) },
     ]);
 
     addSection('Coordonnées', [
@@ -2420,13 +2451,6 @@ export async function generateClientInfoPDF(
           client.city
         ].filter(Boolean).join(' '), 
         fullWidth: true 
-      },
-      { 
-        label: 'Téléphone 1', 
-        value: [
-          formatPhoneNumber(client.phone),
-          client.phone_1_info
-        ].filter(Boolean).join(' - ') || ''
       },
       { 
         label: 'Téléphone 2', 
@@ -2445,105 +2469,63 @@ export async function generateClientInfoPDF(
       { label: 'Email', value: client.email || '' },
     ]);
 
-    addSection('Informations légales', [
-      { label: 'Numéro SIRET', value: formatSIRETNumber(client.siret_number) },
-      { label: 'Numéro de TVA ', value: formatTVANumber(client.tva_number) },
-    ]);
-
     const complementaryFields: any[] = [];
 
-    // Toutes les informations complémentaires à gauche, en dessous de "Horaires d'ouverture"
-    
-    // Horaires d'ouverture à gauche
+    // Informations complémentaires : gauche = horaires d'ouverture, droite = reste des infos
+    const leftComplementary: Array<{ label: string; value: string; column: 'left' }> = [];
+    let rightComplementary: Array<{ label: string; value: string; column: 'right' }> = [];
+
+    // Horaires d'ouverture → gauche
     if (client.opening_hours) {
       const data = formatWeekScheduleData(client.opening_hours);
       if (data.length) {
-        complementaryFields.push({
+        leftComplementary.push({
           label: "Horaires d'ouverture",
           value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
-          fullWidth: false, // Colonne gauche
-        });
-        // Ajouter un champ vide à droite pour forcer les suivants à gauche
-        complementaryFields.push({
-          label: '',
-          value: '',
-          fullWidth: false,
+          column: 'left',
         });
       }
     }
 
-    // Jour(s) de marché à gauche
+    // Reste des infos → droite
     if (client.market_days_schedule) {
       const data = formatMarketDaysScheduleData(client.market_days_schedule);
       if (data.length) {
-        complementaryFields.push({
+        rightComplementary.push({
           label: 'Jour(s) de marché',
           value: data.map(d => `${d.day}: ${d.hours}`).join('\n'),
-          fullWidth: false, // Colonne gauche
-        });
-        // Ajouter un champ vide à droite pour forcer le suivant à gauche
-        complementaryFields.push({
-          label: '',
-          value: '',
-          fullWidth: false,
+          column: 'right',
         });
       }
     }
-
-    // Commentaire à gauche
     if (client.comment) {
-      complementaryFields.push({
-        label: 'Commentaire',
-        value: client.comment,
-        fullWidth: false, // Colonne gauche
-      });
-      // Ajouter un champ vide à droite pour forcer le suivant à gauche
-      complementaryFields.push({
-        label: '',
-        value: '',
-        fullWidth: false,
-      });
+      rightComplementary.push({ label: 'Commentaire', value: client.comment, column: 'right' });
     }
-
-    // Règlement à gauche
-    complementaryFields.push({
+    rightComplementary.push({
       label: 'Règlement',
       value: paymentMethod?.name || '',
-      fullWidth: false, // Colonne gauche
+      column: 'right',
     });
-    // Ajouter un champ vide à droite pour forcer le suivant à gauche
-    complementaryFields.push({
-      label: '',
-      value: '',
-      fullWidth: false,
-    });
-
-    // Fréquence de passage à gauche
     if (client.visit_frequency_number && client.visit_frequency_unit) {
-      complementaryFields.push({
+      rightComplementary.push({
         label: 'Fréquence de passage',
         value: `${client.visit_frequency_number} ${client.visit_frequency_unit}`,
-        fullWidth: false, // Colonne gauche
-      });
-      // Ajouter un champ vide à droite pour forcer le suivant à gauche
-      complementaryFields.push({
-        label: '',
-        value: '',
-        fullWidth: false,
+        column: 'right',
       });
     }
-
-    // Temps moyen à gauche
     if ((client.average_time_hours !== null && client.average_time_hours !== undefined) ||
         (client.average_time_minutes !== null && client.average_time_minutes !== undefined)) {
       const hours = client.average_time_hours || 0;
       const minutes = client.average_time_minutes || 0;
-      complementaryFields.push({
+      rightComplementary.push({
         label: 'Temps moyen',
         value: `${hours}h${minutes.toString().padStart(2, '0')}`,
-        fullWidth: false, // Colonne gauche
+        column: 'right',
       });
     }
+
+    // Assembler : horaires à gauche, reste à droite
+    complementaryFields.push(...leftComplementary, ...rightComplementary);
 
     addSection('Informations complémentaires', complementaryFields);
 
