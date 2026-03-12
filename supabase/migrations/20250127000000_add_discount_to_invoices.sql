@@ -10,3 +10,5 @@ ADD COLUMN IF NOT EXISTS discount_percentage numeric(5, 2) DEFAULT NULL;
 
 COMMENT ON COLUMN invoices.discount_percentage IS 'Pourcentage de remise commerciale appliqué (0-100). La remise est appliquée sur le HT avant calcul de la TVA.';
 
+
+

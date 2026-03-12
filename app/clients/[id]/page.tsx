@@ -947,7 +947,7 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
         };
       });
 
@@ -1223,7 +1223,7 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
         };
       });
       
@@ -1456,7 +1456,6 @@ export default function ClientDetailPage() {
                 stock_sold: totalStockSold,
                 stock_added: totalStockAdded,
                 new_stock: totalNewStock,
-                product_info: productInfo,
                 unit_price_ht: unitPriceHt,
                 total_amount_ht: totalAmountHt
               });
@@ -1496,7 +1495,6 @@ export default function ClientDetailPage() {
               stock_sold: stockSold,
               stock_added: stockAdded,
               new_stock: newStock,
-              product_info: productInfo,
               unit_price_ht: unitPriceHt,
               total_amount_ht: totalAmountHt
             });
