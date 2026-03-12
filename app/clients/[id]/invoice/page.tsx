@@ -363,6 +363,7 @@ export default function InvoicePage() {
       deposit_slip_pdf_path: null,
       invoice_email_sent_at: null,
       deposit_slip_email_sent_at: null,
+      status: 'processing', // Statut par défaut pour la prévisualisation
       created_at: new Date().toISOString()
     };
 

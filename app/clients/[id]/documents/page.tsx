@@ -1826,6 +1826,7 @@ export default function ClientDetailPage() {
           total_stock_sold: totalStockSold,
           total_amount: 0,
           invoice_number: null, // No invoice number when amount is 0
+          status: 'completed', // Statut par défaut pour les dialogs
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -3419,6 +3420,7 @@ export default function ClientDetailPage() {
                           deposit_slip_pdf_path: realInvoice?.deposit_slip_pdf_path || null,
                           invoice_email_sent_at: realInvoice?.invoice_email_sent_at || null,
                           deposit_slip_email_sent_at: realInvoice?.deposit_slip_email_sent_at || null,
+                          status: realInvoice?.status || 'completed', // Utiliser le statut de la facture réelle ou 'completed' par défaut
                           created_at: stockUpdate.created_at
                         };
                         
