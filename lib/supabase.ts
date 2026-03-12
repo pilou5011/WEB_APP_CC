@@ -175,6 +175,7 @@ export type Invoice = {
   deposit_slip_pdf_path: string | null;
   invoice_email_sent_at: string | null; // Date d'envoi de la facture par email
   deposit_slip_email_sent_at: string | null; // Date d'envoi du bon de dépôt par email
+  status: 'processing' | 'completed' | 'failed'; // Statut du document
   created_at: string;
 };
 
@@ -330,6 +331,7 @@ export type CreditNote = {
   credit_note_number: string | null;
   credit_note_pdf_path: string | null;
   email_sent_at: string | null; // Date d'envoi de l'avoir par email
+  status: 'processing' | 'completed' | 'failed'; // Statut du document
   created_at: string;
 };
 
