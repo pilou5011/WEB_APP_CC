@@ -114,32 +114,36 @@ export async function rollbackFailedInvoice(invoiceId: string): Promise<void> {
       }
 
       // Restaurer les stocks des produits parents
-      for (const [clientProductId, previousStock] of productRestorations) {
-        const { error: restoreError } = await supabase
-          .from('client_products')
-          .update({ current_stock: previousStock, updated_at: new Date().toISOString() })
-          .eq('id', clientProductId)
-          .eq('company_id', companyId);
+      await Promise.all(
+        Array.from(productRestorations.entries()).map(async ([clientProductId, previousStock]) => {
+          const { error: restoreError } = await supabase
+            .from('client_products')
+            .update({ current_stock: previousStock, updated_at: new Date().toISOString() })
+            .eq('id', clientProductId)
+            .eq('company_id', companyId);
 
-        if (restoreError) {
-          console.error(`[Document Rollback] Error restoring stock for client_product ${clientProductId}:`, restoreError);
-          // Continue malgré l'erreur pour restaurer les autres stocks
-        }
-      }
+          if (restoreError) {
+            console.error(`[Document Rollback] Error restoring stock for client_product ${clientProductId}:`, restoreError);
+            // Continue malgré l'erreur pour restaurer les autres stocks
+          }
+        })
+      );
 
       // Restaurer les stocks des sous-produits
-      for (const [clientSubProductId, previousStock] of subProductRestorations) {
-        const { error: restoreError } = await supabase
-          .from('client_sub_products')
-          .update({ current_stock: previousStock, updated_at: new Date().toISOString() })
-          .eq('id', clientSubProductId)
-          .eq('company_id', companyId);
+      await Promise.all(
+        Array.from(subProductRestorations.entries()).map(async ([clientSubProductId, previousStock]) => {
+          const { error: restoreError } = await supabase
+            .from('client_sub_products')
+            .update({ current_stock: previousStock, updated_at: new Date().toISOString() })
+            .eq('id', clientSubProductId)
+            .eq('company_id', companyId);
 
-        if (restoreError) {
-          console.error(`[Document Rollback] Error restoring stock for client_sub_product ${clientSubProductId}:`, restoreError);
-          // Continue malgré l'erreur pour restaurer les autres stocks
-        }
-      }
+          if (restoreError) {
+            console.error(`[Document Rollback] Error restoring stock for client_sub_product ${clientSubProductId}:`, restoreError);
+            // Continue malgré l'erreur pour restaurer les autres stocks
+          }
+        })
+      );
 
       // Supprimer les stock_updates
       const { error: deleteSuError } = await supabase
