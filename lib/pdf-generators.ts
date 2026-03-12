@@ -97,6 +97,9 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     return;
   }
 
+  // 🧪 TEST ROLLBACK - Décommenter la ligne suivante pour tester le système de rollback
+  //throw new Error('TEST: Simulated PDF generation failure for rollback testing');
+
   try {
     // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;
@@ -1708,6 +1711,9 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     console.log('Credit note PDF already exists, skipping generation:', creditNote.credit_note_pdf_path);
     return;
   }
+
+  // 🧪 TEST ROLLBACK - Décommenter la ligne suivante pour tester le système de rollback
+ // throw new Error('TEST: Simulated PDF generation failure for rollback testing');
 
   try {
     // Load user profile if not provided
