@@ -372,7 +372,7 @@ export default function Home() {
       <div className="container mx-auto py-8 px-4 max-w-4xl">
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold text-[#0B1F33] mb-4">
-            Gestion Dépôts-Ventes
+            Gaston Stock
           </h1>
           <p className="text-slate-500">
             Gérez vos clients et vos produits facilement

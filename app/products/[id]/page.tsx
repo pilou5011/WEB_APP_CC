@@ -821,17 +821,23 @@ export default function ProductDetailPage() {
                     {isEditing ? (
                       <Input
                         id="price"
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={formData.price}
-                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setFormData({ ...formData, price: value });
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         required
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.price} €</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{parseFloat(formData.price || '0').toFixed(2)} €</p>
                     )}
                   </div>
 
@@ -841,11 +847,17 @@ export default function ProductDetailPage() {
                       <>
                         <Input
                           id="recommended_sale_price"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           value={formData.recommended_sale_price}
-                          onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // N'accepter que les nombres et le point décimal
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setFormData({ ...formData, recommended_sale_price: value });
+                            }
+                          }}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder="Ex: 3.00"
                           className="mt-1.5"
                         />
@@ -853,7 +865,7 @@ export default function ProductDetailPage() {
                       </>
                     ) : (
                       <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
-                        {formData.recommended_sale_price ? `${formData.recommended_sale_price} €` : 'Non renseigné'}
+                        {formData.recommended_sale_price ? `${parseFloat(formData.recommended_sale_price).toFixed(2)} €` : 'Non renseigné'}
                       </p>
                     )}
                   </div>

@@ -911,7 +911,6 @@ export default function ClientDetailPage() {
       setStockUpdates(updatesData || []);
 
       // Créer un map optimisé pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
-      // Inclure tous les stock_updates, y compris ceux avec invoice_id = null
       const lastStockUpdatesByProductMap: Record<string, StockUpdate> = {};
       const lastStockUpdatesBySubProductMap: Record<string, StockUpdate> = {};
       

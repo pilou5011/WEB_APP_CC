@@ -579,11 +579,17 @@ export default function NewProductPage() {
                     <Label htmlFor="price">Prix de cession (HT) *</Label>
                     <Input
                       id="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // N'accepter que les nombres et le point décimal
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          setFormData({ ...formData, price: value });
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
                       required
                       placeholder="Ex: 2.50"
                       className="mt-1.5"
@@ -594,11 +600,17 @@ export default function NewProductPage() {
                     <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
                     <Input
                       id="recommended_sale_price"
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.recommended_sale_price}
-                      onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // N'accepter que les nombres et le point décimal
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          setFormData({ ...formData, recommended_sale_price: value });
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
                       placeholder="Ex: 3.00"
                       className="mt-1.5"
                     />
