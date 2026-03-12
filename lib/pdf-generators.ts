@@ -319,7 +319,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       
       return [
         Product?.name || 'Product',
-        update.product_info || '', // Infos optionnelles
+        (ClientProduct as { product_info?: string | null })?.product_info || '', // Infos produit depuis client_products
         Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
         update.counted_stock.toString(),
@@ -883,7 +883,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     
     sortedProducts.forEach((cp) => {
       const productName = cp.Product?.name || 'Product';
-      const info = '';
+      const info = (cp as { product_info?: string | null }).product_info || '';
       const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
       const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
       
@@ -1243,44 +1243,21 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       .limit(1)
       .maybeSingle();
 
-    // Créer un map pour stocker la dernière product_info de chaque Product
+    // Récupérer product_info depuis client_products (plus dans stock_updates)
     const productInfos: Record<string, string> = {};
-    const processedProducts = new Set<string>();
-
-    // PRIORITÉ 1: Utiliser les stockUpdates passés en paramètre (les plus récents, venant d'être insérés)
-    // Parcourir les stock_updates passés en paramètre
-    // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
-    (stockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
-        productInfos[update.product_id] = update.product_info || '';
-        processedProducts.add(update.product_id);
+    clientProducts.forEach(cp => {
+      if (cp.product_id) {
+        productInfos[cp.product_id] = (cp as { product_info?: string | null }).product_info || '';
       }
     });
 
-    // PRIORITÉ 2: Compléter avec les stock_updates de la base de données pour les produits qui n'ont pas encore d'info
-    // (pour les cas où on régénère un bon de dépôt et qu'on veut les infos des mises à jour précédentes)
+    // Charger les stock_updates pour le tableau (Qté remise, etc.)
     const { data: allStockUpdates } = await supabase
       .from('stock_updates')
       .select('*')
       .eq('client_id', client.id)
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
-
-    // Parcourir les stock_updates de la base de données triés par date décroissante
-    // Pour chaque Product qui n'a pas encore d'info, prendre la première occurrence (la plus récente)
-    (allStockUpdates || []).forEach((update: StockUpdate) => {
-      if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
-        productInfos[update.product_id] = update.product_info || '';
-        processedProducts.add(update.product_id);
-      }
-    });
-
-    // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
-    clientProducts.forEach(cp => {
-      if (cp.product_id && !productInfos[cp.product_id]) {
-        productInfos[cp.product_id] = '';
-      }
-    });
 
     // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;
@@ -1445,8 +1422,13 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     doc.text('Bon de dépôt', pageWidth / 2, yPosition, { align: 'center' });
     yPosition += 10;
 
-    // Tableau des produits
-    const sortedProducts = [...clientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+    // Tableau des produits - exclure les clientProducts sans produit valide (produit supprimé ou orphelin)
+    const productOrP = (cp: any) => cp.Product ?? cp.product;
+    const validClientProducts = clientProducts.filter(cp => {
+      const prod = productOrP(cp);
+      return prod && !prod.deleted_at;
+    });
+    const sortedProducts = [...validClientProducts].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     
     // Charger les sous-produits pour tous les produits
     const productIds = sortedProducts.map(cp => cp.product_id).filter(Boolean) as string[];
@@ -1506,11 +1488,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const activeProducts = sortedProducts.filter(cp => !cp.deleted_at);
     
     const tableData = activeProducts.map((cp) => {
-      const productName = cp.Product?.name || 'Product';
+      const prod = productOrP(cp);
+      const productName = prod?.name || 'Produit';
       const info = productInfos[cp.product_id || ''] || '';
-      const barcode = cp.Product?.barcode || ''; // Code barre produit
-      const effectivePrice = cp.custom_price ?? cp.Product?.price ?? 0;
-      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.Product?.recommended_sale_price ?? null;
+      const barcode = prod?.barcode || ''; // Code barre produit
+      const effectivePrice = cp.custom_price ?? prod?.price ?? 0;
+      const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? prod?.recommended_sale_price ?? null;
       
       // Calculer le stock pour "Qté Remise" selon les règles :
       // - Produit sans sous-produits : dernier new_stock du produit (non supprimé)

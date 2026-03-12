@@ -136,8 +136,6 @@ function SortableProductRow({
   subProducts,
   onAdjustStock,
   clientId,
-  expandedProductInfoId,
-  setExpandedProductInfoId,
   lastStockUpdatesByProduct,
   lastStockUpdatesBySubProduct
 }: {
@@ -161,8 +159,6 @@ function SortableProductRow({
   subProducts: Record<string, SubProduct[]>;
   onAdjustStock: () => void;
   clientId: string;
-  expandedProductInfoId: string | null;
-  setExpandedProductInfoId: React.Dispatch<React.SetStateAction<string | null>>;
   lastStockUpdatesByProduct: Record<string, StockUpdate>;
   lastStockUpdatesBySubProduct: Record<string, StockUpdate>;
 }) {
@@ -180,33 +176,6 @@ function SortableProductRow({
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
-
-  // Handle Escape key and click outside to close expanded cell
-  const expandedCellRef = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    if (expandedProductInfoId === cp.id) {
-      const handleEscape = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          setExpandedProductInfoId(null);
-        }
-      };
-      
-      const handleClickOutside = (e: MouseEvent) => {
-        if (expandedCellRef.current && !expandedCellRef.current.contains(e.target as Node)) {
-          setExpandedProductInfoId(null);
-        }
-      };
-      
-      window.addEventListener('keydown', handleEscape);
-      document.addEventListener('mousedown', handleClickOutside);
-      
-      return () => {
-        window.removeEventListener('keydown', handleEscape);
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [expandedProductInfoId, cp.id, setExpandedProductInfoId]);
 
   return (
     <TableRow
@@ -320,41 +289,10 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-top py-3 relative">
-        <div className="relative">
-          {expandedProductInfoId === cp.id ? (
-            <div 
-              ref={expandedCellRef}
-              className="absolute left-0 top-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-1 w-[200px]"
-            >
-              <Input
-                type="text"
-                value={perProductForm[cp.id]?.product_info || ''}
-                onChange={(e) => {
-                  const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-                  setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
-                }}
-                placeholder="..........."
-                className="text-base placeholder:text-slate-400 w-full h-8 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0 border-0 shadow-none"
-                autoFocus
-              />
-            </div>
-          ) : null}
-          <Input
-            type="text"
-            value={perProductForm[cp.id]?.product_info || ''}
-            onChange={(e) => {
-              const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-              setPerProductForm(p => ({ ...p, [cp.id]: { ...current, product_info: e.target.value } }));
-            }}
-            onFocus={() => setExpandedProductInfoId(cp.id)}
-            placeholder=".............."
-            className={cn(
-              "text-sm placeholder:text-slate-400 transition-all",
-              expandedProductInfoId === cp.id ? "opacity-0" : "h-9 opacity-100"
-            )}
-          />
-        </div>
+      <TableCell className="align-middle py-3">
+        <span className="text-sm text-slate-600" title={(cp as ClientProduct & { product_info?: string | null }).product_info || undefined}>
+          {(cp as ClientProduct & { product_info?: string | null }).product_info || '—'}
+        </span>
       </TableCell>
       <TableCell className="align-top py-3 text-right">
         <div>
@@ -485,11 +423,13 @@ export default function ClientDetailPage() {
     custom_price: string;
     recommended_sale_price_type: 'default' | 'custom';
     custom_recommended_sale_price: string;
+    product_info: string;
   }>({
     price_type: 'default',
     custom_price: '',
     recommended_sale_price_type: 'default',
-    custom_recommended_sale_price: ''
+    custom_recommended_sale_price: '',
+    product_info: ''
   });
   const [updatingPrice, setUpdatingPrice] = useState(false);
 
@@ -534,9 +474,6 @@ export default function ClientDetailPage() {
   const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>({});
   // Form per sub-product: { [subProductId]: { counted_stock, stock_added } }
   const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string }>>({});
-  
-  // Track which product_info cell is expanded
-  const [expandedProductInfoId, setExpandedProductInfoId] = useState<string | null>(null);
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -547,6 +484,7 @@ export default function ClientDetailPage() {
   const [associateForm, setAssociateForm] = useState<{ 
     product_id: string | null; 
     initial_stock: string;
+    product_info: string;
     price_type: 'default' | 'custom';
     custom_price: string;
     recommended_sale_price_type: 'default' | 'custom';
@@ -554,6 +492,7 @@ export default function ClientDetailPage() {
   }>({
     product_id: null,
     initial_stock: '',
+    product_info: '',
     price_type: 'default',
     custom_price: '',
     recommended_sale_price_type: 'default',
@@ -567,6 +506,7 @@ export default function ClientDetailPage() {
   const [pendingAssociationData, setPendingAssociationData] = useState<{
     customPrice: number | null;
     customRecommendedSalePrice: number | null;
+    productInfo: string | null;
   } | null>(null);
   
   // Check if selected product has sub-products
@@ -1023,7 +963,7 @@ export default function ClientDetailPage() {
             counted_stock: '', 
             stock_added: '', 
             reassort: '',
-            product_info: lastUpdate?.product_info || '' 
+            product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
           };
         } else {
           // Preserve existing form data if it exists, otherwise use defaults
@@ -1032,7 +972,7 @@ export default function ClientDetailPage() {
             counted_stock: existingForm?.counted_stock || '', 
             stock_added: existingForm?.stock_added || '', 
             reassort: existingForm?.reassort || '',
-            product_info: existingForm?.product_info || lastUpdate?.product_info || '' 
+            product_info: existingForm?.product_info || (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
           };
         }
       });
@@ -1167,7 +1107,7 @@ export default function ClientDetailPage() {
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
         const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
-        const productInfo = perProductForm[cp.id]?.product_info || '';
+        const productInfo = (cp as ClientProduct & { product_info?: string | null }).product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
         const isCustomPrice = cp.custom_price !== null;
@@ -1230,7 +1170,7 @@ export default function ClientDetailPage() {
         const stockSold = Math.max(0, previousStock - countedStock);
         const newStock = newDeposit;
         const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
-        const productInfo = form.product_info || '';
+        const productInfo = (cp as ClientProduct & { product_info?: string | null }).product_info || '';
 
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
         const isCustomPrice = cp.custom_price !== null;
@@ -1315,7 +1255,7 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
         };
       });
       
@@ -1530,7 +1470,7 @@ export default function ClientDetailPage() {
             // IMPORTANT: Ne créer le stock_update pour le produit parent QUE si du stock a été vendu
             // (totalStockSold > 0). Si aucun stock n'est vendu, pas de ligne dans stock_updates.
             if (totalStockSold > 0) {
-              const productInfo = perProductForm[cp.id]?.product_info || '';
+              const productInfo = (cp as ClientProduct & { product_info?: string | null }).product_info || '';
               // Calculer le prix effectif du produit
               const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
               // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée
@@ -1547,7 +1487,6 @@ export default function ClientDetailPage() {
                 stock_sold: totalStockSold,
                 stock_added: totalStockAdded,
                 new_stock: totalNewStock,
-                product_info: productInfo,
                 unit_price_ht: unitPriceHt,
                 total_amount_ht: totalAmountHt
               });
@@ -1570,7 +1509,7 @@ export default function ClientDetailPage() {
             const stockSold = Math.max(0, previousStock - countedStock);
             const newStock = newDeposit;
             const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
-            const productInfo = form.product_info || '';
+            const productInfo = (cp as ClientProduct & { product_info?: string | null }).product_info || '';
             // Calculer le prix effectif du produit
             const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
             // Calculer unit_price_ht et total_amount_ht uniquement si une facture est générée et du stock est vendu
@@ -1587,7 +1526,6 @@ export default function ClientDetailPage() {
               stock_sold: stockSold,
               stock_added: stockAdded,
               new_stock: newStock,
-              product_info: productInfo,
               unit_price_ht: unitPriceHt,
               total_amount_ht: totalAmountHt
             });
@@ -1986,7 +1924,8 @@ export default function ClientDetailPage() {
       price_type: priceType,
       custom_price: customPrice,
       recommended_sale_price_type: recommendedSalePriceType,
-      custom_recommended_sale_price: customRecommendedSalePrice
+      custom_recommended_sale_price: customRecommendedSalePrice,
+      product_info: (cp as ClientProduct & { product_info?: string | null }).product_info ?? ''
     });
     setEditPriceDialogOpen(true);
   };
@@ -2029,26 +1968,34 @@ export default function ClientDetailPage() {
         throw new Error('Non autorisé');
       }
 
+      const updateData: Record<string, unknown> = {
+        custom_price: customPrice,
+        custom_recommended_sale_price: customRecommendedSalePrice,
+        product_info: editPriceForm.product_info?.trim() || null,
+        updated_at: new Date().toISOString()
+      };
+
       const { error } = await supabase
         .from('client_products')
-        .update({
-          custom_price: customPrice,
-          custom_recommended_sale_price: customRecommendedSalePrice,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', productToEdit.id)
         .eq('company_id', companyId);
 
       if (error) throw error;
 
-      toast.success('Prix modifié avec succès');
+      const originalProductInfo = (productToEdit as ClientProduct & { product_info?: string | null }).product_info ?? '';
+      const newProductInfo = editPriceForm.product_info?.trim() ?? '';
+      const productInfoChanged = originalProductInfo !== newProductInfo;
+
+      toast.success(productInfoChanged ? 'Info modifiée avec succès' : 'Prix modifié avec succès');
       setEditPriceDialogOpen(false);
       setProductToEdit(null);
       setEditPriceForm({ 
         price_type: 'default', 
         custom_price: '',
         recommended_sale_price_type: 'default',
-        custom_recommended_sale_price: ''
+        custom_recommended_sale_price: '',
+        product_info: ''
       });
       await loadClientData();
     } catch (error) {
@@ -2742,7 +2689,8 @@ export default function ClientDetailPage() {
           initialStocks[sp.id] = '';
         });
         setSubProductsInitialStocks(initialStocks);
-        setPendingAssociationData({ customPrice, customRecommendedSalePrice });
+        const productInfo = associateForm.product_info?.trim() || null;
+        setPendingAssociationData({ customPrice, customRecommendedSalePrice, productInfo });
         setSubProductsInitialStocksDialogOpen(true);
         return;
       }
@@ -2763,7 +2711,8 @@ export default function ClientDetailPage() {
       toast.error('Le stock initial doit être un nombre positif ou zéro');
       return;
     }
-    await performAssociation(initialStock, customPrice, customRecommendedSalePrice, null);
+    const productInfo = associateForm.product_info?.trim() || null;
+    await performAssociation(initialStock, customPrice, customRecommendedSalePrice, productInfo, null);
   };
 
   const handleSubProductsInitialStocksSubmit = async (e: React.FormEvent) => {
@@ -2806,7 +2755,7 @@ export default function ClientDetailPage() {
       const totalInitialStock = Object.values(stocks).reduce((sum, stock) => sum + stock, 0);
 
       setSubProductsInitialStocksDialogOpen(false);
-      await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, stocks);
+      await performAssociation(0, pendingAssociationData.customPrice, pendingAssociationData.customRecommendedSalePrice, pendingAssociationData.productInfo ?? null, stocks);
     } catch (err) {
       console.error('Error fetching all sub-products:', err);
       toast.error('Erreur lors de la récupération des sous-produits');
@@ -2817,6 +2766,7 @@ export default function ClientDetailPage() {
     initialStock: number,
     customPrice: number | null,
     customRecommendedSalePrice: number | null,
+    productInfo: string | null,
     subProductsStocks: Record<string, number> | null
   ) => {
     try {
@@ -2867,6 +2817,10 @@ export default function ClientDetailPage() {
       // Only set custom_recommended_sale_price if it's a custom price
       if (customRecommendedSalePrice !== null) {
         insertData.custom_recommended_sale_price = customRecommendedSalePrice;
+      }
+
+      if (productInfo !== null && productInfo !== '') {
+        insertData.product_info = productInfo;
       }
 
       console.log('Inserting client_product with data:', insertData);
@@ -3022,6 +2976,7 @@ export default function ClientDetailPage() {
       setAssociateForm({ 
         product_id: null, 
         initial_stock: '', 
+        product_info: '',
         price_type: 'default', 
         custom_price: '',
         recommended_sale_price_type: 'default',
@@ -3303,6 +3258,19 @@ export default function ClientDetailPage() {
                   )}
                 </div>
 
+                <div className="space-y-2 border border-slate-200 rounded-lg p-4 bg-slate-50">
+                  <Label htmlFor="assoc-product-info">Info produit pour facture</Label>
+                  <Input
+                    id="assoc-product-info"
+                    type="text"
+                    value={associateForm.product_info}
+                    onChange={(e) => setAssociateForm(a => ({ ...a, product_info: e.target.value }))}
+                    placeholder="Optionnel"
+                    className="mt-1.5"
+                  />
+                  <p className="text-xs text-slate-500">Modifiable ensuite via l&apos;icône crayon</p>
+                </div>
+
                 <div>
                   <Button type="submit" className="w-full md:w-auto">Ajouter le produit</Button>
                 </div>
@@ -3332,7 +3300,7 @@ export default function ClientDetailPage() {
                             <TableHead className="w-[12%] font-semibold bg-amber-50">Stock compté</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-[#E8EDF2]">Nouveau dépôt</TableHead>
-                            <TableHead className="w-[20%] font-semibold">Info produit pour facture</TableHead>
+                            <TableHead className="w-[20%] font-semibold">Info produit</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
                             <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
@@ -3392,8 +3360,6 @@ export default function ClientDetailPage() {
                               subProducts={subProducts}
                               onAdjustStock={() => handleAdjustStockClick('product', cp.id)}
                               clientId={clientId}
-                              expandedProductInfoId={expandedProductInfoId}
-                              setExpandedProductInfoId={setExpandedProductInfoId}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
@@ -3884,7 +3850,8 @@ export default function ClientDetailPage() {
               price_type: 'default', 
               custom_price: '',
               recommended_sale_price_type: 'default',
-              custom_recommended_sale_price: ''
+              custom_recommended_sale_price: '',
+              product_info: ''
             });
             setProductToEdit(null);
           }
@@ -4010,6 +3977,18 @@ export default function ClientDetailPage() {
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <Label htmlFor="edit-product-info">Info produit pour facture</Label>
+                  <Input
+                    id="edit-product-info"
+                    type="text"
+                    value={editPriceForm.product_info}
+                    onChange={(e) => setEditPriceForm({ ...editPriceForm, product_info: e.target.value })}
+                    placeholder="Optionnel"
+                    className="mt-1.5"
+                  />
+                </div>
               </div>
 
               <DialogFooter>
@@ -4018,11 +3997,12 @@ export default function ClientDetailPage() {
                   variant="outline"
                   onClick={() => {
                     setEditPriceDialogOpen(false);
-                    setEditPriceForm({ 
-                      price_type: 'default', 
+                    setEditPriceForm({
+                      price_type: 'default',
                       custom_price: '',
                       recommended_sale_price_type: 'default',
-                      custom_recommended_sale_price: ''
+                      custom_recommended_sale_price: '',
+                      product_info: ''
                     });
                   }}
                   disabled={updatingPrice}

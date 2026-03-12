@@ -157,42 +157,13 @@ export function DepositSlipDialog({
 
   const loadLastStockUpdateInfos = async (): Promise<void> => {
     try {
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
-      // Charger toutes les mises à jour de stock pour ce client
-      const { data: allStockUpdates, error: stockUpdatesError } = await supabase
-        .from('stock_updates')
-        .select('*')
-        .eq('client_id', client.id)
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false });
-
-      if (stockUpdatesError) throw stockUpdatesError;
-
-      // Créer un map pour stocker la dernière product_info de chaque produit
+      // product_info provient de client_products, pas de stock_updates
       const infos: Record<string, string> = {};
-      const processedProducts = new Set<string>();
-
-      // Parcourir les stock_updates triés par date décroissante
-      // Pour chaque produit, prendre la première occurrence (la plus récente)
-      // IMPORTANT: Ne prendre que les stock_updates pour les produits (pas les sous-produits)
-      (allStockUpdates || []).forEach((update: StockUpdate) => {
-        if (update.product_id && !update.sub_product_id && !processedProducts.has(update.product_id)) {
-          infos[update.product_id] = update.product_info || '';
-          processedProducts.add(update.product_id);
-        }
-      });
-
-      // Initialiser les infos vides pour les produits qui n'ont pas de stock_update
       clientProducts.forEach(cp => {
-        if (cp.product_id && !infos[cp.product_id]) {
-          infos[cp.product_id] = '';
+        if (cp.product_id) {
+          infos[cp.product_id] = (cp as { product_info?: string | null }).product_info || '';
         }
       });
-
       setProductInfos(infos);
     } catch (error) {
       console.error('Error loading last stock update infos:', error);
@@ -227,18 +198,11 @@ export function DepositSlipDialog({
       if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
 
       if (lastInvoice && stockUpdates.length > 0) {
-        // If invoice exists, get product_info from last stock update for each product
-        // (same logic as in the client page)
+        // product_info provient de client_products
         const infos: Record<string, string> = {};
         clientProducts.forEach((cp) => {
-          // Find the last stock update for this product (most recent, regardless of product_info)
-          const lastUpdate = stockUpdates.find(
-            (update: StockUpdate) => 
-              update.product_id === cp.product_id
-          );
-          
           if (cp.product_id) {
-            infos[cp.product_id] = lastUpdate?.product_info || '';
+            infos[cp.product_id] = (cp as { product_info?: string | null }).product_info || '';
           }
         });
         setProductInfos(infos);

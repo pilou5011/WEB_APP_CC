@@ -147,7 +147,6 @@ export type StockUpdate = {
   stock_sold: number;
   stock_added: number;
   new_stock: number;
-  product_info?: string | null;
   unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu le produit
   total_amount_ht?: number | null; // Montant total HT : stock_sold x unit_price_ht
   created_at: string;
@@ -236,6 +235,7 @@ export type ClientProduct = {
   current_stock: number;
   custom_price: number | null;
   custom_recommended_sale_price: number | null;
+  product_info: string | null;
   display_order: number;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
