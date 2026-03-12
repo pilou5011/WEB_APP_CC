@@ -947,7 +947,7 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
         };
       });
 
@@ -957,23 +957,25 @@ export default function ClientDetailPage() {
       setPerProductForm(initialForm);
       setPerSubProductForm(initialSubProductForm);
 
-      // Load global invoices
+      // Load global invoices (only completed ones)
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select('*')
         .eq('client_id', clientId)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
       setGlobalInvoices(invoicesData || []);
 
-      // Load credit notes
+      // Load credit notes (only completed ones)
       const { data: creditNotesData, error: creditNotesError } = await supabase
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
@@ -1221,7 +1223,7 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: lastUpdate?.product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
         };
       });
       
@@ -1312,7 +1314,8 @@ export default function ClientDetailPage() {
             company_id: companyId,
             total_stock_sold: totalStockSold,
             total_amount: finalTotalAmount,
-            discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
+            discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
+            status: 'processing'
           }])
           .select()
           .single();
@@ -1453,7 +1456,6 @@ export default function ClientDetailPage() {
                 stock_sold: totalStockSold,
                 stock_added: totalStockAdded,
                 new_stock: totalNewStock,
-                product_info: productInfo,
                 unit_price_ht: unitPriceHt,
                 total_amount_ht: totalAmountHt
               });
@@ -1493,7 +1495,6 @@ export default function ClientDetailPage() {
               stock_sold: stockSold,
               stock_added: stockAdded,
               new_stock: newStock,
-              product_info: productInfo,
               unit_price_ht: unitPriceHt,
               total_amount_ht: totalAmountHt
             });
@@ -1543,6 +1544,7 @@ export default function ClientDetailPage() {
       // Générer et sauvegarder les 3 PDFs (facture, relevé de stock, bon de dépôt)
       // après que tous les stock_updates et adjustments ont été insérés
       if (invoiceData) {
+        let pdfGenerationSuccess = false;
         try {
           // Import dynamique pour éviter de charger les dépendances lourdes si pas nécessaire
           const pdfGenerators = await import('@/lib/pdf-generators');
@@ -1615,10 +1617,41 @@ export default function ClientDetailPage() {
           ]);
 
           console.log('All PDFs generated and saved successfully');
-        } catch (pdfError) {
-          console.error('Error generating PDFs:', pdfError);
-          // Ne pas bloquer le processus si la génération des PDFs échoue
-          toast.warning('Les documents PDF n\'ont pas pu être générés automatiquement. Vous pourrez les générer manuellement depuis l\'historique.');
+          pdfGenerationSuccess = true;
+
+          // Update invoice status to 'completed'
+          const { error: statusError } = await supabase
+            .from('invoices')
+            .update({ status: 'completed' })
+            .eq('id', invoiceData.id)
+            .eq('company_id', companyId);
+
+          if (statusError) {
+            console.error('[Stock Update] Error updating invoice status to completed:', statusError);
+            // Don't throw, PDFs were generated successfully
+          }
+        } catch (pdfError: any) {
+          // PDF generation failed - rollback all actions
+          console.error('[Stock Update] PDF generation failed, rolling back:', pdfError);
+          
+          const { rollbackFailedInvoice } = await import('@/lib/document-rollback');
+          try {
+            await rollbackFailedInvoice(invoiceData.id);
+            console.error('[Stock Update] Rollback completed for invoice:', invoiceData.id);
+          } catch (rollbackError) {
+            console.error('[Stock Update] Critical: Rollback failed:', rollbackError);
+          }
+
+          // Log the error
+          console.error('[Document Generation Failed]', {
+            document_type: 'invoice',
+            document_id: invoiceData.id,
+            error_message: pdfError.message || String(pdfError)
+          });
+
+          // Ne pas bloquer le processus mais afficher un avertissement
+          toast.error('Erreur lors de la génération des PDFs. Les modifications de stock ont été annulées.');
+          throw pdfError;
         }
       }
 
@@ -1766,6 +1799,7 @@ export default function ClientDetailPage() {
           deposit_slip_pdf_path: null,
           invoice_email_sent_at: null,
           deposit_slip_email_sent_at: null,
+          status: 'completed', // Statut par défaut pour les dialogs
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -2245,16 +2279,23 @@ export default function ClientDetailPage() {
       const unitPrice = parseFloat(creditNoteForm.unit_price.replace(',', '.'));
       const totalAmount = quantity * unitPrice;
 
-      // Create credit note
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      // Create credit note with status 'processing'
       const { data: creditNote, error: creditNoteError } = await supabase
         .from('credit_notes')
         .insert({
           invoice_id: creditNoteForm.invoice_id,
           client_id: clientId,
+          company_id: companyId,
           unit_price: unitPrice,
           quantity: quantity,
           total_amount: totalAmount,
-          operation_name: creditNoteForm.operation_name
+          operation_name: creditNoteForm.operation_name,
+          status: 'processing'
         })
         .select()
         .single();
@@ -2265,37 +2306,70 @@ export default function ClientDetailPage() {
         throw new Error('Erreur lors de la création de l\'avoir');
       }
 
-      // Generate PDF
-      const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
-      
-      const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
-      if (!invoice) {
-        throw new Error('Facture non trouvée');
+      let pdfGenerationSuccess = false;
+      try {
+        // Generate PDF
+        const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
+        
+        const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
+        if (!invoice) {
+          throw new Error('Facture non trouvée');
+        }
+
+        if (!client) {
+          throw new Error('Client non trouvé');
+        }
+
+        // Load user profile
+        const { data: userProfileData } = await supabase
+          .from('user_profile')
+          .select('*')
+          .eq('company_id', companyId)
+          .limit(1)
+          .maybeSingle();
+
+        await generateAndSaveCreditNotePDF({
+          creditNote: creditNote as CreditNote,
+          invoice,
+          client,
+          userProfile: userProfileData
+        });
+
+        // PDF generated successfully
+        pdfGenerationSuccess = true;
+
+        // Update credit note status to 'completed'
+        const { error: statusError } = await supabase
+          .from('credit_notes')
+          .update({ status: 'completed' })
+          .eq('id', creditNote.id)
+          .eq('company_id', companyId);
+
+        if (statusError) {
+          console.error('[Credit Note Generation] Error updating credit note status to completed:', statusError);
+          // Don't throw, PDF was generated successfully
+        }
+      } catch (pdfError: any) {
+        // PDF generation failed - rollback all actions
+        console.error('[Credit Note Generation] PDF generation failed, rolling back:', pdfError);
+        
+        const { rollbackFailedCreditNote } = await import('@/lib/document-rollback');
+        try {
+          await rollbackFailedCreditNote(creditNote.id);
+          console.error('[Credit Note Generation] Rollback completed for credit note:', creditNote.id);
+        } catch (rollbackError) {
+          console.error('[Credit Note Generation] Critical: Rollback failed:', rollbackError);
+        }
+
+        // Log the error
+        console.error('[Document Generation Failed]', {
+          document_type: 'credit_note',
+          document_id: creditNote.id,
+          error_message: pdfError.message || String(pdfError)
+        });
+
+        throw pdfError;
       }
-
-      if (!client) {
-        throw new Error('Client non trouvé');
-      }
-
-      // Load user profile
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
-      const { data: userProfileData } = await supabase
-        .from('user_profile')
-        .select('*')
-        .eq('company_id', companyId)
-        .limit(1)
-        .maybeSingle();
-
-      await generateAndSaveCreditNotePDF({
-        creditNote: creditNote as CreditNote,
-        invoice,
-        client,
-        userProfile: userProfileData
-      });
 
       // Reload credit notes
       const { data: creditNotesData, error: creditNotesError } = await supabase

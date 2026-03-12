@@ -31,6 +31,7 @@ export default function ProductDetailPage() {
   const [originalFormData, setOriginalFormData] = useState({
     name: '',
     price: '',
+    purchase_price_ht: '',
     recommended_sale_price: '',
     barcode: '',
     category_id: '',
@@ -41,6 +42,7 @@ export default function ProductDetailPage() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    purchase_price_ht: '',
     recommended_sale_price: '',
     barcode: '',
     category_id: '',
@@ -411,6 +413,7 @@ export default function ProductDetailPage() {
       const initialFormData = {
         name: productData.name,
         price: productData.price.toString(),
+        purchase_price_ht: productData.purchase_price_ht?.toString() || '',
         recommended_sale_price: productData.recommended_sale_price?.toString() || '',
         barcode: productData.barcode || '',
         category_id: productData.category_id || '',
@@ -478,6 +481,13 @@ export default function ProductDetailPage() {
         return;
       }
 
+      const purchasePriceHt = formData.purchase_price_ht ? parseFloat(formData.purchase_price_ht) : null;
+      if (purchasePriceHt !== null && (isNaN(purchasePriceHt) || purchasePriceHt < 0)) {
+        toast.error('Le prix d\'achat HT doit être un nombre positif');
+        setSubmitting(false);
+        return;
+      }
+
       // Validation du code barre s'il est renseigné
       if (formData.barcode && !/^\d{13}$/.test(formData.barcode)) {
         toast.error('Le code barre doit contenir exactement 13 chiffres');
@@ -508,6 +518,7 @@ export default function ProductDetailPage() {
         .update({
           name: formData.name.trim(),
           price: price,
+          purchase_price_ht: purchasePriceHt,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
           category_id: formData.category_id || null,
@@ -764,13 +775,25 @@ export default function ProductDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-green-50 rounded-lg p-4 border border-green-100">
                   <div className="flex items-center gap-2 text-green-600 mb-2">
                     <Euro className="h-5 w-5" />
                     <span className="text-sm font-medium">Prix de cession (HT)</span>
                   </div>
                   <p className="text-3xl font-bold text-green-900">{product.price.toFixed(2)} €</p>
+                </div>
+
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+                  <div className="flex items-center gap-2 text-amber-700 mb-2">
+                    <Euro className="h-5 w-5" />
+                    <span className="text-sm font-medium">Prix d'achat (HT)</span>
+                  </div>
+                  <p className="text-lg font-bold text-amber-900">
+                    {product.purchase_price_ht != null
+                      ? `${Number(product.purchase_price_ht).toFixed(2)} €`
+                      : 'Non renseigné'}
+                  </p>
                 </div>
 
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
@@ -821,17 +844,46 @@ export default function ProductDetailPage() {
                     {isEditing ? (
                       <Input
                         id="price"
-                        type="number"
-                        step="0.01"
-                        min="0"
+                        type="text"
+                        inputMode="decimal"
                         value={formData.price}
-                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // N'accepter que les nombres et le point décimal
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setFormData({ ...formData, price: value });
+                          }
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
                         required
                         placeholder="Ex: 2.50"
                         className="mt-1.5"
                       />
                     ) : (
-                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{formData.price} €</p>
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{parseFloat(formData.price || '0').toFixed(2)} €</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
+                    {isEditing ? (
+                      <>
+                        <Input
+                          id="purchase_price_ht"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.purchase_price_ht}
+                          onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
+                          placeholder="Ex: 1.20"
+                          className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                      </>
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
+                        {formData.purchase_price_ht ? `${formData.purchase_price_ht} €` : 'Non renseigné'}
+                      </p>
                     )}
                   </div>
 
@@ -841,11 +893,17 @@ export default function ProductDetailPage() {
                       <>
                         <Input
                           id="recommended_sale_price"
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          type="text"
+                          inputMode="decimal"
                           value={formData.recommended_sale_price}
-                          onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            // N'accepter que les nombres et le point décimal
+                            if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                              setFormData({ ...formData, recommended_sale_price: value });
+                            }
+                          }}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder="Ex: 3.00"
                           className="mt-1.5"
                         />
@@ -853,7 +911,7 @@ export default function ProductDetailPage() {
                       </>
                     ) : (
                       <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
-                        {formData.recommended_sale_price ? `${formData.recommended_sale_price} €` : 'Non renseigné'}
+                        {formData.recommended_sale_price ? `${parseFloat(formData.recommended_sale_price).toFixed(2)} €` : 'Non renseigné'}
                       </p>
                     )}
                   </div>

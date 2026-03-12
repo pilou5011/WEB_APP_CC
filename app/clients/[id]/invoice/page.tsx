@@ -363,6 +363,7 @@ export default function InvoicePage() {
       deposit_slip_pdf_path: null,
       invoice_email_sent_at: null,
       deposit_slip_email_sent_at: null,
+      status: 'processing', // Statut par défaut pour la prévisualisation
       created_at: new Date().toISOString()
     };
 
@@ -394,7 +395,7 @@ export default function InvoicePage() {
 
       const totalQuantity = validRows.reduce((sum, row) => sum + (parseInt(row.quantity) || 0), 0);
 
-      // Create invoice
+      // Create invoice with status 'processing'
       const { data: invoiceData, error: invoiceError } = await supabase
         .from('invoices')
         .insert([{
@@ -402,7 +403,8 @@ export default function InvoicePage() {
           company_id: companyId,
           total_stock_sold: totalQuantity,
           total_amount: totalHTAfterDiscount,
-          discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null
+          discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
+          status: 'processing'
         }])
         .select()
         .single();
@@ -412,50 +414,88 @@ export default function InvoicePage() {
         throw new Error('Erreur lors de la création de la facture');
       }
 
-      // Create stock_direct_sold entries
-      const stockDirectSoldRows = validRows.map(row => ({
-        client_id: clientId,
-        invoice_id: invoiceData.id,
-        company_id: companyId,
-        product_id: row.product_id,
-        sub_product_id: null,
-        stock_sold: parseInt(row.quantity) || 0,
-        unit_price_ht: row.unit_price_ht,
-        total_amount_ht: row.total_ht
-      }));
+      let pdfGenerationSuccess = false;
+      try {
+        // Create stock_direct_sold entries
+        const stockDirectSoldRows = validRows.map(row => ({
+          client_id: clientId,
+          invoice_id: invoiceData.id,
+          company_id: companyId,
+          product_id: row.product_id,
+          sub_product_id: null,
+          stock_sold: parseInt(row.quantity) || 0,
+          unit_price_ht: row.unit_price_ht,
+          total_amount_ht: row.total_ht
+        }));
 
-      const { error: stockError } = await supabase
-        .from('stock_direct_sold')
-        .insert(stockDirectSoldRows);
+        const { error: stockError } = await supabase
+          .from('stock_direct_sold')
+          .insert(stockDirectSoldRows);
 
-      if (stockError) throw stockError;
+        if (stockError) throw stockError;
 
-      // Generate invoice PDF (direct invoice)
-      const { generateAndSaveDirectInvoicePDF } = await import('@/lib/pdf-generators-direct-invoice');
+        // Generate invoice PDF (direct invoice)
+        const { generateAndSaveDirectInvoicePDF } = await import('@/lib/pdf-generators-direct-invoice');
 
-      // Load user profile
-      const { data: userProfile } = await supabase
-        .from('user_profile')
-        .select('*')
-        .eq('company_id', companyId)
-        .limit(1)
-        .maybeSingle();
+        // Load user profile
+        const { data: userProfile } = await supabase
+          .from('user_profile')
+          .select('*')
+          .eq('company_id', companyId)
+          .limit(1)
+          .maybeSingle();
 
-      // Load stock_direct_sold entries for PDF generation
-      const { data: stockDirectSoldData, error: stockDirectSoldError } = await supabase
-        .from('stock_direct_sold')
-        .select('*')
-        .eq('invoice_id', invoiceData.id);
+        // Load stock_direct_sold entries for PDF generation
+        const { data: stockDirectSoldData, error: stockDirectSoldError } = await supabase
+          .from('stock_direct_sold')
+          .select('*')
+          .eq('invoice_id', invoiceData.id);
 
-      if (stockDirectSoldError) throw stockDirectSoldError;
+        if (stockDirectSoldError) throw stockDirectSoldError;
 
-      await generateAndSaveDirectInvoicePDF({
-        invoice: invoiceData,
-        client,
-        products: allProducts,
-        stockDirectSold: stockDirectSoldData || [],
-        userProfile: userProfile || null
-      });
+        await generateAndSaveDirectInvoicePDF({
+          invoice: invoiceData,
+          client,
+          products: allProducts,
+          stockDirectSold: stockDirectSoldData || [],
+          userProfile: userProfile || null
+        });
+
+        // PDF generated successfully
+        pdfGenerationSuccess = true;
+
+        // Update invoice status to 'completed'
+        const { error: statusError } = await supabase
+          .from('invoices')
+          .update({ status: 'completed' })
+          .eq('id', invoiceData.id)
+          .eq('company_id', companyId);
+
+        if (statusError) {
+          console.error('[Invoice Generation] Error updating invoice status to completed:', statusError);
+          // Don't throw, PDF was generated successfully
+        }
+      } catch (pdfError: any) {
+        // PDF generation failed - rollback all actions
+        console.error('[Invoice Generation] PDF generation failed, rolling back:', pdfError);
+        
+        const { rollbackFailedInvoice } = await import('@/lib/document-rollback');
+        try {
+          await rollbackFailedInvoice(invoiceData.id);
+          console.error('[Invoice Generation] Rollback completed for invoice:', invoiceData.id);
+        } catch (rollbackError) {
+          console.error('[Invoice Generation] Critical: Rollback failed:', rollbackError);
+        }
+
+        // Log the error
+        console.error('[Document Generation Failed]', {
+          document_type: 'invoice',
+          document_id: invoiceData.id,
+          error_message: pdfError.message || String(pdfError)
+        });
+
+        throw pdfError;
+      }
 
       // Delete draft after successful invoice generation
       try {
@@ -471,11 +511,13 @@ export default function InvoicePage() {
       setPreviewDialogOpen(false);
 
       // Recharger la facture avec les données à jour (notamment invoice_pdf_path)
+      // Ne charger que les factures avec status = 'completed'
       const { data: updatedInvoice, error: reloadError } = await supabase
         .from('invoices')
         .select('*')
         .eq('id', invoiceData.id)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .single();
       
       if (!reloadError && updatedInvoice) {

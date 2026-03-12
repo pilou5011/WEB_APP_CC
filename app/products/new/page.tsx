@@ -22,6 +22,7 @@ export default function NewProductPage() {
   const [formData, setFormData] = useState({
     name: '',
     price: '',
+    purchase_price_ht: '',
     recommended_sale_price: '',
     barcode: '',
     category_id: '',
@@ -387,6 +388,13 @@ export default function NewProductPage() {
         return;
       }
 
+      const purchasePriceHt = formData.purchase_price_ht ? parseFloat(formData.purchase_price_ht) : null;
+      if (purchasePriceHt !== null && (isNaN(purchasePriceHt) || purchasePriceHt < 0)) {
+        toast.error('Le prix d\'achat HT doit être un nombre positif');
+        setSubmitting(false);
+        return;
+      }
+
       // Validation du code barre s'il est renseigné
       if (formData.barcode && !/^\d{13}$/.test(formData.barcode)) {
         toast.error('Le code barre doit contenir exactement 13 chiffres');
@@ -469,6 +477,7 @@ export default function NewProductPage() {
           name: formData.name.trim(),
           company_id: companyId,
           price: price,
+          purchase_price_ht: purchasePriceHt,
           recommended_sale_price: recommendedSalePrice,
           barcode: formData.barcode || null,
           category_id: formData.category_id || null,
@@ -579,11 +588,17 @@ export default function NewProductPage() {
                     <Label htmlFor="price">Prix de cession (HT) *</Label>
                     <Input
                       id="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.price}
-                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // N'accepter que les nombres et le point décimal
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          setFormData({ ...formData, price: value });
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
                       required
                       placeholder="Ex: 2.50"
                       className="mt-1.5"
@@ -591,14 +606,35 @@ export default function NewProductPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
+                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
                     <Input
-                      id="recommended_sale_price"
+                      id="purchase_price_ht"
                       type="number"
                       step="0.01"
                       min="0"
+                      value={formData.purchase_price_ht}
+                      onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
+                      placeholder="Ex: 1.20"
+                      className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="recommended_sale_price">Prix de vente conseillé (TTC)</Label>
+                    <Input
+                      id="recommended_sale_price"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.recommended_sale_price}
-                      onChange={(e) => setFormData({ ...formData, recommended_sale_price: e.target.value })}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        // N'accepter que les nombres et le point décimal
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          setFormData({ ...formData, recommended_sale_price: value });
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
                       placeholder="Ex: 3.00"
                       className="mt-1.5"
                     />

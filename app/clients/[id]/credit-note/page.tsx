@@ -140,23 +140,25 @@ export default function CreditNotePage() {
 
       setClient(clientData);
 
-      // Load global invoices
+      // Load global invoices (only completed ones)
       const { data: invoicesData, error: invoicesError } = await supabase
         .from('invoices')
         .select('*')
         .eq('client_id', clientId)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (invoicesError) throw invoicesError;
       setGlobalInvoices(invoicesData || []);
 
-      // Load credit notes
+      // Load credit notes (only completed ones)
       const { data: creditNotesData, error: creditNotesError } = await supabase
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
@@ -209,7 +211,7 @@ export default function CreditNotePage() {
         throw new Error('Non autorisé');
       }
 
-      // Create credit note
+      // Create credit note with status 'processing'
       const { data: creditNote, error: creditNoteError } = await supabase
         .from('credit_notes')
         .insert({
@@ -219,7 +221,8 @@ export default function CreditNotePage() {
           unit_price: unitPrice,
           quantity: quantity,
           total_amount: totalAmount,
-          operation_name: creditNoteForm.operation_name
+          operation_name: creditNoteForm.operation_name,
+          status: 'processing'
         })
         .select()
         .single();
@@ -230,50 +233,91 @@ export default function CreditNotePage() {
         throw new Error('Erreur lors de la création de l\'avoir');
       }
 
-      // Generate PDF
-      const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
-      
-      const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
-      if (!invoice) {
-        throw new Error('Facture non trouvée');
+      let pdfGenerationSuccess = false;
+      try {
+        // Generate PDF
+        const { generateAndSaveCreditNotePDF } = await import('@/lib/pdf-generators');
+        
+        const invoice = globalInvoices.find(inv => inv.id === creditNoteForm.invoice_id);
+        if (!invoice) {
+          throw new Error('Facture non trouvée');
+        }
+
+        if (!client) {
+          throw new Error('Client non trouvé');
+        }
+
+        // Load user profile
+        const { data: userProfileData } = await supabase
+          .from('user_profile')
+          .select('*')
+          .eq('company_id', companyId)
+          .limit(1)
+          .maybeSingle();
+
+        await generateAndSaveCreditNotePDF({
+          creditNote: creditNote as CreditNote,
+          invoice,
+          client,
+          userProfile: userProfileData
+        });
+
+        // PDF generated successfully
+        pdfGenerationSuccess = true;
+
+        // Update credit note status to 'completed'
+        const { error: statusError } = await supabase
+          .from('credit_notes')
+          .update({ status: 'completed' })
+          .eq('id', creditNote.id)
+          .eq('company_id', companyId);
+
+        if (statusError) {
+          console.error('[Credit Note Generation] Error updating credit note status to completed:', statusError);
+          // Don't throw, PDF was generated successfully
+        }
+      } catch (pdfError: any) {
+        // PDF generation failed - rollback all actions
+        console.error('[Credit Note Generation] PDF generation failed, rolling back:', pdfError);
+        
+        const { rollbackFailedCreditNote } = await import('@/lib/document-rollback');
+        try {
+          await rollbackFailedCreditNote(creditNote.id);
+          console.error('[Credit Note Generation] Rollback completed for credit note:', creditNote.id);
+        } catch (rollbackError) {
+          console.error('[Credit Note Generation] Critical: Rollback failed:', rollbackError);
+        }
+
+        // Log the error
+        console.error('[Document Generation Failed]', {
+          document_type: 'credit_note',
+          document_id: creditNote.id,
+          error_message: pdfError.message || String(pdfError)
+        });
+
+        throw pdfError;
       }
 
-      if (!client) {
-        throw new Error('Client non trouvé');
-      }
-
-      // Load user profile
-      const { data: userProfileData } = await supabase
-        .from('user_profile')
-        .select('*')
-        .eq('company_id', companyId)
-        .limit(1)
-        .maybeSingle();
-
-      await generateAndSaveCreditNotePDF({
-        creditNote: creditNote as CreditNote,
-        invoice,
-        client,
-        userProfile: userProfileData
-      });
-
-      // Reload credit notes
+      // Reload credit notes (only completed ones)
       const { data: creditNotesData, error: creditNotesError } = await supabase
         .from('credit_notes')
         .select('*')
         .eq('client_id', clientId)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .order('created_at', { ascending: false });
 
       if (creditNotesError) throw creditNotesError;
       setCreditNotes(creditNotesData || []);
 
       // Recharger l'avoir avec les données à jour (notamment credit_note_pdf_path)
+      // Ne charger que les avoirs avec status = 'completed'
       const { data: updatedCreditNote, error: reloadError } = await supabase
         .from('credit_notes')
         .select('*')
         .eq('id', creditNote.id)
         .eq('company_id', companyId)
+        .eq('status', 'completed')
         .single();
       
       if (!reloadError && updatedCreditNote) {

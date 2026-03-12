@@ -721,7 +721,7 @@ export default function AuthPage() {
         <div className="text-center mb-8">
           <Building2 className="h-16 w-16 text-blue-600 mx-auto mb-4" />
           <h1 className="text-4xl font-bold text-[#0B1F33] mb-2">
-            Gestion Dépôts-Ventes
+            Gaston Stock
           </h1>
           <p className="text-slate-500">
             Gérez vos clients et vos produits facilement
@@ -804,7 +804,18 @@ export default function AuthPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Mot de passe</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Mot de passe</Label>
+                  {isLogin && (
+                    <button
+                      type="button"
+                      onClick={() => router.push('/auth/forgot-password')}
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      Mot de passe oublié ?
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input

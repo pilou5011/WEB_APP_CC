@@ -56,6 +56,9 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
   // Note: On génère toujours le PDF et on met toujours à jour invoice_pdf_path
   // même si le fichier existe déjà, pour s'assurer que la colonne est toujours renseignée
 
+  // 🧪 TEST ROLLBACK - Décommenter la ligne suivante pour tester le système de rollback
+ // throw new Error('TEST: Simulated PDF generation failure for rollback testing');
+
   try {
     // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;

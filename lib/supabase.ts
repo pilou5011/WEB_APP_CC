@@ -107,6 +107,7 @@ export type Client = {
   email: string | null;
   comment: string | null;
   tour_name_id: string | null;
+  cards_quantities: any | null;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
@@ -146,7 +147,6 @@ export type StockUpdate = {
   stock_sold: number;
   stock_added: number;
   new_stock: number;
-  product_info?: string | null;
   unit_price_ht?: number | null; // Prix unitaire HT auquel est vendu le produit
   total_amount_ht?: number | null; // Montant total HT : stock_sold x unit_price_ht
   created_at: string;
@@ -175,6 +175,7 @@ export type Invoice = {
   deposit_slip_pdf_path: string | null;
   invoice_email_sent_at: string | null; // Date d'envoi de la facture par email
   deposit_slip_email_sent_at: string | null; // Date d'envoi du bon de dépôt par email
+  status: 'processing' | 'completed' | 'failed'; // Statut du document
   created_at: string;
 };
 
@@ -182,6 +183,7 @@ export type Product = {
   id: string;
   name: string;
   price: number;
+  purchase_price_ht: number | null;
   recommended_sale_price: number | null;
   barcode: string | null;
   category_id: string | null;
@@ -234,6 +236,7 @@ export type ClientProduct = {
   current_stock: number;
   custom_price: number | null;
   custom_recommended_sale_price: number | null;
+  product_info: string | null;
   display_order: number;
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
@@ -330,6 +333,7 @@ export type CreditNote = {
   credit_note_number: string | null;
   credit_note_pdf_path: string | null;
   email_sent_at: string | null; // Date d'envoi de l'avoir par email
+  status: 'processing' | 'completed' | 'failed'; // Statut du document
   created_at: string;
 };
 
