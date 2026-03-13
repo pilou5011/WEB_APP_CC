@@ -282,7 +282,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Facture N°[numero_facture]" en gras
@@ -321,7 +321,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
-        Product?.name || 'Product',
+        Product?.name || 'Produit',
         (ClientProduct as { product_info?: string | null })?.product_info || '', // Infos produit depuis client_products
         Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
@@ -524,7 +524,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const pdfBlobData = doc.output('blob');
 
     // Save PDF to storage
-    const invoiceDate = new Date(invoice.created_at);
+    const invoiceDate = new Date(invoice.invoice_date);
     const year = invoiceDate.getFullYear();
     const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
     const day = String(invoiceDate.getDate()).padStart(2, '0');
@@ -812,7 +812,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     doc.text(previousDepositText, 15, yPosition);
     yPosition += 5;
     
-    const invoiceDateText = `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`;
+    const invoiceDateText = `Date de facture : ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`;
     doc.text(invoiceDateText, 15, yPosition);
     yPosition += 10;
 
@@ -863,6 +863,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
 
     // Create map of sub-products by Product
     // Filtrer uniquement les sous-produits non supprimés ET qui existent dans client_sub_products non supprimés
+    // Trier par display_order pour respecter l'ordre défini
     const subProductsByProductId = new Map<string, SubProduct[]>();
     (subProducts || []).forEach(sp => {
       // Vérifier que le sous-produit n'est pas supprimé ET qu'il existe dans client_sub_products non supprimé
@@ -872,6 +873,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         }
         subProductsByProductId.get(sp.product_id)!.push(sp);
       }
+    });
+    
+    // Trier les sous-produits par display_order pour chaque produit
+    subProductsByProductId.forEach((subProductsList, productId) => {
+      subProductsList.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     });
 
     const tableData: any[] = [];
@@ -1048,7 +1054,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Product', 
+        'Produit', 
         'Infos', 
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
         { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1098,8 +1104,8 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [240, 253, 244]; // green-50
-              data.cell.styles.fontSize = 9; // Augmenter la police de +1 (de 8 à 9)
-              data.cell.styles.fontStyle = 'bold'; // Mettre en gras uniquement la colonne Réassort
+              // Style conditionnel : gras et plus grand uniquement pour les sous-produits
+              // Les produits standards gardent le style par défaut (sera appliqué dans la section isSubProduct)
             } else if (columnIndex === 7) { // Nouveau dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
@@ -1125,6 +1131,12 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
               // Only apply sub-product background to non-colored columns (0, 1, 2, 3)
               if (columnIndex !== undefined && columnIndex < 4) {
                 data.cell.styles.fillColor = [245, 247, 250];
+              }
+              
+              // Pour la colonne Réassort (index 6), mettre en gras et plus grand pour les sous-produits
+              if (columnIndex === 6) {
+                data.cell.styles.fontSize = 11; // Augmenter la police de +2 (de 8 à 10) pour plus de visibilité
+                data.cell.styles.fontStyle = 'bold'; // Mettre en gras
               }
               
               if (data.column && data.column.index === 0) {
@@ -1443,7 +1455,8 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         .select('*')
         .in('product_id', productIds)
         .eq('company_id', companyId)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .order('display_order', { ascending: true });
       
       if (subProductsError) throw subProductsError;
       
@@ -1452,6 +1465,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
           subProductsByProductId[sp.product_id] = [];
         }
         subProductsByProductId[sp.product_id].push(sp);
+      });
+      
+      // Trier les sous-produits par display_order pour chaque produit (déjà trié par la requête, mais on s'assure)
+      Object.keys(subProductsByProductId).forEach(productId => {
+        subProductsByProductId[productId].sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0));
       });
     }
     
@@ -1520,12 +1538,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       }
       
       return [
-        productName,
-        info,
-        barcode, // Code barre produit
-        `${effectivePrice.toFixed(2)} €`,
-        effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-        stock.toString()
+        info, // Infos (colonne 0)
+        productName, // Produit (colonne 1)
+        stock.toString(), // Qté remise (colonne 2)
+        barcode, // Code-barres (colonne 3)
+        `${effectivePrice.toFixed(2)} €`, // Prix cession HT (colonne 4)
+        effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-' // Prix conseillé TTC (colonne 5)
       ];
     });
 
@@ -1533,24 +1551,27 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const marginRight = 15;
     const tableWidth = pageWidth - marginLeft - marginRight;
     
+    // Nouvel ordre : Infos, Produit, Qté remise, Code-barres, Prix cession HT, Prix conseillé TTC
+    // Colonne Infos plus fine, espace redistribué sur les autres colonnes pour maintenir la largeur totale
     const columnWidths = [
-      tableWidth * 0.20, // Product
-      tableWidth * 0.25, // Infos
-      tableWidth * 0.25, // Code barre produit
-      tableWidth * 0.10, // Prix cession HT
-      tableWidth * 0.10, // Prix conseillé TTC
-      tableWidth * 0.10  // Qté remise
+      tableWidth * 0.12, // Infos (réduite de 0.25 à 0.12)
+      tableWidth * 0.28, // Produit (augmentée de 0.20 à 0.28)
+      tableWidth * 0.10, // Qté remise (inchangée)
+      tableWidth * 0.20, // Code-barres (réduite de 0.25 à 0.20)
+      tableWidth * 0.15, // Prix cession HT (augmentée de 0.10 à 0.15)
+      tableWidth * 0.15  // Prix conseillé TTC (augmentée de 0.10 à 0.15)
+      // Total: 0.12 + 0.28 + 0.10 + 0.20 + 0.15 + 0.15 = 1.00
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Produit', 
         'Infos',
+        'Produit',
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1572,12 +1593,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] }, // Produit
-        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
-        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix conseillé TTC
-        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Qté remise
+        0: { halign: 'left', fontSize: 8, cellWidth: columnWidths[0] }, // Infos (même fontSize que Produit)
+        1: { halign: 'left', fontSize: 8, cellWidth: columnWidths[1] }, // Produit
+        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Qté remise
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Code-barres
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix cession HT
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Prix conseillé TTC
       }
     });
 
@@ -1898,7 +1919,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(creditNote.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(creditNote.credit_note_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Avoir N° [numero_avoir]"
@@ -1908,7 +1929,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     yPosition += 8;
 
     // Sous-titre "Avoir sur facture n° [numero_facture] du [date]"
-    const invoiceDate = new Date(invoice.created_at).toLocaleDateString('fr-FR');
+    const invoiceDate = new Date(invoice.invoice_date).toLocaleDateString('fr-FR');
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Avoir sur facture n° ${invoiceNumber} du ${invoiceDate}`, pageWidth / 2, yPosition, { align: 'center' });

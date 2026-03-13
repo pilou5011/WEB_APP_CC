@@ -241,7 +241,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Facture N°[numero_facture]" en gras

@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Euro, Package, Edit, Trash2, Plus, X, Pencil, Check, ChevronsUpDown } from 'lucide-react';
+import { ArrowLeft, Euro, Package, Edit, Trash2, Plus, X, Pencil, Check, ChevronsUpDown, GripVertical } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
@@ -17,6 +17,100 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { SubProduct } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+// Component for sortable sub-product row
+function SortableSubProductRow({
+  subProduct,
+  index,
+  isEditing,
+  onNameChange,
+  onDelete,
+  isNew
+}: {
+  subProduct: { id: string | null; name: string };
+  index: number;
+  isEditing: boolean;
+  onNameChange: (value: string) => void;
+  onDelete: () => void;
+  isNew: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: subProduct.id || `new-${index}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  if (!isEditing) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <p className="text-sm font-medium text-[#0B1F33]">{subProduct.name}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex gap-2 items-center"
+    >
+      {!isNew && (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 p-1"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+      )}
+      <Input
+        type="text"
+        value={subProduct.name}
+        onChange={(e) => onNameChange(e.target.value)}
+        placeholder={`Nom du sous-produit ${index + 1}`}
+        className="flex-1"
+      />
+      {!isNew && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          className="h-9 w-9 p-0"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export default function ProductDetailPage() {
   const router = useRouter();
@@ -67,6 +161,60 @@ export default function ProductDetailPage() {
   const [deletingSubcategory, setDeletingSubcategory] = useState<ProductSubcategory | null>(null);
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
+
+  // DnD sensors for sub-products drag & drop
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Handle drag end for sub-products
+  const handleSubProductDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = subProducts.findIndex(sp => (sp.id || `new-${subProducts.indexOf(sp)}`) === active.id);
+      const newIndex = subProducts.findIndex(sp => (sp.id || `new-${subProducts.indexOf(sp)}`) === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reorderedSubProducts = arrayMove(subProducts, oldIndex, newIndex);
+        setSubProducts(reorderedSubProducts);
+
+        // If we're editing an existing product with existing sub-products, update display_order in database
+        if (isEditing && productId && existingSubProducts.length > 0) {
+          try {
+            const companyId = await getCurrentUserCompanyId();
+            if (!companyId) {
+              throw new Error('Non autorisé');
+            }
+
+            // Update display_order for existing sub-products only
+            for (let i = 0; i < reorderedSubProducts.length; i++) {
+              const sp = reorderedSubProducts[i];
+              if (sp.id) {
+                const { error } = await supabase
+                  .from('sub_products')
+                  .update({ display_order: i + 1 })
+                  .eq('id', sp.id)
+                  .eq('company_id', companyId);
+
+                if (error) throw error;
+              }
+            }
+
+            toast.success('Ordre des sous-produits mis à jour');
+          } catch (error) {
+            console.error('Error updating sub-product order:', error);
+            toast.error('Erreur lors de la mise à jour de l\'ordre');
+            // Reload to revert changes
+            await loadProductData();
+          }
+        }
+      }
+    }
+  };
 
   useEffect(() => {
     loadProductData();
@@ -422,14 +570,14 @@ export default function ProductDetailPage() {
       setFormData(initialFormData);
       setOriginalFormData(initialFormData);
 
-      // Load sub-products
+      // Load sub-products (sorted by display_order)
       const { data: subProductsData, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
         .eq('product_id', productId)
         .eq('company_id', companyId)
         .is('deleted_at', null)
-        .order('created_at', { ascending: true });
+        .order('display_order', { ascending: true });
 
       if (subProductsError) throw subProductsError;
       
@@ -558,15 +706,19 @@ export default function ProductDetailPage() {
           if (deleteError) throw deleteError;
         }
 
-        // Update or insert sub-products
+        // Update or insert sub-products with display_order
         const newlyCreatedSubProductIds: string[] = [];
-        for (const sp of validSubProducts) {
+        for (let index = 0; index < validSubProducts.length; index++) {
+          const sp = validSubProducts[index];
+          const displayOrder = index + 1; // display_order starts at 1
+          
           if (sp.id) {
             // Update existing
             const { error: updateError } = await supabase
               .from('sub_products')
               .update({
                 name: sp.name.trim(),
+                display_order: displayOrder,
                 updated_at: new Date().toISOString()
               })
               .eq('id', sp.id)
@@ -579,7 +731,8 @@ export default function ProductDetailPage() {
               .insert({
                 product_id: productId,
                 company_id: companyId,
-                name: sp.name.trim()
+                name: sp.name.trim(),
+                display_order: displayOrder
               })
               .select('id')
               .single();
@@ -1315,40 +1468,55 @@ export default function ProductDetailPage() {
                   {hasSubProducts && (
                     <div className="space-y-2 pt-2">
                       <Label className="text-sm">Sous-produits</Label>
-                      {subProducts.map((subProduct, index) => (
-                        <div key={index} className="flex gap-2">
-                          {isEditing ? (
-                            <>
-                              <Input
-                                type="text"
-                                value={subProduct.name}
-                                onChange={(e) => {
-                                  const newSubProducts = [...subProducts];
-                                  newSubProducts[index] = { ...newSubProducts[index], name: e.target.value };
-                                  setSubProducts(newSubProducts);
-                                }}
-                                placeholder={`Nom du sous-produit ${index + 1}`}
-                                className="flex-1"
-                              />
-                              {subProducts.length > 1 && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setDeleteSubProductIndex(index);
-                                  }}
-                                  className="h-9 w-9 p-0"
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </>
-                          ) : (
-                            <p className="text-sm font-medium text-[#0B1F33]">{subProduct.name}</p>
-                          )}
+                      {isEditing ? (
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleSubProductDragEnd}
+                        >
+                          <SortableContext
+                            items={subProducts.map((sp, idx) => sp.id || `new-${idx}`)}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-2">
+                              {subProducts.map((subProduct, index) => {
+                                const isNew = subProduct.id === null;
+                                return (
+                                  <SortableSubProductRow
+                                    key={subProduct.id || `new-${index}`}
+                                    subProduct={subProduct}
+                                    index={index}
+                                    isEditing={isEditing}
+                                    isNew={isNew}
+                                    onNameChange={(value) => {
+                                      const newSubProducts = [...subProducts];
+                                      newSubProducts[index] = { ...newSubProducts[index], name: value };
+                                      setSubProducts(newSubProducts);
+                                    }}
+                                    onDelete={() => {
+                                      setDeleteSubProductIndex(index);
+                                    }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </SortableContext>
+                        </DndContext>
+                      ) : (
+                        <div className="space-y-2">
+                          {subProducts.map((subProduct, index) => (
+                            <SortableSubProductRow
+                              key={subProduct.id || `new-${index}`}
+                              subProduct={subProduct}
+                              index={index}
+                              isEditing={false}
+                              isNew={false}
+                              onNameChange={() => {}}
+                              onDelete={() => {}}
+                            />
+                          ))}
                         </div>
-                      ))}
+                      )}
                       {isEditing && (
                         <Button
                           type="button"

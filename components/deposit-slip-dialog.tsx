@@ -5,8 +5,6 @@ import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supa
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Download, Loader2, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -36,7 +34,6 @@ export function DepositSlipDialog({
   const [loadingInfos, setLoadingInfos] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [productInfos, setProductInfos] = useState<Record<string, string>>({});
-  const [needsInfoInput, setNeedsInfoInput] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
@@ -51,18 +48,11 @@ export function DepositSlipDialog({
       setLoadingInfos(false);
       loadUserProfile();
       
-      // En mode génération, charger les infos depuis la dernière mise à jour de stock
-      // On génère directement avec les infos disponibles (ou vides)
-      if (!generateMode) {
-        loadLastInvoiceInfos();
-      } else {
-        // En mode génération, charger les product_info depuis la dernière mise à jour de stock
-        setLoadingInfos(true);
-        loadLastStockUpdateInfos().finally(() => {
-          setLoadingInfos(false);
-        });
-        setNeedsInfoInput(false); // Ne pas demander les infos en mode génération
-      }
+      // Toujours charger les product_info depuis client_products
+      setLoadingInfos(true);
+      loadProductInfos().finally(() => {
+        setLoadingInfos(false);
+      });
     }
   }, [open, stockUpdates, clientProducts, generateMode]);
 
@@ -77,20 +67,18 @@ export function DepositSlipDialog({
 
   // Load stored PDF or generate new one when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated) {
-      // En mode génération, attendre que les infos soient chargées avant de générer
+    if (open && !loadingProfile && !loadingInfos && !pdfGenerated) {
       if (generateMode) {
-        if (!loadingInfos) {
-          setPdfGenerated(true);
-          generatePDFPreview();
-        }
-      } else if (!needsInfoInput) {
+        // Mode génération : générer un nouveau PDF
+        setPdfGenerated(true);
+        generatePDFPreview();
+      } else {
         // Mode chargement : charger le PDF existant depuis le bucket
         setPdfGenerated(true);
         loadStoredPDF();
       }
     }
-  }, [open, loadingProfile, loadingInfos, pdfGenerated, needsInfoInput, generateMode]);
+  }, [open, loadingProfile, loadingInfos, pdfGenerated, generateMode]);
 
   const loadStoredPDF = async () => {
     // Load stored PDF if it exists
@@ -155,9 +143,9 @@ export function DepositSlipDialog({
     }
   };
 
-  const loadLastStockUpdateInfos = async (): Promise<void> => {
+  const loadProductInfos = async (): Promise<void> => {
     try {
-      // product_info provient de client_products, pas de stock_updates
+      // Toujours charger product_info depuis client_products
       const infos: Record<string, string> = {};
       clientProducts.forEach(cp => {
         if (cp.product_id) {
@@ -166,7 +154,7 @@ export function DepositSlipDialog({
       });
       setProductInfos(infos);
     } catch (error) {
-      console.error('Error loading last stock update infos:', error);
+      console.error('Error loading product infos:', error);
       // En cas d'erreur, initialiser avec des infos vides
       const infos: Record<string, string> = {};
       clientProducts.forEach(cp => {
@@ -175,52 +163,6 @@ export function DepositSlipDialog({
         }
       });
       setProductInfos(infos);
-    }
-  };
-
-  const loadLastInvoiceInfos = async () => {
-    try {
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
-      // Check if there's at least one invoice for this client
-      const { data: lastInvoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('client_id', client.id)
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
-
-      if (lastInvoice && stockUpdates.length > 0) {
-        // product_info provient de client_products
-        const infos: Record<string, string> = {};
-        clientProducts.forEach((cp) => {
-          if (cp.product_id) {
-            infos[cp.product_id] = (cp as { product_info?: string | null }).product_info || '';
-          }
-        });
-        setProductInfos(infos);
-        setNeedsInfoInput(false);
-      } else {
-        // No invoice yet or no stock updates, user needs to input infos
-        setNeedsInfoInput(true);
-        const infos: Record<string, string> = {};
-        clientProducts.forEach(cp => {
-          if (cp.product_id) {
-            infos[cp.product_id] = '';
-          }
-        });
-        setProductInfos(infos);
-      }
-    } catch (error) {
-      console.error('Error loading last invoice infos:', error);
-      setNeedsInfoInput(true);
     }
   };
 
@@ -616,61 +558,24 @@ export function DepositSlipDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {needsInfoInput ? (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">
-                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque produit :
-              </p>
-              {clientProducts.map((cp) => (
-                <div key={cp.id}>
-                  <Label htmlFor={`info-${cp.id}`}>
-                    Infos pour {cp.product?.name || 'Produit'}
-                  </Label>
-                  <Input
-                    id={`info-${cp.id}`}
-                    type="text"
-                    value={productInfos[cp.product_id || ''] || ''}
-                    onChange={(e) => setProductInfos(prev => ({
-                      ...prev,
-                      [cp.product_id || '']: e.target.value
-                    }))}
-                    placeholder="Ex: Livraison partielle, Retour prévu..."
-                    className="mt-1.5"
-                  />
-                </div>
-              ))}
-              <Button
-                onClick={() => {
-                  setNeedsInfoInput(false);
-                  setPdfGenerated(false);
-                }}
-                className="w-full"
-              >
-                Générer le bon de dépôt
-              </Button>
+        <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
+          {generating || loadingProfile || loadingInfos ? (
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
+              <p className="text-slate-600">Génération du PDF en cours...</p>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-            {generating || loadingProfile ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
-                <p className="text-slate-600">Génération du PDF en cours...</p>
-              </div>
-            ) : pdfUrl ? (
-              <iframe
-                src={pdfUrl}
-                className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-                title="Prévisualisation du bon de dépôt"
-              />
-            ) : (
-              <div className="text-center text-slate-600">
-                <p>Erreur lors de la génération du PDF</p>
-              </div>
-            )}
-          </div>
-        )}
+          ) : pdfUrl ? (
+            <iframe
+              src={pdfUrl}
+              className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
+              title="Prévisualisation du bon de dépôt"
+            />
+          ) : (
+            <div className="text-center text-slate-600">
+              <p>Erreur lors de la génération du PDF</p>
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
           <div className="flex gap-2">
@@ -678,7 +583,7 @@ export function DepositSlipDialog({
               <Button 
                 variant="outline" 
                 onClick={handleSendEmail}
-                disabled={!pdfBlob || generating || sendingEmail || needsInfoInput}
+                disabled={!pdfBlob || generating || sendingEmail}
               >
                 {sendingEmail ? (
                   <>
@@ -704,7 +609,7 @@ export function DepositSlipDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Fermer
             </Button>
-            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating || needsInfoInput}>
+            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating}>
               <Download className="mr-2 h-4 w-4" />
               Télécharger
             </Button>

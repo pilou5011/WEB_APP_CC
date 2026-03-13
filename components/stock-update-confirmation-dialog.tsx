@@ -30,10 +30,12 @@ interface PendingAdjustment {
 interface StockUpdateConfirmationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (discountPercentage?: number) => void;
+  onConfirm: (discountPercentage?: number, invoiceDate?: string) => void;
   productUpdates: ProductUpdate[];
   pendingAdjustments?: PendingAdjustment[];
   loading?: boolean;
+  invoiceDate?: string;
+  onInvoiceDateChange?: (date: string) => void;
 }
 
 export function StockUpdateConfirmationDialog({
@@ -42,16 +44,36 @@ export function StockUpdateConfirmationDialog({
   onConfirm,
   productUpdates,
   pendingAdjustments = [],
-  loading = false
+  loading = false,
+  invoiceDate: externalInvoiceDate,
+  onInvoiceDateChange
 }: StockUpdateConfirmationDialogProps) {
   const [discountPercentage, setDiscountPercentage] = useState<string>('');
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => {
+    // Initialize with today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
   
   // Réinitialiser la remise quand le dialogue s'ouvre
   useEffect(() => {
     if (open) {
       setDiscountPercentage('');
+      if (externalInvoiceDate) {
+        setInvoiceDate(externalInvoiceDate);
+      } else {
+        const today = new Date();
+        setInvoiceDate(today.toISOString().split('T')[0]);
+      }
     }
-  }, [open]);
+  }, [open, externalInvoiceDate]);
+  
+  const handleInvoiceDateChange = (date: string) => {
+    setInvoiceDate(date);
+    if (onInvoiceDateChange) {
+      onInvoiceDateChange(date);
+    }
+  };
   
   const totalStockSold = productUpdates.reduce((sum, item) => sum + item.stockSold, 0);
   const productsAmount = productUpdates.reduce((sum, item) => sum + item.amount, 0);
@@ -76,12 +98,15 @@ export function StockUpdateConfirmationDialog({
   
   const handleConfirm = () => {
     const discount = discountPercentage ? parseFloat(discountPercentage) : undefined;
-    onConfirm(discount);
+    onConfirm(discount, invoiceDate);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent 
+        className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-2xl">Résumé de la facturation</DialogTitle>
           <DialogDescription>
@@ -112,6 +137,25 @@ export function StockUpdateConfirmationDialog({
           </div>
 
           <Separator />
+
+          {/* Date du document */}
+          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+            <div className="flex items-center gap-2 text-slate-700 mb-3">
+              <h3 className="font-semibold">Date du document</h3>
+            </div>
+            <div className="flex items-end gap-3">
+              <div>
+                <Input
+                  id="invoice-date"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => handleInvoiceDateChange(e.target.value)}
+                  className="w-36"
+                  autoFocus={false}
+                />
+              </div>
+            </div>
+          </div>
 
           {/* Remise commerciale */}
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">

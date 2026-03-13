@@ -153,11 +153,13 @@ export function StockReportDialog({
         throw new Error('Non autorisé');
       }
 
-      // Load all sub-products
+      // Load all sub-products (sorted by display_order)
       const { data: subProductsData, error: subProductsError } = await supabase
         .from('sub_products')
         .select('*')
-        .eq('company_id', companyId);
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('display_order', { ascending: true });
 
       if (subProductsError) throw subProductsError;
 
