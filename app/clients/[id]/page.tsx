@@ -403,6 +403,13 @@ export default function ClientDetailPage() {
   // Draft recovery
   const [draftRecoveryOpen, setDraftRecoveryOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<string>('');
+  
+  // Invoice date (comptable)
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => {
+    // Initialize with today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
   
@@ -831,7 +838,7 @@ export default function ClientDetailPage() {
           .in('product_id', productIds)
           .eq('company_id', companyId)
           .is('deleted_at', null)
-          .order('created_at', { ascending: true });
+          .order('display_order', { ascending: true });
 
         if (subProductsError) throw subProductsError;
 
@@ -842,6 +849,12 @@ export default function ClientDetailPage() {
           }
           subProductsByProduct[sp.product_id].push(sp);
         });
+        
+        // Trier les sous-produits par display_order pour chaque produit (déjà trié par la requête, mais on s'assure)
+        Object.keys(subProductsByProduct).forEach(productId => {
+          subProductsByProduct[productId].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        });
+        
         setSubProducts(subProductsByProduct);
 
         // Load client_sub_products
@@ -1253,7 +1266,9 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number, invoiceDateParam?: string) => {
+    // Use the date from the dialog if provided, otherwise use the state
+    const finalInvoiceDate = invoiceDateParam || invoiceDate;
     if (!client) return;
 
     setSubmitting(true);
@@ -3313,6 +3328,8 @@ export default function ClientDetailPage() {
             productUpdates={prepareProductUpdates() || []}
             pendingAdjustments={pendingAdjustments}
             loading={submitting}
+            invoiceDate={invoiceDate}
+            onInvoiceDateChange={setInvoiceDate}
           />
         )}
 
@@ -3380,6 +3397,8 @@ export default function ClientDetailPage() {
             productUpdates={prepareProductUpdates() || []}
             pendingAdjustments={pendingAdjustments}
             loading={submitting}
+            invoiceDate={invoiceDate}
+            onInvoiceDateChange={setInvoiceDate}
           />
         )}
 

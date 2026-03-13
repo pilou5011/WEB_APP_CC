@@ -834,7 +834,7 @@ export default function ClientDetailPage() {
           .in('product_id', productIds)
           .eq('company_id', companyId)
           .is('deleted_at', null)
-          .order('created_at', { ascending: true });
+          .order('display_order', { ascending: true });
 
         if (subProductsError) throw subProductsError;
 
@@ -845,6 +845,12 @@ export default function ClientDetailPage() {
           }
           subProductsByProduct[sp.product_id].push(sp);
         });
+        
+        // Trier les sous-produits par display_order pour chaque produit (déjà trié par la requête, mais on s'assure)
+        Object.keys(subProductsByProduct).forEach(productId => {
+          subProductsByProduct[productId].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        });
+        
         setSubProducts(subProductsByProduct);
 
         // Load client_sub_products
@@ -1808,6 +1814,7 @@ export default function ClientDetailPage() {
           total_amount: 0,
           invoice_number: null, // No invoice number when amount is 0
           status: 'completed', // Statut par défaut pour les dialogs
+          invoice_date: new Date().toISOString().split('T')[0], // Date comptable (aujourd'hui par défaut)
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -3415,6 +3422,7 @@ export default function ClientDetailPage() {
                           invoice_email_sent_at: realInvoice?.invoice_email_sent_at || null,
                           deposit_slip_email_sent_at: realInvoice?.deposit_slip_email_sent_at || null,
                           status: realInvoice?.status || 'completed', // Utiliser le statut de la facture réelle ou 'completed' par défaut
+                          invoice_date: realInvoice?.invoice_date || new Date(stockUpdate.created_at).toISOString().split('T')[0], // Date comptable
                           created_at: stockUpdate.created_at
                         };
                         

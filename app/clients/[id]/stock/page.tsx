@@ -410,6 +410,13 @@ export default function ClientDetailPage() {
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
   
+  // Invoice date (comptable)
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => {
+    // Initialize with today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
+  
   // Delete product dialog
   const [deleteProductDialogOpen, setDeleteProductDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<ClientProduct & { product?: Product } | null>(null);
@@ -836,7 +843,7 @@ export default function ClientDetailPage() {
           .in('product_id', productIds)
           .eq('company_id', companyId)
           .is('deleted_at', null)
-          .order('created_at', { ascending: true });
+          .order('display_order', { ascending: true });
 
         if (subProductsError) throw subProductsError;
 
@@ -847,6 +854,12 @@ export default function ClientDetailPage() {
           }
           subProductsByProduct[sp.product_id].push(sp);
         });
+        
+        // Trier les sous-produits par display_order pour chaque produit (déjà trié par la requête, mais on s'assure)
+        Object.keys(subProductsByProduct).forEach(productId => {
+          subProductsByProduct[productId].sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
+        });
+        
         setSubProducts(subProductsByProduct);
 
         // Load client_sub_products
@@ -1287,7 +1300,9 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number, invoiceDateParam?: string) => {
+    // Use the date from the dialog if provided, otherwise use the state
+    const finalInvoiceDate = invoiceDateParam || invoiceDate;
     if (!client) return;
 
     setSubmitting(true);
@@ -1349,7 +1364,8 @@ export default function ClientDetailPage() {
             total_stock_sold: totalStockSold,
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
-            status: 'processing'
+            status: 'processing',
+            invoice_date: finalInvoiceDate // Date comptable
           }])
           .select()
           .single();
@@ -3707,7 +3723,7 @@ export default function ClientDetailPage() {
                             {globalInvoices.map((invoice) => (
                               <CommandItem
                                 key={invoice.id}
-                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.created_at).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
+                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
                                 onSelect={() => {
                                   setCreditNoteForm(f => ({ ...f, invoice_id: invoice.id }));
                                   setInvoicePopoverOpen(false);
@@ -3719,7 +3735,7 @@ export default function ClientDetailPage() {
                                     creditNoteForm.invoice_id === invoice.id ? 'opacity-100' : 'opacity-0'
                                   )}
                                 />
-                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.created_at).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
+                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.invoice_date).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -3865,6 +3881,8 @@ export default function ClientDetailPage() {
             productUpdates={prepareProductUpdates() || []}
             pendingAdjustments={pendingAdjustments}
             loading={submitting}
+            invoiceDate={invoiceDate}
+            onInvoiceDateChange={setInvoiceDate}
           />
         )}
 
