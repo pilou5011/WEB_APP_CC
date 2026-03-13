@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
@@ -271,20 +271,25 @@ export function StockReportDialog({
           <DialogTitle>Prévisualisation du relevé de stock</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
+        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col p-2 overflow-hidden">
           {generating || loadingProfile || loadingSubProducts || loadingPreviousInvoice ? (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
               <p className="text-slate-600">Génération du PDF en cours...</p>
             </div>
           ) : pdfUrl ? (
-            <iframe
-              src={pdfUrl}
-              className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-              title="Prévisualisation du relevé de stock"
-            />
+            <div 
+              className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg"
+              style={{ WebkitOverflowScrolling: 'touch' }}
+            >
+              <iframe
+                src={pdfUrl}
+                className="w-full min-h-[2500px] rounded border-0"
+                title="Prévisualisation du relevé de stock"
+              />
+            </div>
           ) : (
-            <div className="text-center text-slate-600">
+            <div className="flex flex-1 items-center justify-center text-center text-slate-600">
               <p>Erreur lors de la génération du PDF</p>
             </div>
           )}
