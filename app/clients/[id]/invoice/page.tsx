@@ -371,6 +371,7 @@ export default function InvoicePage() {
       invoice_email_sent_at: null,
       deposit_slip_email_sent_at: null,
       status: 'processing', // Statut par défaut pour la prévisualisation
+      invoice_date: new Date().toISOString().split('T')[0], // Date comptable par défaut (aujourd'hui)
       created_at: new Date().toISOString()
     };
 
