@@ -40,6 +40,7 @@ export function StockReportDialog({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
   const [pageRendering, setPageRendering] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -62,6 +63,7 @@ export function StockReportDialog({
       setPdfUrl(null);
       setPdfDoc(null);
       setNumPages(null);
+      setUseIframeFallback(false);
       setCurrentPage(1);
       setPdfBlob(null);
       setLoadingProfile(true);
@@ -98,6 +100,9 @@ export function StockReportDialog({
         setNumPages(doc.numPages);
       } catch (err) {
         console.error('Error loading PDF with pdfjs:', err);
+        if (cancelled) return;
+        setUseIframeFallback(true);
+        toast.warning('Affichage simplifié (page 1 uniquement sur tablette). Vous pouvez télécharger le PDF.');
       }
     })();
     return () => { cancelled = true; };
@@ -117,8 +122,8 @@ export function StockReportDialog({
         if (cancelled) return;
         const pageProxy = page as { getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (ctx: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } };
         const baseViewport = pageProxy.getViewport({ scale: 1 });
-        const containerW = containerRef.current?.clientWidth ?? window.innerWidth * 0.9;
-        const scale = Math.min(2.5, Math.max(1, (containerW - 32) / baseViewport.width));
+        const containerW = containerRef.current?.clientWidth || window.innerWidth * 0.9;
+        const scale = Math.min(2.5, Math.max(1, Math.max(containerW - 32, 200) / baseViewport.width));
         const viewport = pageProxy.getViewport({ scale });
         canvas.width = viewport.width;
         canvas.height = viewport.height;
@@ -348,47 +353,57 @@ export function StockReportDialog({
                 className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
-                {!pdfDoc ? (
+                {useIframeFallback ? (
+                  <iframe
+                    src={pdfUrl}
+                    className="w-full min-h-[70vh] flex-1 rounded border-0"
+                    title="Prévisualisation du relevé de stock"
+                  />
+                ) : !pdfDoc ? (
                   <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
                     <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
                     <p className="text-sm text-slate-600">Préparation du PDF...</p>
                   </div>
-                ) : pageRendering ? (
-                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
-                    <p className="text-sm text-slate-600">Chargement de la page...</p>
-                  </div>
                 ) : (
-                  <canvas
-                    ref={canvasRef}
-                    className="max-w-full h-auto rounded shadow-sm"
-                    style={{ maxHeight: '70vh' }}
-                  />
+                  <div className="relative flex flex-1 items-start justify-center min-h-0 w-full">
+                    <canvas
+                      ref={canvasRef}
+                      className="max-w-full h-auto rounded shadow-sm"
+                      style={{ maxHeight: '70vh', opacity: pageRendering ? 0.6 : 1 }}
+                    />
+                    {pageRendering && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-              <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1 || !pdfDoc}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Page précédente
-                </Button>
-                <span className="text-sm text-slate-600 px-2">
-                  Page {currentPage}{numPages != null ? ` / ${numPages}` : ''}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(p => Math.min(numPages ?? p, p + 1))}
-                  disabled={numPages != null && currentPage >= numPages}
-                >
-                  Page suivante
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+              {!useIframeFallback && (
+                <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1 || !pdfDoc}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Page précédente
+                  </Button>
+                  <span className="text-sm text-slate-600 px-2">
+                    Page {currentPage}{numPages != null ? ` / ${numPages}` : ''}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(numPages ?? p, p + 1))}
+                    disabled={numPages != null && currentPage >= numPages}
+                  >
+                    Page suivante
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-center text-slate-600">
