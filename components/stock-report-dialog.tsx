@@ -123,7 +123,8 @@ export function StockReportDialog({
         const pageProxy = page as { getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (ctx: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } };
         const baseViewport = pageProxy.getViewport({ scale: 1 });
         const containerW = containerRef.current?.clientWidth || window.innerWidth * 0.9;
-        const scale = Math.min(2.5, Math.max(1, Math.max(containerW - 32, 200) / baseViewport.width));
+        const baseScale = Math.min(3.5, Math.max(1.5, Math.max(containerW - 32, 200) / baseViewport.width));
+        const scale = baseScale * Math.min(1.5, window.devicePixelRatio || 1);
         const viewport = pageProxy.getViewport({ scale });
         canvas.width = viewport.width;
         canvas.height = viewport.height;
