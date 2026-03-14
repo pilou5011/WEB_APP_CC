@@ -37,36 +37,64 @@ export default function ClientLayout({
     },
   ];
 
+  const navLinkContent = (item: typeof navItems[0], isActive: boolean) => {
+    const Icon = item.icon;
+    return (
+      <>
+        <Icon className="h-5 w-5 flex-shrink-0" />
+        <span className="whitespace-nowrap">
+          {item.title.includes('(') ? (
+            <>
+              {item.title.split('(')[0]}
+              <span className="text-xs">({item.title.match(/\(([^)]+)\)/)?.[1]})</span>
+            </>
+          ) : (
+            item.title
+          )}
+        </span>
+      </>
+    );
+  };
+
+  const linkClassName = (isActive: boolean) => cn(
+    'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200',
+    isActive
+      ? 'bg-[#0B1F33] text-white'
+      : 'text-slate-700 hover:bg-slate-200 hover:shadow-md hover:scale-[1.02]'
+  );
+
   return (
-    <div className="flex min-h-[calc(100vh-4rem)]">
-      {/* Sidebar */}
-      <aside className="sticky top-16 h-[calc(100vh-4rem)] w-64 border-r border-slate-200 bg-slate-50 p-4 overflow-y-auto">
-        <nav className="space-y-2">
+    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-4rem)]">
+      {/* Barre de navigation en haut sur tablette */}
+      <nav className="lg:hidden sticky top-16 z-40 border-b border-slate-200 bg-slate-50 px-2 py-2 overflow-x-auto">
+        <div className="flex gap-2 min-w-max">
           {navItems.map((item) => {
-            const Icon = item.icon;
             const isActive = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={cn(
-                  'flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200',
-                  isActive
-                    ? 'bg-[#0B1F33] text-white'
-                    : 'text-slate-700 hover:bg-slate-200 hover:shadow-md hover:scale-[1.02]'
-                )}
+                className={cn(linkClassName(isActive), 'flex-shrink-0')}
               >
-                <Icon className="h-5 w-5" />
-                <span className="whitespace-nowrap">
-                  {item.title.includes('(') ? (
-                    <>
-                      {item.title.split('(')[0]}
-                      <span className="text-xs">({item.title.match(/\(([^)]+)\)/)?.[1]})</span>
-                    </>
-                  ) : (
-                    item.title
-                  )}
-                </span>
+                {navLinkContent(item, isActive)}
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+
+      {/* Sidebar (PC uniquement) */}
+      <aside className="hidden lg:block sticky top-16 h-[calc(100vh-4rem)] w-64 border-r border-slate-200 bg-slate-50 p-4 overflow-y-auto flex-shrink-0">
+        <nav className="space-y-2">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={linkClassName(isActive)}
+              >
+                {navLinkContent(item, isActive)}
               </Link>
             );
           })}
@@ -74,7 +102,7 @@ export default function ClientLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1">
+      <main className="flex-1 min-w-0">
         {children}
       </main>
     </div>
