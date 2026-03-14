@@ -66,8 +66,9 @@ export default function ClientLayout({
   return (
     <div className="flex flex-col lg:flex-row min-h-[calc(100vh-4rem)]">
       {/* Barre de navigation en haut sur tablette */}
-      <nav className="lg:hidden sticky top-16 z-40 border-b border-slate-200 bg-slate-50 px-2 py-2 overflow-x-auto">
-        <div className="flex gap-2 min-w-max">
+      <nav className="lg:hidden sticky top-16 z-40 border-b border-slate-200 bg-slate-50 py-2 overflow-x-auto">
+        <div className="flex justify-center w-full px-4">
+          <div className="flex gap-2 min-w-max">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -80,6 +81,7 @@ export default function ClientLayout({
               </Link>
             );
           })}
+          </div>
         </div>
       </nav>
 
