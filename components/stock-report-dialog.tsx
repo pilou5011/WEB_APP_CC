@@ -5,7 +5,7 @@ import { Client, Product, ClientProduct, UserProfile, StockUpdate, SubProduct, C
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2 } from 'lucide-react';
+import { Download, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface StockReportDialogProps {
@@ -36,6 +36,7 @@ export function StockReportDialog({
   const [loadingSubProducts, setLoadingSubProducts] = useState(true);
   const [previousInvoiceDate, setPreviousInvoiceDate] = useState<string | null>(null);
   const [loadingPreviousInvoice, setLoadingPreviousInvoice] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Mode débogage (activer/désactiver avec une variable d'environnement ou un flag)
   const DEBUG_MODE = process.env.NODE_ENV === 'development';
@@ -54,6 +55,7 @@ export function StockReportDialog({
     if (open) {
       setPdfGenerated(false);
       setPdfUrl(null);
+      setCurrentPage(1);
       setPdfBlob(null);
       setLoadingProfile(true);
       setLoadingSubProducts(true);
@@ -278,16 +280,41 @@ export function StockReportDialog({
               <p className="text-slate-600">Génération du PDF en cours...</p>
             </div>
           ) : pdfUrl ? (
-            <div 
-              className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg"
-              style={{ WebkitOverflowScrolling: 'touch' }}
-            >
-              <iframe
-                src={pdfUrl}
-                className="w-full min-h-[2500px] rounded border-0"
-                title="Prévisualisation du relevé de stock"
-              />
-            </div>
+            <>
+              <div 
+                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                <iframe
+                  key={currentPage}
+                  src={`${pdfUrl}#page=${currentPage}`}
+                  className="w-full h-full min-h-[70vh] rounded border-0"
+                  title="Prévisualisation du relevé de stock"
+                />
+              </div>
+              <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Page précédente
+                </Button>
+                <span className="text-sm text-slate-600 px-2">
+                  Page {currentPage}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => p + 1)}
+                >
+                  Page suivante
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-center text-slate-600">
               <p>Erreur lors de la génération du PDF</p>
