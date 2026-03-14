@@ -253,7 +253,8 @@ export default function ClientsPage() {
 
         {/* Barre de recherche et filtres */}
         <div className="mb-6 space-y-4">
-          <div className="relative max-w-md">
+          <div className="flex justify-center w-full px-4">
+            <div className="relative max-w-md w-full">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 h-4 w-4" />
             <Input
               type="text"
@@ -262,10 +263,12 @@ export default function ClientsPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 bg-white shadow-sm border-slate-200 focus:border-blue-500 focus:ring-blue-500"
             />
+            </div>
           </div>
 
           {/* Filtres par département et ville */}
-          <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex justify-center w-full px-4">
+            <div className="flex flex-wrap gap-3 items-center justify-center">
             {/* Filtre par département */}
             <Popover open={departmentFilterOpen} onOpenChange={setDepartmentFilterOpen}>
               <PopoverTrigger asChild>
@@ -524,14 +527,17 @@ export default function ClientsPage() {
                 Réinitialiser les filtres
               </Button>
             )}
+            </div>
           </div>
 
           {/* Compteur de résultats */}
           {(searchTerm || selectedDepartments.length > 0 || selectedCities.length > 0 || selectedTours.length > 0) && (
+            <div className="flex justify-center w-full">
             <p className="text-sm text-slate-600">
               {filteredClients.length} client{filteredClients.length !== 1 ? 's' : ''} trouvé{filteredClients.length !== 1 ? 's' : ''}
               {searchTerm && ` pour "${searchTerm}"`}
             </p>
+            </div>
           )}
         </div>
 
