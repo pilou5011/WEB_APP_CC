@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, SubProduct, ClientSubProduct, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -37,6 +37,11 @@ export function StockReportDialog({
   const [previousInvoiceDate, setPreviousInvoiceDate] = useState<string | null>(null);
   const [loadingPreviousInvoice, setLoadingPreviousInvoice] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
+  const [pageRendering, setPageRendering] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Mode débogage (activer/désactiver avec une variable d'environnement ou un flag)
   const DEBUG_MODE = process.env.NODE_ENV === 'development';
@@ -55,6 +60,8 @@ export function StockReportDialog({
     if (open) {
       setPdfGenerated(false);
       setPdfUrl(null);
+      setPdfDoc(null);
+      setNumPages(null);
       setCurrentPage(1);
       setPdfBlob(null);
       setLoadingProfile(true);
@@ -74,6 +81,61 @@ export function StockReportDialog({
       }
     };
   }, [pdfUrl]);
+
+  // Load PDF document with pdfjs when blob is ready (for canvas rendering on tablet)
+  useEffect(() => {
+    if (!pdfBlob || !open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfjs = await import('pdfjs-dist');
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
+        const arrayBuffer = await pdfBlob.arrayBuffer();
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const doc = await loadingTask.promise;
+        if (cancelled) return;
+        setPdfDoc(doc as { getPage: (n: number) => Promise<unknown>; numPages: number });
+        setNumPages(doc.numPages);
+      } catch (err) {
+        console.error('Error loading PDF with pdfjs:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfBlob, open]);
+
+  // Render current page to canvas (works on tablet, unlike iframe #page)
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current || !open) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let cancelled = false;
+    setPageRendering(true);
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        if (cancelled) return;
+        const pageProxy = page as { getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (ctx: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } };
+        const baseViewport = pageProxy.getViewport({ scale: 1 });
+        const containerW = containerRef.current?.clientWidth ?? window.innerWidth * 0.9;
+        const scale = Math.min(2.5, Math.max(1, (containerW - 32) / baseViewport.width));
+        const viewport = pageProxy.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const renderCtx = {
+          canvasContext: ctx,
+          viewport,
+        };
+        await pageProxy.render(renderCtx).promise;
+        if (cancelled) return;
+      } catch (err) {
+        console.error('Error rendering PDF page:', err);
+      } finally {
+        if (!cancelled) setPageRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfDoc, currentPage, open]);
 
   // Load stored PDF when dialog opens and data is loaded
   // IMPORTANT: PDFs are now generated automatically when stock is updated
@@ -282,33 +344,46 @@ export function StockReportDialog({
           ) : pdfUrl ? (
             <>
               <div 
-                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg"
+                ref={containerRef}
+                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
-                <iframe
-                  key={currentPage}
-                  src={`${pdfUrl}#page=${currentPage}`}
-                  className="w-full h-full min-h-[70vh] rounded border-0"
-                  title="Prévisualisation du relevé de stock"
-                />
+                {!pdfDoc ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                    <p className="text-sm text-slate-600">Préparation du PDF...</p>
+                  </div>
+                ) : pageRendering ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                    <p className="text-sm text-slate-600">Chargement de la page...</p>
+                  </div>
+                ) : (
+                  <canvas
+                    ref={canvasRef}
+                    className="max-w-full h-auto rounded shadow-sm"
+                    style={{ maxHeight: '70vh' }}
+                  />
+                )}
               </div>
               <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
+                  disabled={currentPage <= 1 || !pdfDoc}
                 >
                   <ChevronLeft className="h-4 w-4" />
                   Page précédente
                 </Button>
                 <span className="text-sm text-slate-600 px-2">
-                  Page {currentPage}
+                  Page {currentPage}{numPages != null ? ` / ${numPages}` : ''}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(p => p + 1)}
+                  onClick={() => setCurrentPage(p => Math.min(numPages ?? p, p + 1))}
+                  disabled={numPages != null && currentPage >= numPages}
                 >
                   Page suivante
                   <ChevronRight className="h-4 w-4" />
