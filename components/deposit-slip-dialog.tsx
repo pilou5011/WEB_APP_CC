@@ -635,7 +635,7 @@ export function DepositSlipDialog({
             <>
               <div 
                 ref={containerRef}
-                className="pdf-preview-scroll flex-1 min-h-0 max-h-[55vh] overflow-y-auto overflow-x-auto overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
+                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-auto overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 {useIframeFallback ? (
