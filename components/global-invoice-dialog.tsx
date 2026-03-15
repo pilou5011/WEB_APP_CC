@@ -335,13 +335,13 @@ export function GlobalInvoiceDialog({
             <>
               <div 
                 ref={containerRef}
-                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
+                className="pdf-preview-scroll flex-1 min-h-0 max-h-[55vh] overflow-y-auto overflow-x-auto overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
                 style={{ WebkitOverflowScrolling: 'touch' }}
               >
                 {useIframeFallback ? (
                   <iframe
                     src={pdfUrl}
-                    className="w-full min-h-[70vh] flex-1 rounded border-0"
+                    className="w-full h-full min-h-[200px] rounded border-0"
                     title="Prévisualisation de la facture"
                   />
                 ) : !pdfDoc ? (
@@ -354,7 +354,7 @@ export function GlobalInvoiceDialog({
                     <canvas
                       ref={canvasRef}
                       className="max-w-full h-auto rounded shadow-sm"
-                      style={{ maxHeight: '70vh', opacity: pageRendering ? 0.6 : 1 }}
+                      style={{ opacity: pageRendering ? 0.6 : 1 }}
                     />
                     {pageRendering && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
