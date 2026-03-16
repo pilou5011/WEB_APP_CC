@@ -1,12 +1,12 @@
-﻿'use client';
+'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, supabase } from '@/lib/supabase';
 import type { InvoiceAdjustment } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2, Mail } from 'lucide-react';
+import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface GlobalInvoiceDialogProps {
@@ -39,12 +39,23 @@ export function GlobalInvoiceDialog({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
+  const [pageRendering, setPageRendering] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setPdfGenerated(false);
       setPdfUrl(null);
       setPdfBlob(null);
+      setPdfDoc(null);
+      setNumPages(null);
+      setUseIframeFallback(false);
+      setCurrentPage(1);
       setLoadingProfile(true);
       setLoadingAdjustments(true);
       setAdjustments(null); // Reset to null to indicate not loaded
@@ -75,14 +86,72 @@ export function GlobalInvoiceDialog({
         }
       })();
     }
-    
-    // Cleanup: revoke blob URL when dialog closes
+  }, [open, invoice.id]);
+
+  // Cleanup: revoke blob URL when dialog closes or pdfUrl changes
+  useEffect(() => {
     return () => {
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
       }
     };
-  }, [open, invoice.id]);
+  }, [pdfUrl]);
+
+  // Load PDF document with pdfjs when blob is ready (for canvas rendering on tablet)
+  useEffect(() => {
+    if (!pdfBlob || !open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfjs = await import('pdfjs-dist');
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
+        const arrayBuffer = await pdfBlob.arrayBuffer();
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const doc = await loadingTask.promise;
+        if (cancelled) return;
+        setPdfDoc(doc as { getPage: (n: number) => Promise<unknown>; numPages: number });
+        setNumPages(doc.numPages);
+      } catch (err) {
+        console.error('Error loading PDF with pdfjs:', err);
+        if (cancelled) return;
+        setUseIframeFallback(true);
+        toast.warning('Affichage simplifié. Vous pouvez télécharger le PDF.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfBlob, open]);
+
+  // Render current page to canvas (works on tablet)
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current || !open) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let cancelled = false;
+    setPageRendering(true);
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        if (cancelled) return;
+        const pageProxy = page as { getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (ctx: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } };
+        const baseViewport = pageProxy.getViewport({ scale: 1 });
+        const containerW = containerRef.current?.clientWidth || window.innerWidth * 0.9;
+        const baseScale = Math.min(5, Math.max(2, Math.max(containerW - 32, 200) / baseViewport.width));
+        const scale = baseScale * Math.min(1.5, window.devicePixelRatio || 1);
+        const viewport = pageProxy.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const renderCtx = { canvasContext: ctx, viewport };
+        await pageProxy.render(renderCtx).promise;
+        if (cancelled) return;
+      } catch (err) {
+        console.error('Error rendering PDF page:', err);
+      } finally {
+        if (!cancelled) setPageRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfDoc, currentPage, open]);
 
   // Load stored PDF when dialog opens and data is loaded
   // IMPORTANT: PDFs are now generated automatically when stock is updated
@@ -256,20 +325,73 @@ export function GlobalInvoiceDialog({
           <DialogTitle>Prévisualisation de la facture</DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
+        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col p-2 overflow-hidden">
           {generating || loadingProfile || loadingAdjustments ? (
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
               <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
               <p className="text-slate-600">Chargement des données en cours...</p>
             </div>
           ) : pdfUrl ? (
-            <iframe
-              src={pdfUrl}
-              className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-              title="Prévisualisation de la facture"
-            />
+            <>
+              <div 
+                ref={containerRef}
+                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-auto overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                {useIframeFallback ? (
+                  <iframe
+                    src={pdfUrl}
+                    className="w-full h-full min-h-[200px] rounded border-0"
+                    title="Prévisualisation de la facture"
+                  />
+                ) : !pdfDoc ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                    <p className="text-sm text-slate-600">Préparation du PDF...</p>
+                  </div>
+                ) : (
+                  <div className="relative flex flex-1 items-start justify-center min-h-0 w-full">
+                    <canvas
+                      ref={canvasRef}
+                      className="max-w-full h-auto rounded shadow-sm"
+                      style={{ opacity: pageRendering ? 0.6 : 1 }}
+                    />
+                    {pageRendering && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {!useIframeFallback && (numPages ?? 1) > 1 && (
+                <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1 || !pdfDoc}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Page précédente
+                  </Button>
+                  <span className="text-sm text-slate-600 px-2">
+                    Page {currentPage}{numPages != null ? ` / ${numPages}` : ''}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(numPages ?? p, p + 1))}
+                    disabled={numPages != null && currentPage >= numPages}
+                  >
+                    Page suivante
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="text-center text-slate-600">
+            <div className="flex flex-1 items-center justify-center text-center text-slate-600">
               <p>Erreur lors de la génération du PDF</p>
             </div>
           )}

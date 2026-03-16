@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase, EstablishmentType, PaymentMethod } from '@/lib/supabase';
+import { supabase, EstablishmentType, PaymentMethod, TourName } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -113,6 +113,10 @@ export default function NewClientPage() {
   const [deletingEstablishmentType, setDeletingEstablishmentType] = useState<EstablishmentType | null>(null);
   const [deleteEstablishmentTypeDialogOpen, setDeleteEstablishmentTypeDialogOpen] = useState(false);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [tourNames, setTourNames] = useState<TourName[]>([]);
+  const [newTourNameName, setNewTourNameName] = useState('');
+  const [showNewTourNameInput, setShowNewTourNameInput] = useState(false);
+  const [addingNewTourName, setAddingNewTourName] = useState(false);
   const [newPaymentMethodName, setNewPaymentMethodName] = useState('');
   const [showNewPaymentMethodInput, setShowNewPaymentMethodInput] = useState(false);
   const [addingNewPaymentMethod, setAddingNewPaymentMethod] = useState(false);
@@ -149,6 +153,7 @@ export default function NewClientPage() {
     average_time_hours: '',
     average_time_minutes: '',
     payment_method_id: '',
+    tour_name_id: '',
     email: '',
     comment: ''
   });
@@ -156,6 +161,7 @@ export default function NewClientPage() {
   useEffect(() => {
     loadEstablishmentTypes();
     loadPaymentMethods();
+    loadTourNames();
   }, []);
 
   const loadEstablishmentTypes = async () => {
@@ -197,6 +203,75 @@ export default function NewClientPage() {
       setPaymentMethods(data || []);
     } catch (error) {
       console.error('Error loading payment methods:', error);
+    }
+  };
+
+  const loadTourNames = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .select('*')
+        .eq('company_id', companyId)
+        .is('deleted_at', null)
+        .order('name');
+
+      if (error) throw error;
+      setTourNames(data || []);
+    } catch (error) {
+      console.error('Error loading tour names:', error);
+    }
+  };
+
+  const handleAddNewTourName = async () => {
+    if (!newTourNameName.trim()) {
+      toast.error('Veuillez saisir un nom de tournée');
+      return;
+    }
+
+    setAddingNewTourName(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const { data: existing } = await supabase
+        .from('tour_names')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('name', newTourNameName.trim())
+        .is('deleted_at', null)
+        .maybeSingle();
+
+      if (existing) {
+        toast.error('Ce nom de tournée existe déjà');
+        setAddingNewTourName(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('tour_names')
+        .insert([{ name: newTourNameName.trim(), company_id: companyId }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      await loadTourNames();
+      setFormData({ ...formData, tour_name_id: data.id });
+      setNewTourNameName('');
+      setShowNewTourNameInput(false);
+      toast.success('Tournée ajoutée');
+    } catch (error) {
+      console.error('Error adding tour name:', error);
+      toast.error('Erreur lors de l\'ajout de la tournée');
+    } finally {
+      setAddingNewTourName(false);
     }
   };
 
@@ -633,6 +708,7 @@ export default function NewClientPage() {
           market_days_schedule: marketDaysSchedule,
           vacation_periods: vacationPeriods.length > 0 ? vacationPeriods : null,
           payment_method_id: formData.payment_method_id || null,
+          tour_name_id: formData.tour_name_id || null,
           email: formData.email?.trim() || null,
           comment: formData.comment?.trim() || null,
           cards_quantities: buildCardsQuantitiesFromForm(cardsQuantities),
@@ -1330,6 +1406,107 @@ export default function NewClientPage() {
                             onClick={() => {
                               setShowNewPaymentMethodInput(false);
                               setNewPaymentMethodName('');
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tournée */}
+                    <div>
+                      <Label htmlFor="tour_name_id" className="mb-1.5 block">Tournée (optionnel)</Label>
+                      {!showNewTourNameInput ? (
+                        <div className="flex gap-2">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                role="combobox"
+                                className="flex-1 justify-between"
+                              >
+                                {formData.tour_name_id
+                                  ? tourNames.find(t => t.id === formData.tour_name_id)?.name
+                                  : 'Sélectionner une tournée...'}
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[300px] p-0" align="start">
+                              <Command>
+                                <CommandInput placeholder="Rechercher une tournée..." />
+                                <CommandList>
+                                  {tourNames.length === 0 ? (
+                                    <CommandEmpty>
+                                      <div className="py-6 text-center text-sm text-slate-400">
+                                        Liste vide, ajoutez une tournée avec le bouton +
+                                      </div>
+                                    </CommandEmpty>
+                                  ) : (
+                                    <CommandGroup>
+                                      {tourNames.map((tourName) => (
+                                        <CommandItem
+                                          key={tourName.id}
+                                          value={tourName.name}
+                                          onSelect={() => {
+                                            setFormData({ ...formData, tour_name_id: tourName.id });
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              'mr-2 h-4 w-4',
+                                              formData.tour_name_id === tourName.id ? 'opacity-100' : 'opacity-0'
+                                            )}
+                                          />
+                                          {tourName.name}
+                                        </CommandItem>
+                                      ))}
+                                    </CommandGroup>
+                                  )}
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setShowNewTourNameInput(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Input
+                            placeholder="Nouvelle tournée..."
+                            value={newTourNameName}
+                            onChange={(e) => setNewTourNameName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewTourName();
+                              } else if (e.key === 'Escape') {
+                                setShowNewTourNameInput(false);
+                                setNewTourNameName('');
+                              }
+                            }}
+                            className="flex-1"
+                            autoFocus
+                          />
+                          <Button
+                            type="button"
+                            onClick={handleAddNewTourName}
+                            disabled={addingNewTourName}
+                          >
+                            {addingNewTourName ? '...' : 'Ajouter'}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setShowNewTourNameInput(false);
+                              setNewTourNameName('');
                             }}
                           >
                             <X className="h-4 w-4" />

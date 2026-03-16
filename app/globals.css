@@ -80,3 +80,25 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Conteneurs PDF optimisés tablette : scroll fluide et curseur visible */
+@layer utilities {
+  .pdf-preview-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(148 163 184) transparent;
+  }
+  .pdf-preview-scroll::-webkit-scrollbar {
+    width: 10px;
+  }
+  .pdf-preview-scroll::-webkit-scrollbar-track {
+    background: rgb(241 245 249);
+    border-radius: 4px;
+  }
+  .pdf-preview-scroll::-webkit-scrollbar-thumb {
+    background: rgb(148 163 184);
+    border-radius: 4px;
+  }
+  .pdf-preview-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgb(100 116 139);
+  }
+}
