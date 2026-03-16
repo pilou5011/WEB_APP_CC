@@ -582,7 +582,7 @@ export default function CreditNotePage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="credit-note-unit-price">Prix à l'unité (€)</Label>
+                  <Label htmlFor="credit-note-unit-price">Prix à l'unité HT (€)</Label>
                   <Input
                     id="credit-note-unit-price"
                     type="text"
