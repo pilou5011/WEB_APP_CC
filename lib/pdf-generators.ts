@@ -13,6 +13,81 @@ import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-per
 import { formatDepartment } from '@/lib/postal-code-utils';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
+// Helper functions for formatting
+function formatPhoneNumber(phone: string | null): string {
+  if (!phone) return '';
+  // Enlever tous les espaces et caractères non numériques
+  const digits = phone.replace(/\D/g, '');
+  // Ajouter un espace tous les 2 chiffres: XX XX XX XX XX
+  return digits.match(/.{1,2}/g)?.join(' ') || phone;
+}
+
+function formatTVANumber(tva: string | null): string {
+  if (!tva) return '';
+  // Enlever tous les espaces
+  let cleaned = tva.replace(/\s/g, '').toUpperCase();
+  
+  // Vérifier si c'est un numéro TVA français (commence par FR)
+  if (cleaned.startsWith('FR')) {
+    // Format: FR XX 123456789 (sans séparation du SIREN en blocs)
+    const countryCode = cleaned.substring(0, 2); // FR
+    const rest = cleaned.substring(2); // Le reste après FR
+    
+    if (rest.length >= 2) {
+      const key = rest.substring(0, 2); // Clé informatique (2 caractères)
+      const siren = rest.substring(2).replace(/\D/g, ''); // SIREN (chiffres uniquement)
+      
+      if (siren.length > 0) {
+        return `${countryCode} ${key} ${siren}`;
+      } else {
+        return `${countryCode} ${key}`;
+      }
+    } else {
+      return cleaned;
+    }
+  }
+  
+  // Si ce n'est pas un numéro TVA français, retourner tel quel
+  return cleaned;
+}
+
+function formatSIRETNumber(siret: string | null): string {
+  if (!siret) return '';
+  // Enlever tous les espaces et caractères non numériques
+  const digits = siret.replace(/\D/g, '');
+  
+  // Accepter les SIRET de 14 chiffres ou plus (on prend les 14 premiers)
+  if (digits.length >= 14) {
+    // Format: XXX XXX XXX XXXXX
+    // 9 premiers = SIREN (en 3 blocs de 3 chiffres)
+    // 5 derniers = NIC (en bloc de 5)
+    const siren = digits.substring(0, 9);
+    const nic = digits.substring(9, 14);
+    
+    // Formater le SIREN en 3 blocs de 3 chiffres exactement
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    const sirenFormatted = `${block1} ${block2} ${block3}`;
+    
+    return `${sirenFormatted} ${nic}`;
+  }
+  
+  // Si la longueur est inférieure à 14, essayer de formater ce qu'on a
+  if (digits.length >= 9) {
+    const siren = digits.substring(0, 9);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    const sirenFormatted = `${block1} ${block2} ${block3}`;
+    const remaining = digits.substring(9);
+    return remaining ? `${sirenFormatted} ${remaining}` : sirenFormatted;
+  }
+  
+  // Si moins de 9 chiffres, retourner tel quel
+  return siret;
+}
+
 function addPageNumbers(doc: any) {
   try {
     const pageCount = doc.getNumberOfPages();
@@ -26,7 +101,7 @@ function addPageNumbers(doc: any) {
       const footerMarginRight = 15;
       const footerMarginBottom = 8;
 
-      const label = `${i}/${pageCount}`;
+      const label = `Page ${i}/${pageCount}`;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
@@ -174,11 +249,11 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       }
       
       if (userProfile.siret) {
-        doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number) {
-        doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+        doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       
@@ -191,7 +266,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       if (userProfile.phone) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
+        doc.text(`Tél: ${formatPhoneNumber(userProfile.phone)}`, leftBoxX + 2, yPosition);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         yPosition += 3;
@@ -247,11 +322,11 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     }
     
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3; // Même espacement que N° Facture
     }
     
@@ -282,7 +357,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Facture N°[numero_facture]" en gras
@@ -321,7 +396,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       const totalHTAfterDiscount = totalHTBeforeDiscount * discountRatio;
       
       return [
-        Product?.name || 'Product',
+        Product?.name || 'Produit',
         (ClientProduct as { product_info?: string | null })?.product_info || '', // Infos produit depuis client_products
         Product?.barcode || '', // Code barre produit
         update.previous_stock.toString(),
@@ -524,7 +599,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const pdfBlobData = doc.output('blob');
 
     // Save PDF to storage
-    const invoiceDate = new Date(invoice.created_at);
+    const invoiceDate = new Date(invoice.invoice_date);
     const year = invoiceDate.getFullYear();
     const month = String(invoiceDate.getMonth() + 1).padStart(2, '0');
     const day = String(invoiceDate.getDate()).padStart(2, '0');
@@ -710,11 +785,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         yPosition += 2;
       }
       if (userProfile.siret) {
-        doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number) {
-        doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+        doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number && userProfile.phone) {
@@ -723,7 +798,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       if (userProfile.phone) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
+        doc.text(`Tél: ${formatPhoneNumber(userProfile.phone)}`, leftBoxX + 2, yPosition);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         yPosition += 3;
@@ -774,11 +849,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       clientYPosition += 4;
     }
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -812,7 +887,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     doc.text(previousDepositText, 15, yPosition);
     yPosition += 5;
     
-    const invoiceDateText = `Date de facture : ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`;
+    const invoiceDateText = `Date de facture : ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`;
     doc.text(invoiceDateText, 15, yPosition);
     yPosition += 10;
 
@@ -863,6 +938,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
 
     // Create map of sub-products by Product
     // Filtrer uniquement les sous-produits non supprimés ET qui existent dans client_sub_products non supprimés
+    // Trier par display_order pour respecter l'ordre défini
     const subProductsByProductId = new Map<string, SubProduct[]>();
     (subProducts || []).forEach(sp => {
       // Vérifier que le sous-produit n'est pas supprimé ET qu'il existe dans client_sub_products non supprimé
@@ -872,6 +948,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         }
         subProductsByProductId.get(sp.product_id)!.push(sp);
       }
+    });
+    
+    // Trier les sous-produits par display_order pour chaque produit
+    subProductsByProductId.forEach((subProductsList, productId) => {
+      subProductsList.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     });
 
     const tableData: any[] = [];
@@ -1048,7 +1129,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Product', 
+        'Produit', 
         'Infos', 
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
         { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
@@ -1093,13 +1174,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [255, 251, 235]; // amber-50
-            } else if (columnIndex === 6) { // Réassort
+            } else if (columnIndex === 6) { // Réassort — même style que Nouveau dépôt (pas de gras ni police agrandie)
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [240, 253, 244]; // green-50
-              data.cell.styles.fontSize = 9; // Augmenter la police de +1 (de 8 à 9)
-              data.cell.styles.fontStyle = 'bold'; // Mettre en gras uniquement la colonne Réassort
             } else if (columnIndex === 7) { // Nouveau dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
@@ -1321,11 +1400,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         yPosition += 2;
       }
       if (userProfile.siret) {
-        doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number) {
-        doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+        doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number && userProfile.phone) {
@@ -1334,7 +1413,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       if (userProfile.phone) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
+        doc.text(`Tél: ${formatPhoneNumber(userProfile.phone)}`, leftBoxX + 2, yPosition);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         yPosition += 3;
@@ -1385,11 +1464,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       clientYPosition += 4;
     }
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -1443,7 +1522,8 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         .select('*')
         .in('product_id', productIds)
         .eq('company_id', companyId)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .order('display_order', { ascending: true });
       
       if (subProductsError) throw subProductsError;
       
@@ -1452,6 +1532,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
           subProductsByProductId[sp.product_id] = [];
         }
         subProductsByProductId[sp.product_id].push(sp);
+      });
+      
+      // Trier les sous-produits par display_order pour chaque produit (déjà trié par la requête, mais on s'assure)
+      Object.keys(subProductsByProductId).forEach(productId => {
+        subProductsByProductId[productId].sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0));
       });
     }
     
@@ -1520,12 +1605,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       }
       
       return [
-        productName,
-        info,
-        barcode, // Code barre produit
-        `${effectivePrice.toFixed(2)} €`,
-        effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-        stock.toString()
+        info, // Infos (colonne 0)
+        productName, // Produit (colonne 1)
+        stock.toString(), // Qté remise (colonne 2)
+        barcode, // Code-barres (colonne 3)
+        `${effectivePrice.toFixed(2)} €`, // Prix cession HT (colonne 4)
+        effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-' // Prix conseillé TTC (colonne 5)
       ];
     });
 
@@ -1533,24 +1618,27 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     const marginRight = 15;
     const tableWidth = pageWidth - marginLeft - marginRight;
     
+    // Nouvel ordre : Infos, Produit, Qté remise, Code-barres, Prix cession HT, Prix conseillé TTC
+    // Colonne Infos plus fine, espace redistribué sur les autres colonnes pour maintenir la largeur totale
     const columnWidths = [
-      tableWidth * 0.20, // Product
-      tableWidth * 0.25, // Infos
-      tableWidth * 0.25, // Code barre produit
-      tableWidth * 0.10, // Prix cession HT
-      tableWidth * 0.10, // Prix conseillé TTC
-      tableWidth * 0.10  // Qté remise
+      tableWidth * 0.12, // Infos (réduite de 0.25 à 0.12)
+      tableWidth * 0.28, // Produit (augmentée de 0.20 à 0.28)
+      tableWidth * 0.10, // Qté remise (inchangée)
+      tableWidth * 0.20, // Code-barres (réduite de 0.25 à 0.20)
+      tableWidth * 0.15, // Prix cession HT (augmentée de 0.10 à 0.15)
+      tableWidth * 0.15  // Prix conseillé TTC (augmentée de 0.10 à 0.15)
+      // Total: 0.12 + 0.28 + 0.10 + 0.20 + 0.15 + 0.15 = 1.00
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Produit', 
         'Infos',
+        'Produit',
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1572,12 +1660,12 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
         textColor: [0, 0, 0]
       },
       columnStyles: {
-        0: { halign: 'left', cellWidth: columnWidths[0] }, // Produit
-        1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] }, // Infos
-        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Code barre produit
-        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Prix cession HT
-        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix conseillé TTC
-        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Qté remise
+        0: { halign: 'left', fontSize: 8, cellWidth: columnWidths[0] }, // Infos (même fontSize que Produit)
+        1: { halign: 'left', fontSize: 8, cellWidth: columnWidths[1] }, // Produit
+        2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Qté remise
+        3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Code-barres
+        4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix cession HT
+        5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }  // Prix conseillé TTC
       }
     });
 
@@ -1787,11 +1875,11 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
       }
       
       if (profile.siret) {
-        doc.text(`SIRET: ${profile.siret}`, leftBoxX + 2, yPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(profile.siret)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (profile.tva_number) {
-        doc.text(`TVA: ${profile.tva_number}`, leftBoxX + 2, yPosition);
+        doc.text(`TVA: ${formatTVANumber(profile.tva_number)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       
@@ -1802,7 +1890,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
       if (profile.phone) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${profile.phone}`, leftBoxX + 2, yPosition);
+        doc.text(`Tél: ${formatPhoneNumber(profile.phone)}`, leftBoxX + 2, yPosition);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         yPosition += 3;
@@ -1858,11 +1946,11 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     }
     
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -1898,7 +1986,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(creditNote.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(creditNote.credit_note_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Avoir N° [numero_avoir]"
@@ -1908,7 +1996,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     yPosition += 8;
 
     // Sous-titre "Avoir sur facture n° [numero_facture] du [date]"
-    const invoiceDate = new Date(invoice.created_at).toLocaleDateString('fr-FR');
+    const invoiceDate = new Date(invoice.invoice_date).toLocaleDateString('fr-FR');
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Avoir sur facture n° ${invoiceNumber} du ${invoiceDate}`, pageWidth / 2, yPosition, { align: 'center' });
@@ -2088,7 +2176,7 @@ export async function generateClientInfoPDF(
     // Premier contact en haut à gauche (nom + téléphone)
     const contactName = client.phone_1_info?.trim() || null;
     const contactPhone = client.phone?.trim()
-      ? client.phone.replace(/\D/g, '').match(/.{1,2}/g)?.join(' ') || client.phone
+      ? formatPhoneNumber(client.phone)
       : null;
     if (contactName || contactPhone) {
       const leftX = margin;
@@ -2335,87 +2423,7 @@ export async function generateClientInfoPDF(
     /* --------------------------------------------------
      * Utils - Formatage
      * -------------------------------------------------- */
-    const formatPhoneNumber = (phone: string | null): string => {
-      if (!phone) return '';
-      // Enlever tous les espaces et caractères non numériques
-      const digits = phone.replace(/\D/g, '');
-      // Ajouter un espace tous les 2 chiffres
-      return digits.match(/.{1,2}/g)?.join(' ') || phone;
-    };
-
-    const formatTVANumber = (tva: string | null): string => {
-      if (!tva) return '';
-      // Enlever tous les espaces
-      let cleaned = tva.replace(/\s/g, '').toUpperCase();
-      
-      // Vérifier si c'est un numéro TVA français (commence par FR)
-      if (cleaned.startsWith('FR')) {
-        // Format: FR XX XXX XXX XXX
-        // FR = code pays (2 caractères)
-        // XX = clé informatique (2 caractères)
-        // XXX XXX XXX = SIREN (9 chiffres en 3 blocs de 3)
-        const countryCode = cleaned.substring(0, 2); // FR
-        const rest = cleaned.substring(2); // Le reste après FR
-        
-        if (rest.length >= 2) {
-          const key = rest.substring(0, 2); // Clé informatique
-          const siren = rest.substring(2).replace(/\D/g, ''); // SIREN (chiffres uniquement)
-          
-          if (siren.length >= 9) {
-            // Formater le SIREN en 3 blocs de 3
-            const sirenFormatted = siren.substring(0, 9).match(/.{1,3}/g)?.join(' ') || siren.substring(0, 9);
-            return `${countryCode} ${key} ${sirenFormatted}`;
-          } else if (siren.length > 0) {
-            // Si le SIREN n'a pas 9 chiffres, on formate ce qu'on a
-            return `${countryCode} ${key} ${siren}`;
-          } else {
-            return `${countryCode} ${key}`;
-          }
-        } else {
-          return cleaned;
-        }
-      }
-      
-      // Si ce n'est pas un numéro TVA français, retourner tel quel
-      return cleaned;
-    };
-
-    const formatSIRETNumber = (siret: string | null): string => {
-      if (!siret) return '';
-      // Enlever tous les espaces et caractères non numériques
-      const digits = siret.replace(/\D/g, '');
-      
-      // Accepter les SIRET de 14 chiffres ou plus (on prend les 14 premiers)
-      if (digits.length >= 14) {
-        // Format: XXX XXX XXX XXXXX
-        // 9 premiers = SIREN (en 3 blocs de 3 chiffres)
-        // 5 derniers = NIC (en bloc de 5)
-        const siren = digits.substring(0, 9);
-        const nic = digits.substring(9, 14);
-        
-        // Formater le SIREN en 3 blocs de 3 chiffres exactement
-        const block1 = siren.substring(0, 3);
-        const block2 = siren.substring(3, 6);
-        const block3 = siren.substring(6, 9);
-        const sirenFormatted = `${block1} ${block2} ${block3}`;
-        
-        return `${sirenFormatted} ${nic}`;
-      }
-      
-      // Si la longueur est inférieure à 14, essayer de formater ce qu'on a
-      if (digits.length >= 9) {
-        const siren = digits.substring(0, 9);
-        const block1 = siren.substring(0, 3);
-        const block2 = siren.substring(3, 6);
-        const block3 = siren.substring(6, 9);
-        const sirenFormatted = `${block1} ${block2} ${block3}`;
-        const remaining = digits.substring(9);
-        return remaining ? `${sirenFormatted} ${remaining}` : sirenFormatted;
-      }
-      
-      // Si moins de 9 chiffres, retourner tel quel
-      return siret;
-    };
+    // Les fonctions de formatage sont définies en haut du fichier (formatPhoneNumber, formatTVANumber, formatSIRETNumber)
 
     /* --------------------------------------------------
      * Sections

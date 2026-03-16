@@ -57,6 +57,13 @@ export default function CreditNotePage() {
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
+  
+  // Credit note date (comptable)
+  const [creditNoteDate, setCreditNoteDate] = useState<string>(() => {
+    // Initialize with today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
 
   useEffect(() => {
     // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
@@ -222,7 +229,8 @@ export default function CreditNotePage() {
           quantity: quantity,
           total_amount: totalAmount,
           operation_name: creditNoteForm.operation_name,
-          status: 'processing'
+          status: 'processing',
+          credit_note_date: creditNoteDate // Date comptable
         })
         .select()
         .single();
@@ -512,7 +520,7 @@ export default function CreditNotePage() {
                             {globalInvoices.map((invoice) => (
                               <CommandItem
                                 key={invoice.id}
-                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.created_at).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
+                                value={`${invoice.invoice_number || 'Facture'} - ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')} - ${invoice.total_amount.toFixed(2)} €`}
                                 onSelect={() => {
                                   setCreditNoteForm(f => ({ ...f, invoice_id: invoice.id }));
                                   setInvoicePopoverOpen(false);
@@ -524,7 +532,7 @@ export default function CreditNotePage() {
                                     creditNoteForm.invoice_id === invoice.id ? 'opacity-100' : 'opacity-0'
                                   )}
                                 />
-                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.created_at).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
+                                {invoice.invoice_number || 'Facture'} - {new Date(invoice.invoice_date).toLocaleDateString('fr-FR')} - {invoice.total_amount.toFixed(2)} €
                               </CommandItem>
                             ))}
                           </CommandGroup>
@@ -532,6 +540,16 @@ export default function CreditNotePage() {
                       </Command>
                     </PopoverContent>
                   </Popover>
+                </div>
+                <div>
+                  <Label htmlFor="credit-note-date">Date du document</Label>
+                  <Input
+                    id="credit-note-date"
+                    type="date"
+                    value={creditNoteDate}
+                    onChange={(e) => setCreditNoteDate(e.target.value)}
+                    className="mt-1.5 w-36"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="credit-note-operation">Produits et prestations</Label>
@@ -564,7 +582,7 @@ export default function CreditNotePage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="credit-note-unit-price">Prix à l'unité (€)</Label>
+                  <Label htmlFor="credit-note-unit-price">Prix à l'unité HT (€)</Label>
                   <Input
                     id="credit-note-unit-price"
                     type="text"

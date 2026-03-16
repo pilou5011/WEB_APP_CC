@@ -223,26 +223,6 @@ export function Header() {
               </div>
               <div
                 onClick={() => {
-                  router.push('/subscription');
-                  setIsUserMenuOpen(false);
-                }}
-                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-slate-600"
-              >
-                <CreditCard className="mr-2 h-4 w-4" />
-                Mon abonnement
-              </div>
-              <div
-                onClick={() => {
-                  router.push('/compliance');
-                  setIsUserMenuOpen(false);
-                }}
-                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-slate-600"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                Conformité / CGU / CGV / RGPD
-              </div>
-              <div
-                onClick={() => {
                   router.push('/help');
                   setIsUserMenuOpen(false);
                 }}

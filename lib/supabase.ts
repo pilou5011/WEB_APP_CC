@@ -176,7 +176,8 @@ export type Invoice = {
   invoice_email_sent_at: string | null; // Date d'envoi de la facture par email
   deposit_slip_email_sent_at: string | null; // Date d'envoi du bon de dépôt par email
   status: 'processing' | 'completed' | 'failed'; // Statut du document
-  created_at: string;
+  invoice_date: string; // Date comptable de la facture (modifiable par l'utilisateur)
+  created_at: string; // Date technique de création (jamais modifiée)
 };
 
 export type Product = {
@@ -212,6 +213,7 @@ export type SubProduct = {
   id: string;
   product_id: string;
   name: string;
+  display_order: number; // Ordre d'affichage au sein du produit parent (global)
   deleted_at: string | null; // Date de suppression logique
   created_at: string;
   updated_at: string;
@@ -334,7 +336,8 @@ export type CreditNote = {
   credit_note_pdf_path: string | null;
   email_sent_at: string | null; // Date d'envoi de l'avoir par email
   status: 'processing' | 'completed' | 'failed'; // Statut du document
-  created_at: string;
+  credit_note_date: string; // Date comptable de l'avoir (modifiable par l'utilisateur)
+  created_at: string; // Date technique de création (jamais modifiée)
 };
 
 export type StockDirectSold = {

@@ -10,6 +10,81 @@ import { Client, Invoice, Product, StockDirectSold, UserProfile, supabase } from
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
+// Helper functions for formatting
+function formatPhoneNumber(phone: string | null): string {
+  if (!phone) return '';
+  // Enlever tous les espaces et caractères non numériques
+  const digits = phone.replace(/\D/g, '');
+  // Ajouter un espace tous les 2 chiffres: XX XX XX XX XX
+  return digits.match(/.{1,2}/g)?.join(' ') || phone;
+}
+
+function formatTVANumber(tva: string | null): string {
+  if (!tva) return '';
+  // Enlever tous les espaces
+  let cleaned = tva.replace(/\s/g, '').toUpperCase();
+  
+  // Vérifier si c'est un numéro TVA français (commence par FR)
+  if (cleaned.startsWith('FR')) {
+    // Format: FR XX 123456789 (sans séparation du SIREN en blocs)
+    const countryCode = cleaned.substring(0, 2); // FR
+    const rest = cleaned.substring(2); // Le reste après FR
+    
+    if (rest.length >= 2) {
+      const key = rest.substring(0, 2); // Clé informatique (2 caractères)
+      const siren = rest.substring(2).replace(/\D/g, ''); // SIREN (chiffres uniquement)
+      
+      if (siren.length > 0) {
+        return `${countryCode} ${key} ${siren}`;
+      } else {
+        return `${countryCode} ${key}`;
+      }
+    } else {
+      return cleaned;
+    }
+  }
+  
+  // Si ce n'est pas un numéro TVA français, retourner tel quel
+  return cleaned;
+}
+
+function formatSIRETNumber(siret: string | null): string {
+  if (!siret) return '';
+  // Enlever tous les espaces et caractères non numériques
+  const digits = siret.replace(/\D/g, '');
+  
+  // Accepter les SIRET de 14 chiffres ou plus (on prend les 14 premiers)
+  if (digits.length >= 14) {
+    // Format: XXX XXX XXX XXXXX
+    // 9 premiers = SIREN (en 3 blocs de 3 chiffres)
+    // 5 derniers = NIC (en bloc de 5)
+    const siren = digits.substring(0, 9);
+    const nic = digits.substring(9, 14);
+    
+    // Formater le SIREN en 3 blocs de 3 chiffres exactement
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    const sirenFormatted = `${block1} ${block2} ${block3}`;
+    
+    return `${sirenFormatted} ${nic}`;
+  }
+  
+  // Si la longueur est inférieure à 14, essayer de formater ce qu'on a
+  if (digits.length >= 9) {
+    const siren = digits.substring(0, 9);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    const sirenFormatted = `${block1} ${block2} ${block3}`;
+    const remaining = digits.substring(9);
+    return remaining ? `${sirenFormatted} ${remaining}` : sirenFormatted;
+  }
+  
+  // Si moins de 9 chiffres, retourner tel quel
+  return siret;
+}
+
 function addPageNumbers(doc: any) {
   try {
     const pageCount = doc.getNumberOfPages();
@@ -23,7 +98,7 @@ function addPageNumbers(doc: any) {
       const footerMarginRight = 15;
       const footerMarginBottom = 8;
 
-      const label = `${i}/${pageCount}`;
+      const label = `Page ${i}/${pageCount}`;
 
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(10);
@@ -133,11 +208,11 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
       }
       
       if (userProfile.siret) {
-        doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       if (userProfile.tva_number) {
-        doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+        doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
         yPosition += 4;
       }
       
@@ -150,7 +225,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
       if (userProfile.phone) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(`Tél: ${userProfile.phone}`, leftBoxX + 2, yPosition);
+        doc.text(`Tél: ${formatPhoneNumber(userProfile.phone)}`, leftBoxX + 2, yPosition);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
         yPosition += 3;
@@ -206,11 +281,11 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     }
     
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -241,7 +316,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
     yPosition += 10;
 
     // Titre "Facture N°[numero_facture]" en gras

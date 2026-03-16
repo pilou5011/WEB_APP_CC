@@ -69,6 +69,13 @@ export default function InvoicePage() {
   const [draftDate, setDraftDate] = useState<string>('');
   const [hasDraft, setHasDraft] = useState(false);
   const draftCheckDoneRef = useRef(false); // Track if we've already checked for draft
+  
+  // Invoice date (comptable)
+  const [invoiceDate, setInvoiceDate] = useState<string>(() => {
+    // Initialize with today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
 
   useEffect(() => {
     // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
@@ -364,6 +371,7 @@ export default function InvoicePage() {
       invoice_email_sent_at: null,
       deposit_slip_email_sent_at: null,
       status: 'processing', // Statut par défaut pour la prévisualisation
+      invoice_date: new Date().toISOString().split('T')[0], // Date comptable par défaut (aujourd'hui)
       created_at: new Date().toISOString()
     };
 
@@ -404,7 +412,8 @@ export default function InvoicePage() {
           total_stock_sold: totalQuantity,
           total_amount: totalHTAfterDiscount,
           discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
-          status: 'processing'
+          status: 'processing',
+          invoice_date: invoiceDate // Date comptable
         }])
         .select()
         .single();
@@ -850,7 +859,7 @@ export default function InvoicePage() {
                         </TableRow>
                         <TableRow className="bg-slate-100 font-bold">
                           <TableCell colSpan={4} className="text-right">
-                            Total HT après remise
+                            Total après remise (HT)
                           </TableCell>
                           <TableCell>
                             <span className="text-lg font-bold">{getTotalHTAfterDiscount().toFixed(2)} €</span>
@@ -861,6 +870,20 @@ export default function InvoicePage() {
                     )}
                   </TableBody>
                 </Table>
+              </div>
+
+              {/* Date du document */}
+              <div className="flex items-center gap-4">
+                <Label htmlFor="invoice-date" className="text-sm font-medium">
+                  Date du document
+                </Label>
+                <Input
+                  id="invoice-date"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  className="w-36"
+                />
               </div>
 
               {/* Boutons d'action */}
@@ -1058,7 +1081,7 @@ export default function InvoicePage() {
                           <span className="text-sm font-medium">-{getDiscountAmount().toFixed(2)} €</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sm font-medium">Total HT après remise</span>
+                          <span className="text-sm font-medium">Total après remise (HT)</span>
                           <span className="text-sm font-bold">{getTotalHTAfterDiscount().toFixed(2)} €</span>
                         </div>
                       </>

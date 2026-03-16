@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, HelpCircle, Mail, MessageSquare } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function HelpPage() {
   const router = useRouter();
@@ -24,6 +25,15 @@ export default function HelpPage() {
     }
     setHasSession(true);
     setLoading(false);
+  };
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`${label} copié dans le presse-papiers`);
+    } catch (err) {
+      toast.error('Erreur lors de la copie');
+    }
   };
 
   if (loading) {
@@ -71,9 +81,12 @@ export default function HelpPage() {
                   <p className="text-slate-600 mb-4">
                     Pour toute question ou demande d&apos;assistance, contactez-nous par email.
                   </p>
-                  <Button variant="outline" className="w-full">
-                    Envoyer un email
-                  </Button>
+                  <button
+                    onClick={() => copyToClipboard('chevallierpierrelouis@gmail.com', 'Email')}
+                    className="text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                  >
+                    chevallierpierrelouis@gmail.com
+                  </button>
                 </CardContent>
               </Card>
 
@@ -86,31 +99,32 @@ export default function HelpPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-slate-600 mb-4">
-                    Besoin d&apos;aide technique ? Notre équipe est disponible pour vous aider.
+                    Besoin d&apos;aide technique ? Nous sommes à votre disposition pour vous aider.
                   </p>
-                  <Button variant="outline" className="w-full">
-                    Contacter le support
-                  </Button>
+                  <div className="space-y-2">
+                    <div>
+                      <span className="text-slate-700 font-medium">Pierre-Louis : </span>
+                      <button
+                        onClick={() => copyToClipboard('06 23 93 74 52', 'Numéro de téléphone')}
+                        className="text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                      >
+                        06 23 93 74 52
+                      </button>
+                    </div>
+                    <div>
+                      <span className="text-slate-700 font-medium">Marie : </span>
+                      <button
+                        onClick={() => copyToClipboard('07 77 81 80 62', 'Numéro de téléphone')}
+                        className="text-blue-600 hover:text-blue-800 font-medium underline cursor-pointer"
+                      >
+                        07 77 81 80 62
+                      </button>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
 
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h3 className="font-semibold mb-2">Questions fréquentes</h3>
-              <p className="text-sm text-blue-800 mb-4">
-                Consultez notre documentation pour trouver des réponses aux questions les plus courantes.
-              </p>
-              <div className="space-y-2 text-sm text-blue-800">
-                <p><strong>Comment créer un client ?</strong></p>
-                <p className="ml-4">Accédez à la section Clients et cliquez sur &quot;Nouveau client&quot;.</p>
-                
-                <p className="mt-4"><strong>Comment mettre à jour le stock ?</strong></p>
-                <p className="ml-4">Dans la page d&apos;un client, utilisez l&apos;onglet &quot;Mettre à jour le stock&quot;.</p>
-                
-                <p className="mt-4"><strong>Comment générer une facture ?</strong></p>
-                <p className="ml-4">Dans la page d&apos;un client, utilisez l&apos;onglet &quot;Facturer&quot;.</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

@@ -1,13 +1,48 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+function formatTVANumber(tva: string | null): string {
+  if (!tva) return '';
+  let cleaned = tva.replace(/\s/g, '').toUpperCase();
+  if (cleaned.startsWith('FR')) {
+    const countryCode = cleaned.substring(0, 2);
+    const rest = cleaned.substring(2);
+    if (rest.length >= 2) {
+      const key = rest.substring(0, 2);
+      const siren = rest.substring(2).replace(/\D/g, '');
+      if (siren.length > 0) return `${countryCode} ${key} ${siren}`;
+      return `${countryCode} ${key}`;
+    }
+  }
+  return cleaned;
+}
+
+function formatSIRETNumber(siret: string | null): string {
+  if (!siret) return '';
+  const digits = siret.replace(/\D/g, '');
+  if (digits.length >= 14) {
+    const siren = digits.substring(0, 9);
+    const nic = digits.substring(9, 14);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    return `${block1} ${block2} ${block3} ${nic}`;
+  }
+  if (digits.length >= 9) {
+    const siren = digits.substring(0, 9);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    return `${block1} ${block2} ${block3} ${digits.substring(9)}`;
+  }
+  return siret;
+}
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Download, Loader2, Mail } from 'lucide-react';
+import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface DepositSlipDialogProps {
@@ -36,33 +71,36 @@ export function DepositSlipDialog({
   const [loadingInfos, setLoadingInfos] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [productInfos, setProductInfos] = useState<Record<string, string>>({});
-  const [needsInfoInput, setNeedsInfoInput] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
+  const [pageRendering, setPageRendering] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (open) {
       setPdfGenerated(false);
       setPdfUrl(null);
       setPdfBlob(null);
+      setPdfDoc(null);
+      setNumPages(null);
+      setUseIframeFallback(false);
+      setCurrentPage(1);
       setLoadingProfile(true);
       setLoadingInfos(false);
       loadUserProfile();
       
-      // En mode génération, charger les infos depuis la dernière mise à jour de stock
-      // On génère directement avec les infos disponibles (ou vides)
-      if (!generateMode) {
-        loadLastInvoiceInfos();
-      } else {
-        // En mode génération, charger les product_info depuis la dernière mise à jour de stock
-        setLoadingInfos(true);
-        loadLastStockUpdateInfos().finally(() => {
-          setLoadingInfos(false);
-        });
-        setNeedsInfoInput(false); // Ne pas demander les infos en mode génération
-      }
+      // Toujours charger les product_info depuis client_products
+      setLoadingInfos(true);
+      loadProductInfos().finally(() => {
+        setLoadingInfos(false);
+      });
     }
   }, [open, stockUpdates, clientProducts, generateMode]);
 
@@ -75,22 +113,76 @@ export function DepositSlipDialog({
     };
   }, [pdfUrl]);
 
+  // Load PDF document with pdfjs when blob is ready (for canvas rendering on tablet)
+  useEffect(() => {
+    if (!pdfBlob || !open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const pdfjs = await import('pdfjs-dist');
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.5.207/build/pdf.worker.min.mjs';
+        const arrayBuffer = await pdfBlob.arrayBuffer();
+        const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+        const doc = await loadingTask.promise;
+        if (cancelled) return;
+        setPdfDoc(doc as { getPage: (n: number) => Promise<unknown>; numPages: number });
+        setNumPages(doc.numPages);
+      } catch (err) {
+        console.error('Error loading PDF with pdfjs:', err);
+        if (cancelled) return;
+        setUseIframeFallback(true);
+        //toast.warning('Affichage simplifié. Vous pouvez télécharger le PDF.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfBlob, open]);
+
+  // Render current page to canvas (works on tablet)
+  useEffect(() => {
+    if (!pdfDoc || !canvasRef.current || !open) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let cancelled = false;
+    setPageRendering(true);
+    (async () => {
+      try {
+        const page = await pdfDoc.getPage(currentPage);
+        if (cancelled) return;
+        const pageProxy = page as { getViewport: (opts: { scale: number }) => { width: number; height: number }; render: (ctx: { canvasContext: CanvasRenderingContext2D; viewport: { width: number; height: number } }) => { promise: Promise<void> } };
+        const baseViewport = pageProxy.getViewport({ scale: 1 });
+        const containerW = containerRef.current?.clientWidth || window.innerWidth * 0.9;
+        const baseScale = Math.min(5, Math.max(2, Math.max(containerW - 32, 200) / baseViewport.width));
+        const scale = baseScale * Math.min(1.5, window.devicePixelRatio || 1);
+        const viewport = pageProxy.getViewport({ scale });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const renderCtx = { canvasContext: ctx, viewport };
+        await pageProxy.render(renderCtx).promise;
+        if (cancelled) return;
+      } catch (err) {
+        console.error('Error rendering PDF page:', err);
+      } finally {
+        if (!cancelled) setPageRendering(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [pdfDoc, currentPage, open]);
+
   // Load stored PDF or generate new one when dialog opens and data is loaded
   useEffect(() => {
-    if (open && !loadingProfile && !pdfGenerated) {
-      // En mode génération, attendre que les infos soient chargées avant de générer
+    if (open && !loadingProfile && !loadingInfos && !pdfGenerated) {
       if (generateMode) {
-        if (!loadingInfos) {
-          setPdfGenerated(true);
-          generatePDFPreview();
-        }
-      } else if (!needsInfoInput) {
+        // Mode génération : générer un nouveau PDF
+        setPdfGenerated(true);
+        generatePDFPreview();
+      } else {
         // Mode chargement : charger le PDF existant depuis le bucket
         setPdfGenerated(true);
         loadStoredPDF();
       }
     }
-  }, [open, loadingProfile, loadingInfos, pdfGenerated, needsInfoInput, generateMode]);
+  }, [open, loadingProfile, loadingInfos, pdfGenerated, generateMode]);
 
   const loadStoredPDF = async () => {
     // Load stored PDF if it exists
@@ -155,9 +247,9 @@ export function DepositSlipDialog({
     }
   };
 
-  const loadLastStockUpdateInfos = async (): Promise<void> => {
+  const loadProductInfos = async (): Promise<void> => {
     try {
-      // product_info provient de client_products, pas de stock_updates
+      // Toujours charger product_info depuis client_products
       const infos: Record<string, string> = {};
       clientProducts.forEach(cp => {
         if (cp.product_id) {
@@ -166,7 +258,7 @@ export function DepositSlipDialog({
       });
       setProductInfos(infos);
     } catch (error) {
-      console.error('Error loading last stock update infos:', error);
+      console.error('Error loading product infos:', error);
       // En cas d'erreur, initialiser avec des infos vides
       const infos: Record<string, string> = {};
       clientProducts.forEach(cp => {
@@ -175,52 +267,6 @@ export function DepositSlipDialog({
         }
       });
       setProductInfos(infos);
-    }
-  };
-
-  const loadLastInvoiceInfos = async () => {
-    try {
-      const companyId = await getCurrentUserCompanyId();
-      if (!companyId) {
-        throw new Error('Non autorisé');
-      }
-
-      // Check if there's at least one invoice for this client
-      const { data: lastInvoice, error: invoiceError } = await supabase
-        .from('invoices')
-        .select('id')
-        .eq('client_id', client.id)
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (invoiceError && invoiceError.code !== 'PGRST116') throw invoiceError;
-
-      if (lastInvoice && stockUpdates.length > 0) {
-        // product_info provient de client_products
-        const infos: Record<string, string> = {};
-        clientProducts.forEach((cp) => {
-          if (cp.product_id) {
-            infos[cp.product_id] = (cp as { product_info?: string | null }).product_info || '';
-          }
-        });
-        setProductInfos(infos);
-        setNeedsInfoInput(false);
-      } else {
-        // No invoice yet or no stock updates, user needs to input infos
-        setNeedsInfoInput(true);
-        const infos: Record<string, string> = {};
-        clientProducts.forEach(cp => {
-          if (cp.product_id) {
-            infos[cp.product_id] = '';
-          }
-        });
-        setProductInfos(infos);
-      }
-    } catch (error) {
-      console.error('Error loading last invoice infos:', error);
-      setNeedsInfoInput(true);
     }
   };
 
@@ -290,11 +336,11 @@ export function DepositSlipDialog({
           yPosition += 2;
         }
         if (userProfile.siret) {
-          doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+          doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
         if (userProfile.tva_number) {
-          doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+          doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
         if (userProfile.tva_number && userProfile.phone) {
@@ -354,11 +400,11 @@ export function DepositSlipDialog({
         clientYPosition += 4;
       }
       if (client.siret_number) {
-        doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
       if (client.tva_number) {
-        doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+        doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 3;
       }
       
@@ -616,61 +662,77 @@ export function DepositSlipDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {needsInfoInput ? (
-          <div className="flex-1 overflow-y-auto p-6">
-            <div className="space-y-4">
-              <p className="text-sm text-slate-600">
-                Aucune facture trouvée pour ce client. Veuillez renseigner les informations pour chaque produit :
-              </p>
-              {clientProducts.map((cp) => (
-                <div key={cp.id}>
-                  <Label htmlFor={`info-${cp.id}`}>
-                    Infos pour {cp.product?.name || 'Produit'}
-                  </Label>
-                  <Input
-                    id={`info-${cp.id}`}
-                    type="text"
-                    value={productInfos[cp.product_id || ''] || ''}
-                    onChange={(e) => setProductInfos(prev => ({
-                      ...prev,
-                      [cp.product_id || '']: e.target.value
-                    }))}
-                    placeholder="Ex: Livraison partielle, Retour prévu..."
-                    className="mt-1.5"
-                  />
-                </div>
-              ))}
-              <Button
-                onClick={() => {
-                  setNeedsInfoInput(false);
-                  setPdfGenerated(false);
-                }}
-                className="w-full"
-              >
-                Générer le bon de dépôt
-              </Button>
+        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col p-2 overflow-hidden">
+          {generating || loadingProfile || loadingInfos ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-4">
+              <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
+              <p className="text-slate-600">Génération du PDF en cours...</p>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 bg-slate-100 flex items-center justify-center p-2">
-            {generating || loadingProfile ? (
-              <div className="flex flex-col items-center gap-4">
-                <Loader2 className="h-12 w-12 animate-spin text-slate-600" />
-                <p className="text-slate-600">Génération du PDF en cours...</p>
+          ) : pdfUrl ? (
+            <>
+              <div 
+                ref={containerRef}
+                className="pdf-preview-scroll flex-1 min-h-0 overflow-y-auto overflow-x-auto overscroll-contain rounded border border-slate-300 bg-white shadow-lg flex items-start justify-center p-2"
+                style={{ WebkitOverflowScrolling: 'touch' }}
+              >
+                {useIframeFallback ? (
+                  <iframe
+                    src={pdfUrl}
+                    className="w-full h-full min-h-[200px] rounded border-0"
+                    title="Prévisualisation du bon de dépôt"
+                  />
+                ) : !pdfDoc ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-2 py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                    <p className="text-sm text-slate-600">Préparation du PDF...</p>
+                  </div>
+                ) : (
+                  <div className="relative flex flex-1 items-start justify-center min-h-0 w-full">
+                    <canvas
+                      ref={canvasRef}
+                      className="max-w-full h-auto rounded shadow-sm"
+                      style={{ opacity: pageRendering ? 0.6 : 1 }}
+                    />
+                    {pageRendering && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            ) : pdfUrl ? (
-              <iframe
-                src={pdfUrl}
-                className="w-full h-full rounded border border-slate-300 bg-white shadow-lg"
-                title="Prévisualisation du bon de dépôt"
-              />
-            ) : (
-              <div className="text-center text-slate-600">
-                <p>Erreur lors de la génération du PDF</p>
-              </div>
-            )}
-          </div>
-        )}
+              {!useIframeFallback && (numPages ?? 1) > 1 && (
+                <div className="flex items-center justify-center gap-2 py-2 border-t bg-slate-50">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1 || !pdfDoc}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Page précédente
+                  </Button>
+                  <span className="text-sm text-slate-600 px-2">
+                    Page {currentPage}{numPages != null ? ` / ${numPages}` : ''}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(numPages ?? p, p + 1))}
+                    disabled={numPages != null && currentPage >= numPages}
+                  >
+                    Page suivante
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-1 items-center justify-center text-center text-slate-600">
+              <p>Erreur lors de la génération du PDF</p>
+            </div>
+          )}
+        </div>
 
         <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
           <div className="flex gap-2">
@@ -678,7 +740,7 @@ export function DepositSlipDialog({
               <Button 
                 variant="outline" 
                 onClick={handleSendEmail}
-                disabled={!pdfBlob || generating || sendingEmail || needsInfoInput}
+                disabled={!pdfBlob || generating || sendingEmail}
               >
                 {sendingEmail ? (
                   <>
@@ -704,7 +766,7 @@ export function DepositSlipDialog({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Fermer
             </Button>
-            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating || needsInfoInput}>
+            <Button onClick={handleDownloadPDF} disabled={!pdfBlob || generating}>
               <Download className="mr-2 h-4 w-4" />
               Télécharger
             </Button>

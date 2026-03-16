@@ -540,10 +540,11 @@ export default function ProductsPage() {
       if (hasSubProducts && subProducts.length > 0) {
         const validSubProducts = subProducts.filter(sp => sp.trim() !== '');
         if (validSubProducts.length > 0) {
-          const subProductsToInsert = validSubProducts.map(name => ({
+          const subProductsToInsert = validSubProducts.map((name, index) => ({
             product_id: data.id,
             company_id: companyId,
-            name: name.trim()
+            name: name.trim(),
+            display_order: index + 1 // display_order starts at 1
           }));
 
           const { error: subProductsError } = await supabase
