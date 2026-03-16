@@ -1560,7 +1560,7 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Info Tél 1</Label>
+                      <Label className="text-slate-500 text-sm">Info Téléphone 1</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.phone_1_info || <span className="text-slate-400">Non renseigné</span>}
                       </p>
@@ -1574,7 +1574,7 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Info Tél 2</Label>
+                      <Label className="text-slate-500 text-sm">Info Téléphone 2</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.phone_2_info || <span className="text-slate-400">Non renseigné</span>}
                       </p>
@@ -1588,7 +1588,7 @@ export default function ClientInfoPage() {
                     </div>
 
                     <div>
-                      <Label className="text-slate-500 text-sm">Info Tél 3</Label>
+                      <Label className="text-slate-500 text-sm">Info Téléphone 3</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.phone_3_info || <span className="text-slate-400">Non renseigné</span>}
                       </p>
@@ -2223,7 +2223,7 @@ export default function ClientInfoPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_1_info">Info Tél 1 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_1_info">Info Téléphone 1</Label>
                     <Input
                       id="phone_1_info"
                       value={formData.phone_1_info}
@@ -2246,7 +2246,7 @@ export default function ClientInfoPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_2_info">Info Tél 2 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_2_info">Info Téléphone 2</Label>
                     <Input
                       id="phone_2_info"
                       value={formData.phone_2_info}
@@ -2269,7 +2269,7 @@ export default function ClientInfoPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_3_info">Info Tél 3 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_3_info">Info Téléphone 3</Label>
                     <Input
                       id="phone_3_info"
                       value={formData.phone_3_info}

@@ -116,7 +116,7 @@ export function CreditNoteDialog({
         if (cancelled) return;
         // En cas d'erreur, on garde un affichage en iframe simple
         setUseIframeFallback(true);
-        toast.warning('Affichage simplifié de l\'avoir. Vous pouvez télécharger le PDF.');
+        //toast.warning('Affichage simplifié de l\'avoir. Vous pouvez télécharger le PDF.');
       }
     })();
     return () => {

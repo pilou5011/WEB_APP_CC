@@ -1040,7 +1040,7 @@ export default function NewClientPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_1_info">Info Tél 1 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_1_info">Info Téléphone 1</Label>
                     <Input
                       id="phone_1_info"
                       value={formData.phone_1_info}
@@ -1063,7 +1063,7 @@ export default function NewClientPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_2_info">Info Tél 2 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_2_info">Info Téléphone 2</Label>
                     <Input
                       id="phone_2_info"
                       value={formData.phone_2_info}
@@ -1086,7 +1086,7 @@ export default function NewClientPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="phone_3_info">Info Tél 3 (ex: nom du correspondant)</Label>
+                    <Label htmlFor="phone_3_info">Info Téléphone 3</Label>
                     <Input
                       id="phone_3_info"
                       value={formData.phone_3_info}

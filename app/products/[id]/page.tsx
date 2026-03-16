@@ -912,10 +912,6 @@ export default function ProductDetailPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <CardTitle className="text-3xl">{product.name}</CardTitle>
-                  <CardDescription className="flex items-center gap-1.5 mt-2 text-base">
-                    <Euro className="h-5 w-5" />
-                    <span>{product.price.toFixed(2)} €</span>
-                  </CardDescription>
                 </div>
                 {!isEditing && (
                   <Button
@@ -929,6 +925,18 @@ export default function ProductDetailPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+                  <div className="flex items-center gap-2 text-amber-700 mb-2">
+                    <Euro className="h-5 w-5" />
+                    <span className="text-sm font-medium">Prix d'achat (HT)</span>
+                  </div>
+                  <p className="text-3xl font-bold text-amber-900">
+                    {product.purchase_price_ht != null
+                      ? `${Number(product.purchase_price_ht).toFixed(2)} €`
+                      : 'Non renseigné'}
+                  </p>
+                </div>
+
                 <div className="bg-green-50 rounded-lg p-4 border border-green-100">
                   <div className="flex items-center gap-2 text-green-600 mb-2">
                     <Euro className="h-5 w-5" />
@@ -937,29 +945,15 @@ export default function ProductDetailPage() {
                   <p className="text-3xl font-bold text-green-900">{product.price.toFixed(2)} €</p>
                 </div>
 
-                <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
-                  <div className="flex items-center gap-2 text-amber-700 mb-2">
-                    <Euro className="h-5 w-5" />
-                    <span className="text-sm font-medium">Prix d'achat (HT)</span>
-                  </div>
-                  <p className="text-lg font-bold text-amber-900">
-                    {product.purchase_price_ht != null
-                      ? `${Number(product.purchase_price_ht).toFixed(2)} €`
-                      : 'Non renseigné'}
-                  </p>
-                </div>
-
                 <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
                   <div className="flex items-center gap-2 text-blue-600 mb-2">
-                    <Package className="h-5 w-5" />
-                    <span className="text-sm font-medium">Date de création</span>
+                    <Euro className="h-5 w-5" />
+                    <span className="text-sm font-medium">Prix de vente conseillé (TTC)</span>
                   </div>
-                  <p className="text-lg font-bold text-blue-900">
-                    {new Date(product.created_at).toLocaleDateString('fr-FR', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    })}
+                  <p className="text-3xl font-bold text-blue-900">
+                    {product.recommended_sale_price != null
+                      ? `${Number(product.recommended_sale_price).toFixed(2)} €`
+                      : 'Non renseigné'}
                   </p>
                 </div>
               </div>
@@ -993,6 +987,29 @@ export default function ProductDetailPage() {
                   </div>
 
                   <div>
+                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
+                    {isEditing ? (
+                      <>
+                        <Input
+                          id="purchase_price_ht"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.purchase_price_ht}
+                          onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
+                          placeholder="Ex: 1.20"
+                          className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                      </>
+                    ) : (
+                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
+                        {formData.purchase_price_ht ? `${Number(formData.purchase_price_ht).toFixed(2)} €` : 'Non renseigné'}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
                     <Label htmlFor="price">Prix de cession (HT)</Label>
                     {isEditing ? (
                       <Input
@@ -1014,29 +1031,6 @@ export default function ProductDetailPage() {
                       />
                     ) : (
                       <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">{parseFloat(formData.price || '0').toFixed(2)} €</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
-                    {isEditing ? (
-                      <>
-                        <Input
-                          id="purchase_price_ht"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={formData.purchase_price_ht}
-                          onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
-                          placeholder="Ex: 1.20"
-                          className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                        />
-                        <p className="text-xs text-slate-500 mt-1">Optionnel</p>
-                      </>
-                    ) : (
-                      <p className="mt-1.5 text-sm font-medium text-[#0B1F33]">
-                        {formData.purchase_price_ht ? `${formData.purchase_price_ht} €` : 'Non renseigné'}
-                      </p>
                     )}
                   </div>
 
@@ -1542,7 +1536,7 @@ export default function ProductDetailPage() {
                           variant="destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Supprimer product
+                          Supprimer le produit
                         </Button>
                       </AlertDialogTrigger>
                       <AlertDialogContent>
