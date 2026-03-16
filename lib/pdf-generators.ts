@@ -849,11 +849,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       clientYPosition += 4;
     }
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -1174,13 +1174,11 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [255, 251, 235]; // amber-50
-            } else if (columnIndex === 6) { // Réassort
+            } else if (columnIndex === 6) { // Réassort — même style que Nouveau dépôt (pas de gras ni police agrandie)
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [240, 253, 244]; // green-50
-              // Style conditionnel : gras et plus grand uniquement pour les sous-produits
-              // Les produits standards gardent le style par défaut (sera appliqué dans la section isSubProduct)
             } else if (columnIndex === 7) { // Nouveau dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
@@ -1206,12 +1204,6 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
               // Only apply sub-product background to non-colored columns (0, 1, 2, 3)
               if (columnIndex !== undefined && columnIndex < 4) {
                 data.cell.styles.fillColor = [245, 247, 250];
-              }
-              
-              // Pour la colonne Réassort (index 6), mettre en gras et plus grand pour les sous-produits
-              if (columnIndex === 6) {
-                data.cell.styles.fontSize = 11; // Augmenter la police de +2 (de 8 à 10) pour plus de visibilité
-                data.cell.styles.fontStyle = 'bold'; // Mettre en gras
               }
               
               if (data.column && data.column.index === 0) {
@@ -1472,11 +1464,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       clientYPosition += 4;
     }
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     
@@ -1954,11 +1946,11 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     }
     
     if (client.siret_number) {
-      doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 4;
     }
     if (client.tva_number) {
-      doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+      doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
       clientYPosition += 3;
     }
     

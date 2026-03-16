@@ -1,6 +1,43 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+
+function formatTVANumber(tva: string | null): string {
+  if (!tva) return '';
+  let cleaned = tva.replace(/\s/g, '').toUpperCase();
+  if (cleaned.startsWith('FR')) {
+    const countryCode = cleaned.substring(0, 2);
+    const rest = cleaned.substring(2);
+    if (rest.length >= 2) {
+      const key = rest.substring(0, 2);
+      const siren = rest.substring(2).replace(/\D/g, '');
+      if (siren.length > 0) return `${countryCode} ${key} ${siren}`;
+      return `${countryCode} ${key}`;
+    }
+  }
+  return cleaned;
+}
+
+function formatSIRETNumber(siret: string | null): string {
+  if (!siret) return '';
+  const digits = siret.replace(/\D/g, '');
+  if (digits.length >= 14) {
+    const siren = digits.substring(0, 9);
+    const nic = digits.substring(9, 14);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    return `${block1} ${block2} ${block3} ${nic}`;
+  }
+  if (digits.length >= 9) {
+    const siren = digits.substring(0, 9);
+    const block1 = siren.substring(0, 3);
+    const block2 = siren.substring(3, 6);
+    const block3 = siren.substring(6, 9);
+    return `${block1} ${block2} ${block3} ${digits.substring(9)}`;
+  }
+  return siret;
+}
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -299,11 +336,11 @@ export function DepositSlipDialog({
           yPosition += 2;
         }
         if (userProfile.siret) {
-          doc.text(`SIRET: ${userProfile.siret}`, leftBoxX + 2, yPosition);
+          doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
         if (userProfile.tva_number) {
-          doc.text(`TVA: ${userProfile.tva_number}`, leftBoxX + 2, yPosition);
+          doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
           yPosition += 4;
         }
         if (userProfile.tva_number && userProfile.phone) {
@@ -363,11 +400,11 @@ export function DepositSlipDialog({
         clientYPosition += 4;
       }
       if (client.siret_number) {
-        doc.text(`SIRET: ${client.siret_number}`, rightBoxX + 2, clientYPosition);
+        doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 4;
       }
       if (client.tva_number) {
-        doc.text(`TVA: ${client.tva_number}`, rightBoxX + 2, clientYPosition);
+        doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
         clientYPosition += 3;
       }
       
