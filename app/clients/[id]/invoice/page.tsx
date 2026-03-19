@@ -859,7 +859,7 @@ export default function InvoicePage() {
                         </TableRow>
                         <TableRow className="bg-slate-100 font-bold">
                           <TableCell colSpan={4} className="text-right">
-                            Total HT après remise
+                            Total après remise (HT)
                           </TableCell>
                           <TableCell>
                             <span className="text-lg font-bold">{getTotalHTAfterDiscount().toFixed(2)} €</span>
@@ -1081,7 +1081,7 @@ export default function InvoicePage() {
                           <span className="text-sm font-medium">-{getDiscountAmount().toFixed(2)} €</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-sm font-medium">Total HT après remise</span>
+                          <span className="text-sm font-medium">Total après remise (HT)</span>
                           <span className="text-sm font-bold">{getTotalHTAfterDiscount().toFixed(2)} €</span>
                         </div>
                       </>

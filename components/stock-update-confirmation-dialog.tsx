@@ -128,7 +128,7 @@ export function StockUpdateConfirmationDialog({
             <div className={`rounded-lg p-4 border ${totalAmount < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
               <div className={`flex items-center gap-2 mb-2 ${totalAmount < 0 ? 'text-red-600' : 'text-green-600'}`}>
                 <Euro className="h-5 w-5" />
-                <span className="text-sm font-medium">Montant total</span>
+                <span className="text-sm font-medium">Montant total (HT)</span>
               </div>
               <p className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-900' : 'text-green-900'}`}>
                 {totalAmount.toFixed(2)} €
@@ -207,7 +207,7 @@ export function StockUpdateConfirmationDialog({
               <div>
                 <h3 className="font-semibold text-[#0B1F33] mb-4 flex items-center gap-2">
                   <Package className="h-5 w-5" />
-                  Détail par Product
+                  Détail par produit
                 </h3>
                 <div className="space-y-3">
                   {productUpdates.map((update, index) => (
@@ -312,7 +312,7 @@ export function StockUpdateConfirmationDialog({
               {productUpdates.length > 0 && (
                 <>
                   <div className="flex justify-between items-center text-slate-700">
-                    <span>Nombre de Produits mises à jour</span>
+                    <span>Nombre de produits mis à jour</span>
                     <span className="font-medium">{productUpdates.length}</span>
                   </div>
                   <div className="flex justify-between items-center text-slate-700">
@@ -351,7 +351,7 @@ export function StockUpdateConfirmationDialog({
                 </>
               )}
               <div className="flex justify-between items-center pt-2">
-                <span className="text-xl font-bold text-[#0B1F33]">Montant total à facturer</span>
+                <span className="text-xl font-bold text-[#0B1F33]">Montant total à facturer (HT)</span>
                 <span className={`text-3xl font-bold ${totalAmount < 0 ? 'text-red-700' : 'text-[#0B1F33]'}`}>
                   {totalAmount.toFixed(2)} €
                 </span>

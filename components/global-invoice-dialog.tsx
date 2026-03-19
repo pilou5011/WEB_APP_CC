@@ -115,7 +115,7 @@ export function GlobalInvoiceDialog({
         console.error('Error loading PDF with pdfjs:', err);
         if (cancelled) return;
         setUseIframeFallback(true);
-        toast.warning('Affichage simplifié. Vous pouvez télécharger le PDF.');
+        //toast.warning('Affichage simplifié. Vous pouvez télécharger le PDF.');
       }
     })();
     return () => { cancelled = true; };

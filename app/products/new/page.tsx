@@ -586,6 +586,21 @@ export default function NewProductPage() {
                   </div>
 
                   <div>
+                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
+                    <Input
+                      id="purchase_price_ht"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.purchase_price_ht}
+                      onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
+                      placeholder="Ex: 1.20"
+                      className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">Optionnel</p>
+                  </div>
+
+                  <div>
                     <Label htmlFor="price">Prix de cession (HT) *</Label>
                     <Input
                       id="price"
@@ -604,21 +619,6 @@ export default function NewProductPage() {
                       placeholder="Ex: 2.50"
                       className="mt-1.5"
                     />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="purchase_price_ht">Prix d'achat (HT)</Label>
-                    <Input
-                      id="purchase_price_ht"
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.purchase_price_ht}
-                      onChange={(e) => setFormData({ ...formData, purchase_price_ht: e.target.value })}
-                      placeholder="Ex: 1.20"
-                      className="mt-1.5 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <p className="text-xs text-slate-500 mt-1">Optionnel</p>
                   </div>
 
                   <div>
