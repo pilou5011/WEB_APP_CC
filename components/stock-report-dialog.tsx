@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { isMobileOrTablet } from '@/lib/utils';
 
 interface StockReportDialogProps {
   open: boolean;
@@ -40,7 +41,7 @@ export function StockReportDialog({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
   const [pageRendering, setPageRendering] = useState(false);
-  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(false); // PC = canvas, tablette/téléphone = iframe
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -63,7 +64,7 @@ export function StockReportDialog({
       setPdfUrl(null);
       setPdfDoc(null);
       setNumPages(null);
-      setUseIframeFallback(false);
+      setUseIframeFallback(isMobileOrTablet());
       setCurrentPage(1);
       setPdfBlob(null);
       setLoadingProfile(true);
