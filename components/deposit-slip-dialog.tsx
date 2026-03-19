@@ -44,6 +44,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
+import { isMobileOrTablet } from '@/lib/utils';
 
 interface DepositSlipDialogProps {
   open: boolean;
@@ -79,7 +80,7 @@ export function DepositSlipDialog({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
   const [pageRendering, setPageRendering] = useState(false);
-  const [useIframeFallback, setUseIframeFallback] = useState(true); // true = iframe (vue native grise avec barre d'outils)
+  const [useIframeFallback, setUseIframeFallback] = useState(false); // PC = canvas, tablette/téléphone = iframe
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -90,7 +91,7 @@ export function DepositSlipDialog({
       setPdfBlob(null);
       setPdfDoc(null);
       setNumPages(null);
-        setUseIframeFallback(true);
+      setUseIframeFallback(isMobileOrTablet());
       setCurrentPage(1);
       setLoadingProfile(true);
       setLoadingInfos(false);
