@@ -43,7 +43,7 @@ export function GlobalInvoiceDialog({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfDoc, setPdfDoc] = useState<{ getPage: (n: number) => Promise<unknown>; numPages: number } | null>(null);
   const [pageRendering, setPageRendering] = useState(false);
-  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(true); // true = iframe (vue native grise avec barre d'outils)
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +54,7 @@ export function GlobalInvoiceDialog({
       setPdfBlob(null);
       setPdfDoc(null);
       setNumPages(null);
-      setUseIframeFallback(false);
+        setUseIframeFallback(true);
       setCurrentPage(1);
       setLoadingProfile(true);
       setLoadingAdjustments(true);
