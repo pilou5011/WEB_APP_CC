@@ -2694,10 +2694,13 @@ export default function ClientDetailPage() {
       if (productSubProducts && productSubProducts.length > 0) {
         // Product has sub-products: open dialog to enter initial stocks
         // IMPORTANT: Utiliser TOUS les sous-produits du produit
-        setSubProductsForAssociation(productSubProducts);
+        const sortedSubProducts = [...productSubProducts].sort(
+          (a, b) => (a.display_order || 0) - (b.display_order || 0)
+        );
+        setSubProductsForAssociation(sortedSubProducts);
         const initialStocks: Record<string, string> = {};
         // Initialiser tous les sous-produits avec une chaîne vide (sera validé comme 0 si non rempli)
-        productSubProducts.forEach(sp => {
+        sortedSubProducts.forEach(sp => {
           initialStocks[sp.id] = '';
         });
         setSubProductsInitialStocks(initialStocks);

@@ -453,6 +453,7 @@ export function DepositSlipDialog({
       const tableData = sortedProducts.map((cp) => {
         const productName = cp.product?.name || 'Produit';
         const info = productInfos[cp.product_id || ''] || '';
+        const barcode = cp.product?.barcode || '';
         const effectivePrice = cp.custom_price ?? cp.product?.price ?? 0;
         const effectiveRecommendedSalePrice = cp.custom_recommended_sale_price ?? cp.product?.recommended_sale_price ?? null;
         
@@ -461,11 +462,14 @@ export function DepositSlipDialog({
         const stock = stockUpdate ? stockUpdate.new_stock.toString() : cp.current_stock.toString();
         
         return [
-          productName,
           info,
-          `${effectivePrice.toFixed(2)} €`,
-          effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-          stock
+          productName,
+          stock, // Qté remise
+          barcode, // Code-barres
+          `${effectivePrice.toFixed(2)} €`, // Prix cession HT
+          effectiveRecommendedSalePrice !== null
+            ? `${effectiveRecommendedSalePrice.toFixed(2)} €`
+            : '-', // Prix conseillé TTC
         ];
       });
 
@@ -474,21 +478,23 @@ export function DepositSlipDialog({
       const tableWidth = pageWidth - marginLeft - marginRight;
       
       const columnWidths = [
-        tableWidth * 0.35,
-        tableWidth * 0.30,
-        tableWidth * 0.10,
-        tableWidth * 0.10,
-        tableWidth * 0.15
+        tableWidth * 0.12, // Infos
+        tableWidth * 0.28, // Produit
+        tableWidth * 0.10, // Qté remise
+        tableWidth * 0.20, // Code-barres
+        tableWidth * 0.15, // Prix cession HT
+        tableWidth * 0.15  // Prix conseillé TTC
       ];
 
       autoTable(doc, {
         startY: yPosition,
         head: [[
-          'Produit', 
           'Infos', 
-          { content: 'Prix de\ncession\n(HT)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-          { content: 'Prix de vente\nconseillé\n(TTC)', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-          { content: 'Marchandise\nremise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+          'Produit',
+          { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+          { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
         ]],
         body: tableData,
         theme: 'grid',
@@ -510,11 +516,12 @@ export function DepositSlipDialog({
           textColor: [0, 0, 0]
         },
         columnStyles: {
-          0: { halign: 'left', cellWidth: columnWidths[0] },
-          1: { halign: 'left', fontSize: 7, cellWidth: columnWidths[1] },
-          2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
-          3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
-          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }
+          0: { halign: 'left', fontSize: 8, cellWidth: columnWidths[0] }, // Infos
+          1: { halign: 'left', fontSize: 8, cellWidth: columnWidths[1] }, // Produit
+          2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] }, // Qté remise
+          3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] }, // Code-barres
+          4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] }, // Prix cession HT
+          5: { halign: 'center', fontSize: 8, cellWidth: columnWidths[5] }, // Prix conseillé TTC
         }
       });
 
