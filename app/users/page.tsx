@@ -164,7 +164,7 @@ export default function UsersPage() {
 
       setInviteDialogOpen(false);
       setInviteEmail('');
-      setInviteRole('user');
+      setInviteRole('admin');
       loadData();
     } catch (error: any) {
       console.error('Error inviting user:', error);
@@ -271,13 +271,17 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {user.role === 'admin' ? (
+                          {user.role === 'admin' || user.role === 'super_admin' ? (
                             <Shield className="h-4 w-4 text-blue-600" />
                           ) : (
                             <User className="h-4 w-4 text-slate-400" />
                           )}
-                          <span className={user.role === 'admin' ? 'font-semibold text-blue-600' : ''}>
-                            {user.role === 'admin' ? 'Administrateur' : 'Utilisateur'}
+                          <span className={user.role === 'admin' || user.role === 'super_admin' ? 'font-semibold text-blue-600' : ''}>
+                            {user.role === 'super_admin'
+                              ? 'Super administrateur'
+                              : user.role === 'admin'
+                              ? 'Administrateur'
+                              : 'Utilisateur'}
                           </span>
                         </div>
                       </TableCell>
@@ -285,7 +289,7 @@ export default function UsersPage() {
                         {new Date(user.created_at).toLocaleDateString('fr-FR')}
                       </TableCell>
                       <TableCell className="text-right">
-                        {user.role !== 'admin' && (
+                        {user.role === 'user' && (
                           <Button
                             variant="ghost"
                             size="sm"
@@ -382,8 +386,8 @@ export default function UsersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">Utilisateur</SelectItem>
                     <SelectItem value="admin">Administrateur</SelectItem>
+                    <SelectItem value="user">Utilisateur</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

@@ -63,11 +63,25 @@ export async function isCurrentUserAdmin(): Promise<boolean> {
       return false;
     }
     
-    const isAdmin = user.role === 'admin';
+    const isAdmin = user.role === 'admin' || user.role === 'super_admin';
     console.log('isCurrentUserAdmin:', { userId: user.id, role: user.role, isAdmin });
     return isAdmin;
   } catch (error) {
     console.error('Error in isCurrentUserAdmin:', error);
+    return false;
+  }
+}
+
+/**
+ * Vérifie si l'utilisateur connecté est super administrateur
+ */
+export async function isCurrentUserSuperAdmin(): Promise<boolean> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return false;
+    return user.role === 'super_admin';
+  } catch (error) {
+    console.error('Error in isCurrentUserSuperAdmin:', error);
     return false;
   }
 }

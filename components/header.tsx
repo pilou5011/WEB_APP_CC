@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -17,12 +17,17 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { getCurrentUser, isCurrentUserSuperAdmin } from '@/lib/auth-helpers';
 
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [userEmail, setUserEmail] = useState<string>('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+  const [impersonationAdminEmail, setImpersonationAdminEmail] = useState('');
+  const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
 
   useEffect(() => {
     // Récupérer l'email de l'utilisateur connecté
@@ -47,6 +52,53 @@ export function Header() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const loadRole = async () => {
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        setIsSuperAdminUser(false);
+        return;
+      }
+      const superAdmin = await isCurrentUserSuperAdmin();
+      setIsSuperAdminUser(superAdmin);
+    };
+    loadRole();
+  }, [userEmail]);
+
+  useEffect(() => {
+    const impersonationFlag = searchParams?.get('impersonation');
+    const adminEmail = searchParams?.get('admin_email') || '';
+
+    if (impersonationFlag === '1') {
+      const payload = {
+        active: true,
+        adminEmail,
+      };
+      sessionStorage.setItem('admin_impersonation', JSON.stringify(payload));
+      setIsImpersonating(true);
+      setImpersonationAdminEmail(adminEmail);
+      return;
+    }
+
+    const stored = sessionStorage.getItem('admin_impersonation');
+    if (!stored) {
+      setIsImpersonating(false);
+      setImpersonationAdminEmail('');
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(stored) as { active?: boolean; adminEmail?: string };
+      const active = parsed?.active === true;
+      setIsImpersonating(active);
+      setImpersonationAdminEmail(parsed?.adminEmail || '');
+    } catch {
+      sessionStorage.removeItem('admin_impersonation');
+      setIsImpersonating(false);
+      setImpersonationAdminEmail('');
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isUserMenuOpen) return;
@@ -95,6 +147,18 @@ export function Header() {
     }
   };
 
+  const handleBackToAdminAccount = async () => {
+    try {
+      sessionStorage.removeItem('admin_impersonation');
+      await supabase.auth.signOut();
+      toast.success('Session utilisateur fermée. Reconnectez-vous avec votre compte admin.');
+      router.push('/auth');
+    } catch (error) {
+      console.error('Error leaving impersonation mode:', error);
+      toast.error('Erreur lors du retour au compte admin');
+    }
+  };
+
   // Ne pas afficher le header sur la page d'authentification
   if (pathname?.startsWith('/auth')) {
     return null;
@@ -117,7 +181,26 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200" style={{ backgroundColor: '#0B1F33' }}>
+    <>
+      {isImpersonating && userEmail && (
+        <div className="sticky top-0 z-[60] w-full border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-900">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 text-sm">
+            <span>
+              Mode admin - vous êtes connecté en tant que <strong>{userEmail}</strong>
+              {impersonationAdminEmail ? ` (admin: ${impersonationAdminEmail})` : ''}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleBackToAdminAccount}
+              className="border-amber-500 bg-transparent text-amber-900 hover:bg-amber-200"
+            >
+              Revenir a mon compte
+            </Button>
+          </div>
+        </div>
+      )}
+      <header className="sticky top-0 z-50 w-full border-b border-slate-200" style={{ backgroundColor: '#0B1F33' }}>
       <div className="w-full flex h-16 items-center justify-between pr-0">
         {/* Logo et texte Gaston */}
         <Link href="/" className="flex items-center flex-shrink-0 h-full hover:opacity-90 transition-opacity" style={{ background: 'linear-gradient(to right, #FFFFFF 0%, #FFFFFF 75%, rgba(11, 31, 51, 0.1) 82%, rgba(11, 31, 51, 0.4) 88%, rgba(11, 31, 51, 0.7) 94%, #0B1F33 100%)' }}>
@@ -221,26 +304,18 @@ export function Header() {
                 <Settings className="mr-2 h-4 w-4" />
                 Gestion des utilisateurs
               </div>
-              <div
-                onClick={() => {
-                  router.push('/subscription');
-                  setIsUserMenuOpen(false);
-                }}
-                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-slate-600"
-              >
-                <CreditCard className="mr-2 h-4 w-4" />
-                Mon abonnement
-              </div>
-              <div
-                onClick={() => {
-                  router.push('/compliance');
-                  setIsUserMenuOpen(false);
-                }}
-                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-slate-600"
-              >
-                <FileText className="mr-2 h-4 w-4" />
-                Conformité / CGU / CGV / RGPD
-              </div>
+              {isSuperAdminUser && (
+                <div
+                  onClick={() => {
+                    router.push('/admin/impersonation');
+                    setIsUserMenuOpen(false);
+                  }}
+                  className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground text-slate-600"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  Connexion a un utilisateur
+                </div>
+              )}
               <div
                 onClick={() => {
                   router.push('/help');
@@ -269,7 +344,8 @@ export function Header() {
         </Popover>
         </div>
       </div>
-    </header>
+      </header>
+    </>
   );
 }
 
