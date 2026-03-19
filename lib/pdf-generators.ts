@@ -1174,11 +1174,13 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [255, 251, 235]; // amber-50
-            } else if (columnIndex === 6) { // Réassort — même style que Nouveau dépôt (pas de gras ni police agrandie)
+            } else if (columnIndex === 6) { // Réassort — gras et police agrandie
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [240, 253, 244]; // green-50
+              data.cell.styles.fontSize = 10;
+              data.cell.styles.fontStyle = 'bold';
             } else if (columnIndex === 7) { // Nouveau dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
