@@ -3953,12 +3953,12 @@ export default function ClientDetailPage() {
             setProductToEdit(null);
           }
         }}>
-          <DialogContent>
+          <DialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
             <form onSubmit={handleEditPriceSubmit}>
               <DialogHeader>
-                <DialogTitle>Modifier le prix</DialogTitle>
+                <DialogTitle>Modifier le prix et l&apos;info produit</DialogTitle>
                 <DialogDescription>
-                  Modifiez le prix de "{productToEdit?.product?.name}" pour ce client
+                  Modifiez le prix et l&apos;info produit de &quot;{productToEdit?.product?.name}&quot; pour ce client
                 </DialogDescription>
               </DialogHeader>
               
@@ -3966,7 +3966,7 @@ export default function ClientDetailPage() {
                 {productToEdit?.product && (
                   <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-2">
                     <p className="text-sm text-slate-600">
-                      Prix par défaut du produit : 
+                      Prix de cession par défaut : 
                       <span className="font-semibold text-[#0B1F33] ml-2">
                         {productToEdit.product.price.toFixed(2)} €
                       </span>
@@ -3983,7 +3983,7 @@ export default function ClientDetailPage() {
                 )}
 
                 <div className="space-y-3 border border-slate-200 rounded-lg p-4">
-                  <Label>Type de prix</Label>
+                  <Label>Prix de cession (HT)</Label>
                   <RadioGroup
                     value={editPriceForm.price_type}
                     onValueChange={(val: 'default' | 'custom') => setEditPriceForm({ ...editPriceForm, price_type: val })}
@@ -4084,6 +4084,7 @@ export default function ClientDetailPage() {
                     onChange={(e) => setEditPriceForm({ ...editPriceForm, product_info: e.target.value })}
                     placeholder="Optionnel"
                     className="mt-1.5"
+                    autoFocus={false}
                   />
                 </div>
               </div>

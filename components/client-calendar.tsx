@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
+import { fr } from 'date-fns/locale';
 
 interface ClientCalendarProps {
   openingHours: WeekSchedule | null;
@@ -309,6 +310,7 @@ export function ClientCalendar({ openingHours, vacationPeriods, marketDaysSchedu
             modifiers={modifiers}
             modifiersClassNames={modifiersClassNames}
             weekStartsOn={1}
+            locale={fr}
             className="rounded-md border"
             classNames={{
               day_selected: 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
