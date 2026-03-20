@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -3110,7 +3110,7 @@ export default function ClientDetailPage() {
                         <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <span className="font-medium text-slate-700 text-base">Tél : </span>
-                          <span className="text-[#0B1F33] font-bold text-base">{client.phone}</span>
+                          <span className="text-[#0B1F33] font-bold text-base">{formatPhoneNumber(client.phone)}</span>
                           {client.phone_1_info && (
                             <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
                           )}

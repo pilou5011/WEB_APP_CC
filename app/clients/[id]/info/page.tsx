@@ -23,7 +23,7 @@ import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, for
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber, formatSIRETNumber, formatTVANumber } from '@/lib/utils';
 import { generateClientInfoPDF } from '@/lib/pdf-generators';
 
 // Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
@@ -1555,7 +1555,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Téléphone 1</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1569,7 +1569,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Téléphone 2</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone_2 || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone_2) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1583,7 +1583,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Téléphone 3</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone_3 || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone_3) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1615,14 +1615,14 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.siret_number || <span className="text-slate-400">Non renseigné</span>}
+                        {formatSIRETNumber(client.siret_number) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
                     <div>
                       <Label className="text-slate-500 text-sm">Numéro TVA</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.tva_number || <span className="text-slate-400">Non renseigné</span>}
+                        {formatTVANumber(client.tva_number) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
