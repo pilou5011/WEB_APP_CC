@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     // Déterminer le type de document (par défaut: facture)
     const isCreditNote = documentType === 'credit_note' || documentType === 'avoir';
     const isDepositSlip = documentType === 'deposit_slip' || documentType === 'bon_depot';
+    const isStockReport = documentType === 'stock_report' || documentType === 'releve_stock';
     
     // Construire le sujet et le message selon le type de document
     let subject: string;
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest) {
       const depositSlipDate = creditNoteDate || invoiceDate; // Utiliser creditNoteDate ou invoiceDate pour la date du bon de dépôt
       subject = `Bon de dépôt - ${senderCompanyName || 'Dépôt-vente'} du ${depositSlipDate || '___/___/____'}`;
       messageBody = `Vous trouverez ci-joint votre bon de dépôt généré le ${depositSlipDate || '___/___/____'}.`;
+    } else if (isStockReport) {
+      const stockReportDate = invoiceDate || creditNoteDate;
+      subject = `Relevé de stock - ${senderCompanyName || 'Dépôt-vente'} du ${stockReportDate || '___/___/____'}`;
+      messageBody = `Vous trouverez ci-joint votre relevé de stock du ${stockReportDate || '___/___/____'}.`;
     } else {
       subject = `Facture - ${senderCompanyName || 'Dépôt-vente'} du ${invoiceDate || '___/___/____'}`;
       messageBody = `Vous trouverez ci-joint votre facture du ${invoiceDate || '___/___/____'}.`;
