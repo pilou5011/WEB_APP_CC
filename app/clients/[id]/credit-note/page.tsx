@@ -332,15 +332,15 @@ export default function CreditNotePage() {
         // Ouvrir automatiquement la prévisualisation de l'avoir généré
         setSelectedCreditNote(updatedCreditNote as CreditNote);
         setCreditNotePreviewDialogOpen(true);
-      }
 
-      // Delete draft after successful credit note creation
-      try {
-        await draft.deleteDraft();
-        console.log('[Draft Credit Note] Draft deleted after successful credit note creation');
-      } catch (error) {
-        console.error('[Draft Credit Note] Error deleting draft after credit note creation:', error);
-        // Don't show error to user, credit note was created successfully
+        // Supprimer le draft uniquement si l'avoir est bien passé en completed
+        try {
+          await draft.deleteDraft();
+          console.log('[Draft Credit Note] Draft deleted after credit note completed');
+        } catch (error) {
+          console.error('[Draft Credit Note] Error deleting draft after credit note completed:', error);
+          // Ne pas bloquer si le draft n'arrive pas à se supprimer
+        }
       }
 
       toast.success('Avoir créé avec succès');
