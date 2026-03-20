@@ -13,6 +13,7 @@ import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone, Edit } from 
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
+import { formatPhoneNumber, formatSIRETNumber, formatTVANumber } from '@/lib/utils';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -279,7 +280,7 @@ export default function ProfilePage() {
                       <div>
                         <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
                         <p className="text-lg font-medium mt-1">
-                          {profile.siret || <span className="text-slate-400">Non renseigné</span>}
+                          {formatSIRETNumber(profile.siret) || <span className="text-slate-400">Non renseigné</span>}
                         </p>
                       </div>
 
@@ -293,7 +294,7 @@ export default function ProfilePage() {
                       <div>
                         <Label className="text-slate-500 text-sm">Numéro TVA</Label>
                         <p className="text-lg font-medium mt-1">
-                          {profile.tva_number || <span className="text-slate-400">Non renseigné</span>}
+                          {formatTVANumber(profile.tva_number) || <span className="text-slate-400">Non renseigné</span>}
                         </p>
                       </div>
                     </div>
@@ -375,7 +376,7 @@ export default function ProfilePage() {
                       <div>
                         <Label className="text-slate-500 text-sm">Téléphone</Label>
                         <p className="text-lg font-medium mt-1">
-                          {profile.phone || <span className="text-slate-400">Non renseigné</span>}
+                          {formatPhoneNumber(profile.phone) || <span className="text-slate-400">Non renseigné</span>}
                         </p>
                       </div>
                     </div>
