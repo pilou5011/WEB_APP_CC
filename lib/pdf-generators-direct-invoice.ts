@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PDF Generator for Direct Invoices
  * 
  * This file contains a function to generate and save PDFs for direct invoices
@@ -317,7 +317,13 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
-    yPosition += 10;
+    const responsableName = client.responsable_name?.trim();
+    if (responsableName) {
+      doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
+      yPosition += 12;
+    } else {
+      yPosition += 10;
+    }
 
     // Titre "Facture N°[numero_facture]" en gras
     doc.setFont('helvetica', 'bold');

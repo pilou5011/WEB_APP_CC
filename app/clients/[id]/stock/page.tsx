@@ -32,6 +32,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
+import { StockMissingLinesDialog } from '@/components/stock-missing-lines-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { StockReportDialog } from '@/components/stock-report-dialog';
@@ -184,7 +185,7 @@ function SortableProductRow({
       className={cn("hover:bg-slate-50/50", hasSubProducts && "bg-slate-50")}
     >
       <TableCell className="align-middle py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full">
           <button
             {...attributes}
             {...listeners}
@@ -192,12 +193,15 @@ function SortableProductRow({
           >
             <GripVertical className="h-5 w-5" />
           </button>
-          <p className={cn("font-medium text-[#0B1F33]", hasSubProducts && "font-semibold")}>
+          <p className={cn(
+            "font-medium text-[#0B1F33] text-center flex-1 min-w-0 break-words",
+            hasSubProducts && "font-semibold"
+          )}>
             {cp.product?.name || 'Produit'}
           </p>
         </div>
       </TableCell>
-      <TableCell className="align-middle py-3 text-center w-[5%]">
+      <TableCell className="align-middle py-3 text-center w-[2%]">
         {!hasSubProducts && (
           <Button
             variant="ghost"
@@ -225,7 +229,28 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-amber-50" : "align-top py-3 bg-amber-50"}>
+      <TableCell className="align-middle py-3 text-center w-[2%]">
+        {(() => {
+          if (hasSubProducts) {
+            // Produit total = somme des sous-produits : ne pas afficher un % au niveau "produit".
+            return null;
+          }
+
+          const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+          const ancienDepot = lastUpdate ? lastUpdate.new_stock : 0;
+          const countedStr = perProductForm[cp.id]?.counted_stock ?? '';
+          const countedTrim = countedStr.trim();
+          if (!ancienDepot || ancienDepot <= 0) return <span className="text-xs text-slate-400">-</span>;
+          if (!countedTrim) return <span className="text-xs text-slate-400">-</span>;
+
+          const countedStock = parseInt(countedTrim, 10);
+          if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
+
+          const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
+          return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+        })()}
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center bg-amber-50">
         {hasSubProducts ? (
           <p className="text-sm font-medium text-slate-600">
             {parentCountedStock}
@@ -244,7 +269,7 @@ function SortableProductRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className="h-9 placeholder:text-slate-400"
+            className="h-9 placeholder:text-slate-400 text-center"
           />
         )}
       </TableCell>
@@ -265,7 +290,7 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-[#E8EDF2]" : "align-top py-3 bg-[#E8EDF2]"}>
+      <TableCell className="align-middle py-3 text-center bg-[#E8EDF2]">
         {hasSubProducts ? (
           <p className="text-sm font-medium text-slate-600">
             {parentCardsAdded}
@@ -285,44 +310,40 @@ function SortableProductRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className="h-9 placeholder:text-slate-400"
+            className="h-9 placeholder:text-slate-400 text-center"
           />
         )}
       </TableCell>
-      <TableCell className="align-middle py-3">
-        <span className="text-sm text-slate-600" title={(cp as ClientProduct & { product_info?: string | null }).product_info || undefined}>
-          {(cp as ClientProduct & { product_info?: string | null }).product_info || '—'}
-        </span>
+      <TableCell className="align-middle py-3 text-center">
+        {(() => {
+          const info = (cp as ClientProduct & { product_info?: string | null }).product_info;
+          if (!info) {
+            return <span className="text-xs text-slate-400 block w-full text-center">-</span>;
+          }
+          return (
+            <span className="text-sm text-slate-600 block w-full text-center" title={info}>
+              {info}
+            </span>
+          );
+        })()}
       </TableCell>
-      <TableCell className="align-top py-3 text-right">
+      <TableCell className="align-middle py-3 text-right">
         <div>
           <p className="text-sm font-medium text-[#0B1F33]">{effectivePrice.toFixed(2)} €</p>
-          {isCustomPrice && (
-            <p className="text-xs text-blue-600">Personnalisé</p>
-          )}
-          {!isCustomPrice && cp.product?.price != null && (
-            <p className="text-xs text-slate-500">Par défaut</p>
-          )}
         </div>
       </TableCell>
-      <TableCell className="align-top py-3 text-right">
+      <TableCell className="align-middle py-3 text-right">
         <div>
           {effectiveRecommendedSalePrice !== null ? (
             <>
               <p className="text-sm font-medium text-[#0B1F33]">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
-              {isCustomRecommendedSalePrice && (
-                <p className="text-xs text-blue-600">Personnalisé</p>
-              )}
-              {!isCustomRecommendedSalePrice && cp.product?.recommended_sale_price != null && (
-                <p className="text-xs text-slate-500">Par défaut</p>
-              )}
             </>
           ) : (
             <p className="text-sm text-slate-400">-</p>
           )}
         </div>
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="align-middle py-3">
         <div className="flex justify-end gap-2">
           <Button
             variant="ghost"
@@ -367,6 +388,8 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
+  const [missingLinesDialogOpen, setMissingLinesDialogOpen] = useState(false);
+  const [missingStockProducts, setMissingStockProducts] = useState<string[]>([]);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
@@ -1211,6 +1234,72 @@ export default function ClientDetailPage() {
     return updates;
   };
 
+  const getNonCompletedProductsForStockUpdate = () => {
+    // Liste unifiée (produits + sous-produits) ayant une ligne totalement vide :
+    // - stock compté vide
+    // - nouveau dépôt vide
+    // La liste est ensuite tronquée à 10 éléments côté dialog.
+    const items: string[] = [];
+    const seenProductNames = new Set<string>();
+    const seenSubProductIds = new Set<string>();
+
+    for (const cp of clientProducts) {
+      const productSubProducts = subProducts[cp.product_id] || [];
+      const productName = cp.product?.name || 'Produit';
+
+      if (productSubProducts.length > 0) {
+        let hasEmptySubLines = false;
+        const emptySubProductNames: string[] = [];
+
+        for (const sp of productSubProducts) {
+          const formData = perSubProductForm[sp.id];
+          const counted = formData?.counted_stock?.trim() ?? '';
+          const added = formData?.stock_added?.trim() ?? '';
+
+          if (counted === '' && added === '') {
+            hasEmptySubLines = true;
+            emptySubProductNames.push(sp.name);
+          }
+        }
+
+        // Conserver l'affichage "produit" (comme avant), si au moins un sous-produit est vide.
+        if (hasEmptySubLines && !seenProductNames.has(productName)) {
+          items.push(productName);
+          seenProductNames.add(productName);
+        }
+
+        // Ajouter aussi les sous-produits vides dans la même liste.
+        for (const spName of emptySubProductNames) {
+          // dedup par id via la boucle précédente n'est pas directement possible ici,
+          // on se déduplique ensuite via un label unique construit depuis le nom + produit.
+          // (les sp.id sont uniques, donc on peut aussi éviter doublons en utilisant sp.id à la place,
+          // mais on garde ce niveau de détail simple.)
+          const label = `└ ${spName}`;
+          // Limiter les doublons affichés : si deux produits ont le même nom de sous-produit,
+          // on n'a qu'un item par nom. (Les sp étant uniques en base, cette contrainte n'est
+          // généralement pas problématique.)
+          if (!seenSubProductIds.has(label)) {
+            items.push(label);
+            seenSubProductIds.add(label);
+          }
+        }
+      } else {
+        const formData = perProductForm[cp.id];
+        const counted = formData?.counted_stock?.trim() ?? '';
+        const added = formData?.stock_added?.trim() ?? '';
+
+        if (counted === '' && added === '') {
+          if (!seenProductNames.has(productName)) {
+            items.push(productName);
+            seenProductNames.add(productName);
+          }
+        }
+      }
+    }
+
+    return items;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client) return;
@@ -1225,6 +1314,15 @@ export default function ClientDetailPage() {
     if (!hasStockUpdates && !hasAdjustments) {
       toast.info('Aucun changement détecté');
       return;
+    }
+
+    if (hasStockUpdates) {
+      const nonCompletedProducts = getNonCompletedProductsForStockUpdate();
+      if (nonCompletedProducts.length > 0) {
+        setMissingStockProducts(nonCompletedProducts);
+        setMissingLinesDialogOpen(true);
+        return;
+      }
     }
 
     // Open confirmation dialog
@@ -1779,37 +1877,58 @@ export default function ClientDetailPage() {
         } else {
           console.log('[Draft] No draft found to delete');
         }
+
+        // IMPORTANT: Ne pas supprimer le brouillon si la facture n'est pas réellement en `completed`.
+        let deleteDraftAllowed = true;
+        if (invoiceData) {
+          const { data: refreshedInvoice } = await supabase
+            .from('invoices')
+            .select('id')
+            .eq('id', invoiceData.id)
+            .eq('company_id', companyId)
+            .eq('status', 'completed')
+            .maybeSingle();
+
+          if (!refreshedInvoice) {
+            deleteDraftAllowed = false;
+            console.warn('[Draft] Invoice not completed yet, keeping draft:', invoiceData.id);
+          }
+        }
         
         // Supprimer le brouillon via le hook
-        await draft.deleteDraft();
-        setHasDraft(false);
-        console.log('[Draft] Draft deleted successfully after successful stock update');
+        if (deleteDraftAllowed) {
+          await draft.deleteDraft();
+          setHasDraft(false);
+          console.log('[Draft] Draft deleted successfully after successful stock update');
+        }
         
-        // Vérifier que la suppression a bien fonctionné
-        const { data: verifyDraft, error: verifyError } = await supabase
-          .from('draft_stock_updates')
-          .select('id')
-          .eq('client_id', clientId)
-          .maybeSingle();
-        
-        if (verifyError) {
-          console.error('[Draft] Error verifying draft deletion:', verifyError);
-        } else if (verifyDraft) {
-          console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
-          // Essayer une suppression directe (soft delete)
-          const { error: directDeleteError } = await supabase
+        if (deleteDraftAllowed) {
+          // Vérifier que la suppression a bien fonctionné
+          const { data: verifyDraft, error: verifyError } = await supabase
             .from('draft_stock_updates')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', verifyDraft.id);
+            .select('id')
+            .eq('client_id', clientId)
+            .maybeSingle();
           
-          if (directDeleteError) {
-            console.error('[Draft] Direct deletion also failed:', directDeleteError);
-            throw directDeleteError;
+          if (verifyError) {
+            console.error('[Draft] Error verifying draft deletion:', verifyError);
+          } else if (verifyDraft) {
+            console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
+            // Essayer une suppression directe (soft delete)
+            const { error: directDeleteError } = await supabase
+              .from('draft_stock_updates')
+              .update({ deleted_at: new Date().toISOString() })
+              .eq('id', verifyDraft.id);
+            
+            if (directDeleteError) {
+              console.error('[Draft] Direct deletion also failed:', directDeleteError);
+              throw directDeleteError;
+            } else {
+              console.log('[Draft] Draft deleted via direct deletion');
+            }
           } else {
-            console.log('[Draft] Draft deleted via direct deletion');
+            console.log('[Draft] Draft deletion verified: no draft remains');
           }
-        } else {
-          console.log('[Draft] Draft deletion verified: no draft remains');
         }
         
         // Les formulaires ont déjà été vidés après le succès de la génération des PDFs
@@ -1863,7 +1982,7 @@ export default function ClientDetailPage() {
           deposit_slip_pdf_path: null,
           invoice_email_sent_at: null,
           deposit_slip_email_sent_at: null,
-          status: 'completed', // Statut par défaut pour les dialogs
+          status: 'processing', // Statut par défaut pour les dialogs
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -2777,10 +2896,13 @@ export default function ClientDetailPage() {
       if (productSubProducts && productSubProducts.length > 0) {
         // Product has sub-products: open dialog to enter initial stocks
         // IMPORTANT: Utiliser TOUS les sous-produits du produit
-        setSubProductsForAssociation(productSubProducts);
+        const sortedSubProducts = [...productSubProducts].sort(
+          (a, b) => (a.display_order || 0) - (b.display_order || 0)
+        );
+        setSubProductsForAssociation(sortedSubProducts);
         const initialStocks: Record<string, string> = {};
         // Initialiser tous les sous-produits avec une chaîne vide (sera validé comme 0 si non rempli)
-        productSubProducts.forEach(sp => {
+        sortedSubProducts.forEach(sp => {
           initialStocks[sp.id] = '';
         });
         setSubProductsInitialStocks(initialStocks);
@@ -3389,16 +3511,17 @@ export default function ClientDetailPage() {
                       <Table noWrapper>
                         <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                           <TableRow className="bg-slate-50">
-                            <TableHead className="w-[15%] font-semibold">Produit</TableHead>
-                            <TableHead className="w-[5%] font-semibold"></TableHead>
-                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2]">Ancien dépôt</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-amber-50">Stock compté</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2]">Nouveau dépôt</TableHead>
-                            <TableHead className="w-[20%] font-semibold">Info produit</TableHead>
-                            <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
-                            <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
-                            <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
+                            <TableHead className="w-[15%] font-semibold text-center">Produit</TableHead>
+                            <TableHead className="w-[2%] font-semibold text-center"></TableHead>
+                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2] text-center">Ancien dépôt</TableHead>
+                            <TableHead className="w-[2%] text-center text-xs text-blue-700">% vendu</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-amber-50 text-center">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2] text-center">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[20%] font-semibold text-center">Info produit</TableHead>
+                            <TableHead className="w-[10%] text-center font-semibold">Prix de cession (HT)</TableHead>
+                            <TableHead className="w-[10%] text-center font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                            <TableHead className="w-[11%] text-center font-semibold">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3465,9 +3588,9 @@ export default function ClientDetailPage() {
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
                                   <TableCell className="align-middle py-2 pl-8">
-                                    <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                    <p className="text-sm text-slate-600 text-center w-full break-words">└ {sp.name}</p>
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center w-[5%]">
+                                  <TableCell className="align-middle py-2 text-center w-[2%]">
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -3483,7 +3606,22 @@ export default function ClientDetailPage() {
                                       {currentStock}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 bg-amber-50">
+                                  <TableCell className="align-middle py-2 text-center w-[2%]">
+                                    {(() => {
+                                      const ancienDepot = currentStock;
+                                      const countedStr = perSubProductForm[sp.id]?.counted_stock ?? '';
+                                      const countedTrim = countedStr.trim();
+                                      if (!ancienDepot || ancienDepot <= 0) return <span className="text-xs text-slate-400">-</span>;
+                                      if (!countedTrim) return <span className="text-xs text-slate-400">-</span>;
+
+                                      const countedStock = parseInt(countedTrim, 10);
+                                      if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
+
+                                      const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
+                                      return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+                                    })()}
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 bg-amber-50 text-center">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3496,7 +3634,7 @@ export default function ClientDetailPage() {
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       placeholder="......"
-                                      className="h-8 text-sm placeholder:text-slate-400"
+                                      className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center bg-green-50">
@@ -3510,7 +3648,7 @@ export default function ClientDetailPage() {
                                       })()}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 bg-[#E8EDF2]">
+                                  <TableCell className="align-middle py-2 bg-[#E8EDF2] text-center">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3523,23 +3661,23 @@ export default function ClientDetailPage() {
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       placeholder="......"
-                                      className="h-8 text-sm placeholder:text-slate-400"
+                                      className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-middle py-2 text-center">
                                     {/* Empty - sub-products don't have product_info */}
                                   </TableCell>
-                                  <TableCell className="align-top py-2 text-right">
+                                  <TableCell className="align-middle py-2 text-right">
                                     <p className="text-xs text-slate-500">{effectivePrice.toFixed(2)} €</p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 text-right">
+                                  <TableCell className="align-middle py-2 text-right">
                                     {effectiveRecommendedSalePrice !== null ? (
                                       <p className="text-xs text-slate-500">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
                                     ) : (
                                       <p className="text-xs text-slate-400">-</p>
                                     )}
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-middle py-2">
                                     {/* Empty - no actions for sub-products */}
                                   </TableCell>
                                 </TableRow>
@@ -3872,6 +4010,26 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {client && (
+          <StockMissingLinesDialog
+            open={missingLinesDialogOpen}
+            onOpenChange={(open) => {
+              setMissingLinesDialogOpen(open);
+              if (!open) setMissingStockProducts([]);
+            }}
+            missingProducts={missingStockProducts}
+            onBack={() => {
+              setMissingLinesDialogOpen(false);
+              setMissingStockProducts([]);
+            }}
+            onContinue={() => {
+              setMissingLinesDialogOpen(false);
+              setMissingStockProducts([]);
+              setConfirmationDialogOpen(true);
+            }}
+          />
+        )}
 
         {client && (
           <StockUpdateConfirmationDialog
@@ -4437,11 +4595,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
@@ -4456,11 +4624,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>

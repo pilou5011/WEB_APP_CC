@@ -23,7 +23,7 @@ import { MarketDaysEditor, MarketDaysSchedule, getDefaultMarketDaysSchedule, for
 import { VacationPeriodsEditor, VacationPeriod, validateVacationPeriods, formatVacationPeriods } from '@/components/vacation-periods-editor';
 import { getDepartmentFromPostalCode, formatDepartment } from '@/lib/postal-code-utils';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber, formatSIRETNumber, formatTVANumber } from '@/lib/utils';
 import { generateClientInfoPDF } from '@/lib/pdf-generators';
 
 // Générer les options d'heures (00 à 23) - identiques aux horaires d'ouverture
@@ -204,6 +204,7 @@ export default function ClientInfoPage() {
     longitude: null as number | null,
     phone: '',
     phone_1_info: '',
+    responsable_name: '',
     phone_2: '',
     phone_2_info: '',
     phone_3: '',
@@ -390,6 +391,7 @@ export default function ClientInfoPage() {
         longitude: data.longitude || null,
         phone: data.phone || '',
         phone_1_info: data.phone_1_info || '',
+        responsable_name: data.responsable_name || data.phone_1_info || '',
         phone_2: data.phone_2 || '',
         phone_2_info: data.phone_2_info || '',
         phone_3: data.phone_3 || '',
@@ -910,6 +912,7 @@ export default function ClientInfoPage() {
       formData.longitude !== (client.longitude ?? null) ||
       normalize(formData.phone) !== normalize(client.phone) ||
       normalize(formData.phone_1_info) !== normalize(client.phone_1_info) ||
+      normalize(formData.responsable_name) !== normalize(client.responsable_name) ||
       normalize(formData.phone_2) !== normalize(client.phone_2) ||
       normalize(formData.phone_2_info) !== normalize(client.phone_2_info) ||
       normalize(formData.phone_3) !== normalize(client.phone_3) ||
@@ -1003,6 +1006,7 @@ export default function ClientInfoPage() {
       longitude: client.longitude || null,
       phone: client.phone || '',
       phone_1_info: client.phone_1_info || '',
+      responsable_name: client.responsable_name || client.phone_1_info || '',
       phone_2: client.phone_2 || '',
       phone_2_info: client.phone_2_info || '',
       phone_3: client.phone_3 || '',
@@ -1188,6 +1192,7 @@ export default function ClientInfoPage() {
           longitude: formData.longitude,
           phone: formData.phone || null,
           phone_1_info: formData.phone_1_info || null,
+          responsable_name: formData.responsable_name?.trim() || null,
           phone_2: formData.phone_2 || null,
           phone_2_info: formData.phone_2_info || null,
           phone_3: formData.phone_3 || null,
@@ -1553,9 +1558,23 @@ export default function ClientInfoPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
+                      <Label className="text-slate-500 text-sm">Nom du responsable</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.responsable_name || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Email</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {client.email || <span className="text-slate-400">Non renseigné</span>}
+                      </p>
+                    </div>
+
+                    <div>
                       <Label className="text-slate-500 text-sm">Téléphone 1</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1569,7 +1588,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Téléphone 2</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone_2 || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone_2) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1583,7 +1602,7 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Téléphone 3</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.phone_3 || <span className="text-slate-400">Non renseigné</span>}
+                        {formatPhoneNumber(client.phone_3) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
@@ -1591,13 +1610,6 @@ export default function ClientInfoPage() {
                       <Label className="text-slate-500 text-sm">Info Téléphone 3</Label>
                       <p className="text-lg font-medium mt-1">
                         {client.phone_3_info || <span className="text-slate-400">Non renseigné</span>}
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label className="text-slate-500 text-sm">Email</Label>
-                      <p className="text-lg font-medium mt-1">
-                        {client.email || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
@@ -1615,14 +1627,14 @@ export default function ClientInfoPage() {
                     <div>
                       <Label className="text-slate-500 text-sm">Numéro SIRET</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.siret_number || <span className="text-slate-400">Non renseigné</span>}
+                        {formatSIRETNumber(client.siret_number) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
                     <div>
                       <Label className="text-slate-500 text-sm">Numéro TVA</Label>
                       <p className="text-lg font-medium mt-1">
-                        {client.tva_number || <span className="text-slate-400">Non renseigné</span>}
+                        {formatTVANumber(client.tva_number) || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
                   </div>
@@ -2211,6 +2223,36 @@ export default function ClientInfoPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
+                    <Label htmlFor="responsable_name">Nom du responsable
+
+                    <span className="text-xs text-slate-500 ml-2">(pour facture & bon de dépôt)</span>
+
+
+
+                    </Label>
+                    <Input
+                      id="responsable_name"
+                      value={formData.responsable_name}
+                      onChange={(e) => setFormData({ ...formData, responsable_name: e.target.value })}
+                      placeholder="Ex: M. Dupont"
+                      className="mt-1.5"
+                    />
+
+                  </div>
+
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="contact@exemple.fr"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
                     <Label htmlFor="phone">Téléphone 1</Label>
                     <Input
                       id="phone"
@@ -2275,18 +2317,6 @@ export default function ClientInfoPage() {
                       value={formData.phone_3_info}
                       onChange={(e) => setFormData({ ...formData, phone_3_info: e.target.value })}
                       placeholder="Ex: Jean Martin"
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="contact@exemple.fr"
                       className="mt-1.5"
                     />
                   </div>

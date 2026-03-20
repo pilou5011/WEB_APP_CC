@@ -411,11 +411,21 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
                         <SelectValue placeholder="Sélectionner..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {weekOptions.map(week => (
-                          <SelectItem key={week} value={week.toString()}>
-                            S{week}
-                          </SelectItem>
-                        ))}
+                        <div
+                          className="max-h-60 overflow-y-auto w-full pr-1"
+                          onWheel={(e) => {
+                            const el = e.currentTarget;
+                            el.scrollTop += e.deltaY * 0.3;
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          {weekOptions.map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </div>
                       </SelectContent>
                     </Select>
                   </div>
@@ -430,11 +440,21 @@ export function VacationPeriodsEditor({ value, onChange }: VacationPeriodsEditor
                         <SelectValue placeholder="Sélectionner..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {weekOptions.map(week => (
-                          <SelectItem key={week} value={week.toString()}>
-                            S{week}
-                          </SelectItem>
-                        ))}
+                        <div
+                          className="max-h-60 overflow-y-auto w-full pr-1"
+                          onWheel={(e) => {
+                            const el = e.currentTarget;
+                            el.scrollTop += e.deltaY * 0.3;
+                            e.preventDefault();
+                            e.stopPropagation();
+                          }}
+                        >
+                          {weekOptions.map(week => (
+                            <SelectItem key={week} value={week.toString()}>
+                              S{week}
+                            </SelectItem>
+                          ))}
+                        </div>
                       </SelectContent>
                     </Select>
                   </div>

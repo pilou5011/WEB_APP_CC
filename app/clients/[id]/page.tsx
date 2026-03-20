@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
-import { cn } from '@/lib/utils';
+import { cn, formatPhoneNumber } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -1726,39 +1726,60 @@ export default function ClientDetailPage() {
         } else {
           console.log('[Draft] No draft found to delete');
         }
-        
-        // Supprimer le brouillon via le hook
-        await draft.deleteDraft();
-        setHasDraft(false);
-        console.log('[Draft] Draft deleted successfully after successful stock update');
-        
-        // Vérifier que la suppression a bien fonctionné
-        const { data: verifyDraft, error: verifyError } = await supabase
-          .from('draft_stock_updates')
-          .select('id')
-          .eq('client_id', clientId)
-          .eq('company_id', companyId)
-          .maybeSingle();
-        
-        if (verifyError) {
-          console.error('[Draft] Error verifying draft deletion:', verifyError);
-        } else if (verifyDraft) {
-          console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
-          // Essayer une suppression directe (soft delete)
-          const { error: directDeleteError } = await supabase
-            .from('draft_stock_updates')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', verifyDraft.id)
-            .eq('company_id', companyId);
-          
-          if (directDeleteError) {
-            console.error('[Draft] Direct deletion also failed:', directDeleteError);
-            throw directDeleteError;
-          } else {
-            console.log('[Draft] Draft deleted via direct deletion');
+
+        // IMPORTANT: Ne pas supprimer le brouillon si la facture n'est pas réellement en `completed`.
+        let deleteDraftAllowed = true;
+        if (invoiceData) {
+          const { data: refreshedInvoice } = await supabase
+            .from('invoices')
+            .select('id')
+            .eq('id', invoiceData.id)
+            .eq('company_id', companyId)
+            .eq('status', 'completed')
+            .maybeSingle();
+
+          if (!refreshedInvoice) {
+            deleteDraftAllowed = false;
+            console.warn('[Draft] Invoice not completed yet, keeping draft:', invoiceData.id);
           }
-        } else {
-          console.log('[Draft] Draft deletion verified: no draft remains');
+        }
+
+        // Supprimer le brouillon via le hook
+        if (deleteDraftAllowed) {
+          await draft.deleteDraft();
+          setHasDraft(false);
+          console.log('[Draft] Draft deleted successfully after successful stock update');
+        }
+        
+        if (deleteDraftAllowed) {
+          // Vérifier que la suppression a bien fonctionné
+          const { data: verifyDraft, error: verifyError } = await supabase
+            .from('draft_stock_updates')
+            .select('id')
+            .eq('client_id', clientId)
+            .eq('company_id', companyId)
+            .maybeSingle();
+          
+          if (verifyError) {
+            console.error('[Draft] Error verifying draft deletion:', verifyError);
+          } else if (verifyDraft) {
+            console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
+            // Essayer une suppression directe (soft delete)
+            const { error: directDeleteError } = await supabase
+              .from('draft_stock_updates')
+              .update({ deleted_at: new Date().toISOString() })
+              .eq('id', verifyDraft.id)
+              .eq('company_id', companyId);
+            
+            if (directDeleteError) {
+              console.error('[Draft] Direct deletion also failed:', directDeleteError);
+              throw directDeleteError;
+            } else {
+              console.log('[Draft] Draft deleted via direct deletion');
+            }
+          } else {
+            console.log('[Draft] Draft deletion verified: no draft remains');
+          }
         }
         
         // Réinitialiser les formulaires pour éviter qu'un auto-save recrée le brouillon
@@ -1814,7 +1835,7 @@ export default function ClientDetailPage() {
           deposit_slip_pdf_path: null,
           invoice_email_sent_at: null,
           deposit_slip_email_sent_at: null,
-          status: 'completed', // Statut par défaut pour les dialogs
+          status: 'processing', // Statut par défaut pour les dialogs
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -2694,10 +2715,13 @@ export default function ClientDetailPage() {
       if (productSubProducts && productSubProducts.length > 0) {
         // Product has sub-products: open dialog to enter initial stocks
         // IMPORTANT: Utiliser TOUS les sous-produits du produit
-        setSubProductsForAssociation(productSubProducts);
+        const sortedSubProducts = [...productSubProducts].sort(
+          (a, b) => (a.display_order || 0) - (b.display_order || 0)
+        );
+        setSubProductsForAssociation(sortedSubProducts);
         const initialStocks: Record<string, string> = {};
         // Initialiser tous les sous-produits avec une chaîne vide (sera validé comme 0 si non rempli)
-        productSubProducts.forEach(sp => {
+        sortedSubProducts.forEach(sp => {
           initialStocks[sp.id] = '';
         });
         setSubProductsInitialStocks(initialStocks);
@@ -3107,10 +3131,10 @@ export default function ClientDetailPage() {
                         <Phone className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
                         <div>
                           <span className="font-medium text-slate-700 text-base">Tél : </span>
-                          <span className="text-[#0B1F33] font-bold text-base">{client.phone}</span>
-                          {client.phone_1_info && (
-                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
-                          )}
+                          <span className="text-[#0B1F33] font-bold text-base">{formatPhoneNumber(client.phone)}</span>
+                    {(client.responsable_name || client.phone_1_info) && (
+                      <span className="text-slate-500 ml-1 text-sm">({client.responsable_name || client.phone_1_info})</span>
+                    )}
                         </div>
                       </div>
                     )}
@@ -3923,11 +3947,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
@@ -3942,11 +3976,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
