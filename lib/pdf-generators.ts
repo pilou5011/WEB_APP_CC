@@ -956,6 +956,10 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     });
 
     const tableData: any[] = [];
+    // Lignes de la colonne Réassort à mettre en avant (produit sans sous-produits)
+    const reassortBoldRowsForProductsWithoutSubProducts = new Set<number>();
+    // Lignes de la colonne Réassort à garder discrètes (total des sous-produits)
+    const reassortNormalRowsForSubProductsTotals = new Set<number>();
     // Filtrer les clientProducts pour ne garder que ceux non supprimés
     // ET vérifier que le produit lui-même (dans la table products) n'est pas supprimé
     const activeClientProducts = clientProducts.filter(cp => 
@@ -1045,18 +1049,27 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
         }
       }
       
+      const productRowIndex = tableData.length;
       const productRow = [
-        productName,
-        info,
-        `${effectivePrice.toFixed(2)} €`,
-        effectiveRecommendedSalePrice !== null ? `${effectiveRecommendedSalePrice.toFixed(2)} €` : '-',
-        previousStock.toString(),
-        countedStock === null ? '-' : countedStock.toString(),
-        reassort === null ? '-' : reassort.toString(),
-        newDeposit.toString()
+        info, // Infos
+        productName, // Produit
+        previousStock.toString(), // Ancien dépôt
+        countedStock === null ? '-' : countedStock.toString(), // Stock compté
+        reassort === null ? '-' : reassort.toString(), // Réassort
+        newDeposit.toString(), // Nouveau dépôt
+        `${effectivePrice.toFixed(2)} €`, // Prix cession HT
+        effectiveRecommendedSalePrice !== null
+          ? `${effectiveRecommendedSalePrice.toFixed(2)} €`
+          : '-' // Prix conseillé TTC
       ];
       
       tableData.push(productRow);
+
+      if (hasSubProducts) {
+        reassortNormalRowsForSubProductsTotals.add(productRowIndex);
+      } else {
+        reassortBoldRowsForProductsWithoutSubProducts.add(productRowIndex);
+      }
 
       // Add sub-products
       // Filtrer uniquement les sous-produits qui existent dans client_sub_products non supprimés
@@ -1094,14 +1107,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           const subProductName = sp.name || 'Sous-produit';
           const indentedSubProductName = '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0' + subProductName;
           tableData.push([
-            indentedSubProductName,
-            '',
-            '',
-            '',
+            '', // Infos
+            indentedSubProductName, // Produit
             subProductPreviousStock.toString(),
             subProductCountedStock === null ? '-' : subProductCountedStock.toString(),
             subProductReassort === null ? '-' : subProductReassort.toString(),
-            subProductNewDeposit.toString()
+            subProductNewDeposit.toString(),
+            '', // Prix cession HT
+            '' // Prix conseillé TTC
           ]);
         });
       }
@@ -1112,31 +1125,37 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     const marginRight = pageWidth - rightBoxRightEdge;
     const tableWidth = pageWidth - marginLeft - marginRight;
     
-    const fixedColumnsWidth = tableWidth * (0.15 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08 + 0.08);
-    const productColumnWidth = tableWidth - fixedColumnsWidth;
-    
+    // Infos légèrement plus fine si le contenu est court,
+    // tout en conservant la largeur totale inchangée.
+    const infoValues = tableData
+      .map((r: any) => r?.[0])
+      .filter((v: any) => typeof v === 'string' && v.trim().length > 0) as string[];
+    const maxInfoLen = infoValues.reduce((m, v) => Math.max(m, v.length), 0);
+    const infosWidth = maxInfoLen <= 18 ? tableWidth * 0.12 : tableWidth * 0.15;
+    const productColumnWidth = tableWidth - infosWidth - tableWidth * 0.08 * 6;
+
     const columnWidths = [
-      productColumnWidth,
-      tableWidth * 0.15,
-      tableWidth * 0.08,
-      tableWidth * 0.08,
-      tableWidth * 0.08,
-      tableWidth * 0.08,
-      tableWidth * 0.08,
-      tableWidth * 0.08
+      infosWidth, // Infos
+      productColumnWidth, // Produit
+      tableWidth * 0.08, // Ancien dépôt
+      tableWidth * 0.08, // Stock compté
+      tableWidth * 0.08, // Réassort
+      tableWidth * 0.08, // Nouveau dépôt
+      tableWidth * 0.08, // Prix cession
+      tableWidth * 0.08  // Prix conseillé
     ];
 
     autoTable(doc, {
       startY: yPosition,
       head: [[
-        'Produit', 
         'Infos', 
-        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }, 
-        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        'Produit',
         { content: 'Ancien\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Stock\ncompté', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
         { content: 'Réassort', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
-        { content: 'Nouveau\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
+        { content: 'Nouveau\ndépôt', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix conseillé TTC', styles: { halign: 'center', valign: 'middle', fontSize: 7 } }
       ]],
       body: tableData,
       theme: 'grid',
@@ -1164,24 +1183,22 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           // Apply column colors only to body cells, not headers
           if (data.section === 'body') {
             // Apply column colors to body cells (but preserve sub-product styling for column 0)
-            if (columnIndex === 4) { // Ancien dépôt
+            if (columnIndex === 2) { // Ancien dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [232, 237, 242]; // #E8EDF2
-            } else if (columnIndex === 5) { // Stock compté
+            } else if (columnIndex === 3) { // Stock compté
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [255, 251, 235]; // amber-50
-            } else if (columnIndex === 6) { // Réassort — gras et police agrandie
+            } else if (columnIndex === 4) { // Réassort
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
               data.cell.styles.fillColor = [240, 253, 244]; // green-50
-              data.cell.styles.fontSize = 10;
-              data.cell.styles.fontStyle = 'bold';
-            } else if (columnIndex === 7) { // Nouveau dépôt
+            } else if (columnIndex === 5) { // Nouveau dépôt
               if (!data.cell.styles) {
                 data.cell.styles = {};
               }
@@ -1191,12 +1208,9 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
           
           if (data.row && data.row.raw && Array.isArray(data.row.raw)) {
             const row = data.row.raw;
-            const hasName = row[0] && row[0] !== '';
-            const hasEmptyInfo = !row[1] || row[1] === '';
-            const hasEmptyPrice1 = !row[2] || row[2] === '';
-            const hasEmptyPrice2 = !row[3] || row[3] === '';
-            
-            const isSubProduct = hasName && hasEmptyInfo && hasEmptyPrice1 && hasEmptyPrice2;
+            // Après réordonnancement: sub-product => Infos vide (col 0) + Produit indente (col 1) + prix vides (col 6/7)
+            const isSubProduct =
+              typeof row?.[1] === 'string' && row[1].startsWith('\u00A0');
             
             if (isSubProduct) {
               if (!data.cell.styles) {
@@ -1204,11 +1218,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
               }
               
               // Only apply sub-product background to non-colored columns (0, 1, 2, 3)
-              if (columnIndex !== undefined && columnIndex < 4) {
+              if (
+                columnIndex !== undefined &&
+                (columnIndex === 0 || columnIndex === 1 || columnIndex === 6 || columnIndex === 7)
+              ) {
                 data.cell.styles.fillColor = [245, 247, 250];
               }
               
-              if (data.column && data.column.index === 0) {
+              if (data.column && data.column.index === 1) {
                 if (!data.cell.styles.lineColor) {
                   data.cell.styles.lineColor = [180, 180, 180];
                 }
@@ -1223,20 +1240,67 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 data.cell.styles.cellPadding.left = 10;
               }
             }
+
+            // Style conditionnel pour la colonne Réassort:
+            // - valeurs non mises en avant : même taille que "Stock compté" (body 8), gris léger
+            // - valeurs négatives ou nulles (≤ 0), "-" / totaux sous-produits : normal (pas en gras), gris
+            // - sous-produit ou produit sans sous-produits (valeur strictement positive) : grand, en gras, noir
+            if (data.section === 'body' && columnIndex === 4) {
+              if (!data.cell.styles) data.cell.styles = {};
+
+              // Même base que bodyStyles (colonne Stock compté) + gris léger pour le texte atténué
+              const reassortMutedTextColor: [number, number, number] = [110, 110, 110];
+              const reassortBodyFontSize = 8;
+
+              const rawVal = row?.[4];
+              const reassortStr = rawVal === '-' || rawVal === null || rawVal === undefined ? '-' : String(rawVal);
+              const numericVal = reassortStr === '-' ? NaN : Number(reassortStr);
+              const isNonPositive = !Number.isNaN(numericVal) && numericVal <= 0;
+
+              const rowIndex = data.row?.index as number | undefined;
+              const isProductWithoutSubProducts =
+                rowIndex !== undefined && reassortBoldRowsForProductsWithoutSubProducts.has(rowIndex);
+              const isSubProductsTotal =
+                rowIndex !== undefined && reassortNormalRowsForSubProductsTotals.has(rowIndex);
+
+              if (reassortStr === '-' || isNonPositive) {
+                data.cell.styles.fontStyle = 'normal';
+                data.cell.styles.fontSize = reassortBodyFontSize;
+                data.cell.styles.textColor = reassortMutedTextColor;
+              } else {
+                // Mise en avant uniquement pour :
+                // - sous-produits (lignes indentées)
+                // - ou produit sans sous-produits (lignes "totales" de produit sans sous-produits)
+                if (isSubProduct || isProductWithoutSubProducts) {
+                  data.cell.styles.fontStyle = 'bold';
+                  data.cell.styles.fontSize = 10;
+                  data.cell.styles.textColor = [0, 0, 0];
+                } else if (isSubProductsTotal) {
+                  data.cell.styles.fontStyle = 'normal';
+                  data.cell.styles.fontSize = reassortBodyFontSize;
+                  data.cell.styles.textColor = reassortMutedTextColor;
+                } else {
+                  // Fallback: pas en avant
+                  data.cell.styles.fontStyle = 'normal';
+                  data.cell.styles.fontSize = reassortBodyFontSize;
+                  data.cell.styles.textColor = reassortMutedTextColor;
+                }
+              }
+            }
           }
         } catch (error) {
           console.warn('Error in didParseCell:', error);
         }
       },
       columnStyles: {
-        0: { cellWidth: columnWidths[0], halign: 'left' },
-        1: { cellWidth: columnWidths[1], halign: 'left' },
-        2: { cellWidth: columnWidths[2], halign: 'center' },
-        3: { cellWidth: columnWidths[3], halign: 'center' },
-        4: { cellWidth: columnWidths[4], halign: 'center', fillColor: [232, 237, 242] }, // Ancien dépôt - #E8EDF2
-        5: { cellWidth: columnWidths[5], halign: 'center', fillColor: [255, 251, 235] }, // Stock compté - amber-50
-        6: { cellWidth: columnWidths[6], halign: 'center', fillColor: [240, 253, 244] }, // Réassort - green-50
-        7: { cellWidth: columnWidths[7], halign: 'center', fillColor: [232, 237, 242] }  // Nouveau dépôt - #E8EDF2
+        0: { cellWidth: columnWidths[0], halign: 'left' }, // Infos
+        1: { cellWidth: columnWidths[1], halign: 'left' }, // Produit
+        2: { cellWidth: columnWidths[2], halign: 'center', fillColor: [232, 237, 242] }, // Ancien dépôt - #E8EDF2
+        3: { cellWidth: columnWidths[3], halign: 'center', fillColor: [255, 251, 235] }, // Stock compté - amber-50
+        4: { cellWidth: columnWidths[4], halign: 'center', fillColor: [240, 253, 244] }, // Réassort - green-50
+        5: { cellWidth: columnWidths[5], halign: 'center', fillColor: [232, 237, 242] }, // Nouveau dépôt - #E8EDF2
+        6: { cellWidth: columnWidths[6], halign: 'center' }, // Prix cession
+        7: { cellWidth: columnWidths[7], halign: 'center' }  // Prix conseillé
       },
       styles: {
         lineColor: [0, 0, 0],
