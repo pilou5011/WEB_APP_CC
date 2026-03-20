@@ -87,6 +87,7 @@ export type Client = {
   longitude: number | null;
   phone: string | null;
   phone_1_info: string | null;
+  responsable_name: string | null;
   phone_2: string | null;
   phone_2_info: string | null;
   phone_3: string | null;

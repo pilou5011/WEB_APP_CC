@@ -3111,9 +3111,9 @@ export default function ClientDetailPage() {
                         <div>
                           <span className="font-medium text-slate-700 text-base">Tél : </span>
                           <span className="text-[#0B1F33] font-bold text-base">{formatPhoneNumber(client.phone)}</span>
-                          {client.phone_1_info && (
-                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
-                          )}
+                    {(client.responsable_name || client.phone_1_info) && (
+                      <span className="text-slate-500 ml-1 text-sm">({client.responsable_name || client.phone_1_info})</span>
+                    )}
                         </div>
                       </div>
                     )}
