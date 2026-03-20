@@ -185,7 +185,7 @@ function SortableProductRow({
       className={cn("hover:bg-slate-50/50", hasSubProducts && "bg-slate-50")}
     >
       <TableCell className="align-middle py-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full">
           <button
             {...attributes}
             {...listeners}
@@ -193,12 +193,15 @@ function SortableProductRow({
           >
             <GripVertical className="h-5 w-5" />
           </button>
-          <p className={cn("font-medium text-[#0B1F33]", hasSubProducts && "font-semibold")}>
+          <p className={cn(
+            "font-medium text-[#0B1F33] text-center flex-1 min-w-0 break-words",
+            hasSubProducts && "font-semibold"
+          )}>
             {cp.product?.name || 'Produit'}
           </p>
         </div>
       </TableCell>
-      <TableCell className="align-middle py-3 text-center w-[5%]">
+      <TableCell className="align-middle py-3 text-center w-[2%]">
         {!hasSubProducts && (
           <Button
             variant="ghost"
@@ -225,6 +228,27 @@ function SortableProductRow({
             })()}
           </p>
         )}
+      </TableCell>
+      <TableCell className="align-middle py-3 text-center w-[2%]">
+        {(() => {
+          if (hasSubProducts) {
+            // Produit total = somme des sous-produits : ne pas afficher un % au niveau "produit".
+            return null;
+          }
+
+          const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
+          const ancienDepot = lastUpdate ? lastUpdate.new_stock : 0;
+          const countedStr = perProductForm[cp.id]?.counted_stock ?? '';
+          const countedTrim = countedStr.trim();
+          if (!ancienDepot || ancienDepot <= 0) return <span className="text-xs text-slate-400">-</span>;
+          if (!countedTrim) return <span className="text-xs text-slate-400">-</span>;
+
+          const countedStock = parseInt(countedTrim, 10);
+          if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
+
+          const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
+          return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+        })()}
       </TableCell>
       <TableCell className="align-middle py-3 text-center bg-amber-50">
         {hasSubProducts ? (
@@ -290,40 +314,36 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-middle py-3">
-        <span className="text-sm text-slate-600" title={(cp as ClientProduct & { product_info?: string | null }).product_info || undefined}>
-          {(cp as ClientProduct & { product_info?: string | null }).product_info || '—'}
-        </span>
+      <TableCell className="align-middle py-3 text-center">
+        {(() => {
+          const info = (cp as ClientProduct & { product_info?: string | null }).product_info;
+          if (!info) {
+            return <span className="text-xs text-slate-400 block w-full text-center">-</span>;
+          }
+          return (
+            <span className="text-sm text-slate-600 block w-full text-center" title={info}>
+              {info}
+            </span>
+          );
+        })()}
       </TableCell>
-      <TableCell className="align-top py-3 text-right">
+      <TableCell className="align-middle py-3 text-right">
         <div>
           <p className="text-sm font-medium text-[#0B1F33]">{effectivePrice.toFixed(2)} €</p>
-          {isCustomPrice && (
-            <p className="text-xs text-blue-600">Personnalisé</p>
-          )}
-          {!isCustomPrice && cp.product?.price != null && (
-            <p className="text-xs text-slate-500">Par défaut</p>
-          )}
         </div>
       </TableCell>
-      <TableCell className="align-top py-3 text-right">
+      <TableCell className="align-middle py-3 text-right">
         <div>
           {effectiveRecommendedSalePrice !== null ? (
             <>
               <p className="text-sm font-medium text-[#0B1F33]">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
-              {isCustomRecommendedSalePrice && (
-                <p className="text-xs text-blue-600">Personnalisé</p>
-              )}
-              {!isCustomRecommendedSalePrice && cp.product?.recommended_sale_price != null && (
-                <p className="text-xs text-slate-500">Par défaut</p>
-              )}
             </>
           ) : (
             <p className="text-sm text-slate-400">-</p>
           )}
         </div>
       </TableCell>
-      <TableCell className="align-top py-3">
+      <TableCell className="align-middle py-3">
         <div className="flex justify-end gap-2">
           <Button
             variant="ghost"
@@ -3470,16 +3490,17 @@ export default function ClientDetailPage() {
                       <Table noWrapper>
                         <TableHeader className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                           <TableRow className="bg-slate-50">
-                            <TableHead className="w-[15%] font-semibold">Produit</TableHead>
-                            <TableHead className="w-[5%] font-semibold"></TableHead>
-                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2]">Ancien dépôt</TableHead>
+                            <TableHead className="w-[15%] font-semibold text-center">Produit</TableHead>
+                            <TableHead className="w-[2%] font-semibold text-center"></TableHead>
+                            <TableHead className="w-[10%] font-semibold bg-[#E8EDF2] text-center">Ancien dépôt</TableHead>
+                            <TableHead className="w-[2%] text-center text-xs text-blue-700">% vendu</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-amber-50 text-center">Stock compté</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-[#E8EDF2] text-center">Nouveau dépôt</TableHead>
-                            <TableHead className="w-[20%] font-semibold">Info produit</TableHead>
-                            <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
-                            <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
-                            <TableHead className="w-[11%] text-right font-semibold">Actions</TableHead>
+                            <TableHead className="w-[20%] font-semibold text-center">Info produit</TableHead>
+                            <TableHead className="w-[10%] text-center font-semibold">Prix de cession (HT)</TableHead>
+                            <TableHead className="w-[10%] text-center font-semibold">Prix de vente conseillé (TTC)</TableHead>
+                            <TableHead className="w-[11%] text-center font-semibold">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -3546,9 +3567,9 @@ export default function ClientDetailPage() {
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
                                   <TableCell className="align-middle py-2 pl-8">
-                                    <p className="text-sm text-slate-600">└ {sp.name}</p>
+                                    <p className="text-sm text-slate-600 text-center w-full break-words">└ {sp.name}</p>
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center w-[5%]">
+                                  <TableCell className="align-middle py-2 text-center w-[2%]">
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -3563,6 +3584,21 @@ export default function ClientDetailPage() {
                                     <p className="text-xs text-slate-500">
                                       {currentStock}
                                     </p>
+                                  </TableCell>
+                                  <TableCell className="align-middle py-2 text-center w-[2%]">
+                                    {(() => {
+                                      const ancienDepot = currentStock;
+                                      const countedStr = perSubProductForm[sp.id]?.counted_stock ?? '';
+                                      const countedTrim = countedStr.trim();
+                                      if (!ancienDepot || ancienDepot <= 0) return <span className="text-xs text-slate-400">-</span>;
+                                      if (!countedTrim) return <span className="text-xs text-slate-400">-</span>;
+
+                                      const countedStock = parseInt(countedTrim, 10);
+                                      if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
+
+                                      const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
+                                      return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+                                    })()}
                                   </TableCell>
                                   <TableCell className="align-middle py-2 bg-amber-50 text-center">
                                     <Input
@@ -3607,20 +3643,20 @@ export default function ClientDetailPage() {
                                       className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-middle py-2 text-center">
                                     {/* Empty - sub-products don't have product_info */}
                                   </TableCell>
-                                  <TableCell className="align-top py-2 text-right">
+                                  <TableCell className="align-middle py-2 text-right">
                                     <p className="text-xs text-slate-500">{effectivePrice.toFixed(2)} €</p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 text-right">
+                                  <TableCell className="align-middle py-2 text-right">
                                     {effectiveRecommendedSalePrice !== null ? (
                                       <p className="text-xs text-slate-500">{effectiveRecommendedSalePrice.toFixed(2)} €</p>
                                     ) : (
                                       <p className="text-xs text-slate-400">-</p>
                                     )}
                                   </TableCell>
-                                  <TableCell className="align-top py-2">
+                                  <TableCell className="align-middle py-2">
                                     {/* Empty - no actions for sub-products */}
                                   </TableCell>
                                 </TableRow>
@@ -4538,11 +4574,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
@@ -4557,11 +4603,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>

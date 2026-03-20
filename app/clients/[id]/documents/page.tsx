@@ -4116,11 +4116,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
@@ -4135,11 +4145,21 @@ export default function ClientDetailPage() {
                           <SelectValue placeholder="Sélectionner..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
-                            <SelectItem key={week} value={week.toString()}>
-                              S{week}
-                            </SelectItem>
-                          ))}
+                          <div
+                            className="max-h-60 overflow-y-auto w-full pr-1"
+                            onWheel={(e) => {
+                              const el = e.currentTarget;
+                              el.scrollTop += e.deltaY * 0.3;
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                          >
+                            {Array.from({ length: 52 }, (_, i) => i + 1).map(week => (
+                              <SelectItem key={week} value={week.toString()}>
+                                S{week}
+                              </SelectItem>
+                            ))}
+                          </div>
                         </SelectContent>
                       </Select>
                     </div>
