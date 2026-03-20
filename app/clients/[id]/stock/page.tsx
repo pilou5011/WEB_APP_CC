@@ -32,6 +32,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StockUpdateConfirmationDialog } from '@/components/stock-update-confirmation-dialog';
+import { StockMissingLinesDialog } from '@/components/stock-missing-lines-dialog';
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { StockReportDialog } from '@/components/stock-report-dialog';
@@ -367,6 +368,8 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirmationDialogOpen, setConfirmationDialogOpen] = useState(false);
+  const [missingLinesDialogOpen, setMissingLinesDialogOpen] = useState(false);
+  const [missingStockProducts, setMissingStockProducts] = useState<string[]>([]);
   const [globalInvoices, setGlobalInvoices] = useState<Invoice[]>([]);
   const [selectedGlobalInvoice, setSelectedGlobalInvoice] = useState<Invoice | null>(null);
   const [globalInvoiceDialogOpen, setGlobalInvoiceDialogOpen] = useState(false);
@@ -1211,6 +1214,40 @@ export default function ClientDetailPage() {
     return updates;
   };
 
+  const getNonCompletedProductsForStockUpdate = () => {
+    // Produit non renseigné = pour ce produit (et/ou ses sous-produits),
+    // au moins une "ligne" a stock compté + nouveau dépôt vides.
+    const missing = new Map<string, string>();
+
+    for (const cp of clientProducts) {
+      const productSubProducts = subProducts[cp.product_id] || [];
+      const productName = cp.product?.name || 'Produit';
+
+      if (productSubProducts.length > 0) {
+        let hasEmptyLine = false;
+        for (const sp of productSubProducts) {
+          const formData = perSubProductForm[sp.id];
+          const counted = formData?.counted_stock?.trim() ?? '';
+          const added = formData?.stock_added?.trim() ?? '';
+
+          if (counted === '' && added === '') {
+            hasEmptyLine = true;
+            break;
+          }
+        }
+        if (hasEmptyLine) missing.set(productName, productName);
+      } else {
+        const formData = perProductForm[cp.id];
+        const counted = formData?.counted_stock?.trim() ?? '';
+        const added = formData?.stock_added?.trim() ?? '';
+
+        if (counted === '' && added === '') missing.set(productName, productName);
+      }
+    }
+
+    return Array.from(missing.values());
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!client) return;
@@ -1225,6 +1262,15 @@ export default function ClientDetailPage() {
     if (!hasStockUpdates && !hasAdjustments) {
       toast.info('Aucun changement détecté');
       return;
+    }
+
+    if (hasStockUpdates) {
+      const nonCompletedProducts = getNonCompletedProductsForStockUpdate();
+      if (nonCompletedProducts.length > 0) {
+        setMissingStockProducts(nonCompletedProducts);
+        setMissingLinesDialogOpen(true);
+        return;
+      }
     }
 
     // Open confirmation dialog
@@ -3875,6 +3921,26 @@ export default function ClientDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        {client && (
+          <StockMissingLinesDialog
+            open={missingLinesDialogOpen}
+            onOpenChange={(open) => {
+              setMissingLinesDialogOpen(open);
+              if (!open) setMissingStockProducts([]);
+            }}
+            missingProducts={missingStockProducts}
+            onBack={() => {
+              setMissingLinesDialogOpen(false);
+              setMissingStockProducts([]);
+            }}
+            onContinue={() => {
+              setMissingLinesDialogOpen(false);
+              setMissingStockProducts([]);
+              setConfirmationDialogOpen(true);
+            }}
+          />
+        )}
 
         {client && (
           <StockUpdateConfirmationDialog
