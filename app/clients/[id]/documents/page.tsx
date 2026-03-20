@@ -1813,7 +1813,7 @@ export default function ClientDetailPage() {
           total_stock_sold: totalStockSold,
           total_amount: 0,
           invoice_number: null, // No invoice number when amount is 0
-          status: 'completed', // Statut par défaut pour les dialogs
+          status: 'processing', // Statut par défaut pour les dialogs
           invoice_date: new Date().toISOString().split('T')[0], // Date comptable (aujourd'hui par défaut)
           created_at: new Date().toISOString()
         } as Invoice;

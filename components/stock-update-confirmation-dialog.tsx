@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -48,7 +48,9 @@ export function StockUpdateConfirmationDialog({
   invoiceDate: externalInvoiceDate,
   onInvoiceDateChange
 }: StockUpdateConfirmationDialogProps) {
+  const [discountMode, setDiscountMode] = useState<'percentage' | 'amount'>('percentage');
   const [discountPercentage, setDiscountPercentage] = useState<string>('');
+  const [discountAmountInput, setDiscountAmountInput] = useState<string>('');
   const [invoiceDate, setInvoiceDate] = useState<string>(() => {
     // Initialize with today's date in YYYY-MM-DD format
     const today = new Date();
@@ -59,6 +61,8 @@ export function StockUpdateConfirmationDialog({
   useEffect(() => {
     if (open) {
       setDiscountPercentage('');
+      setDiscountAmountInput('');
+      setDiscountMode('percentage');
       if (externalInvoiceDate) {
         setInvoiceDate(externalInvoiceDate);
       } else {
@@ -88,17 +92,29 @@ export function StockUpdateConfirmationDialog({
   
   const totalAmountBeforeDiscount = productsAmount + adjustmentsTotal;
   
-  // Calcul de la remise
-  const discountValue = discountPercentage ? parseFloat(discountPercentage) : 0;
-  const discountAmount = discountValue > 0 && discountValue <= 100 
-    ? (totalAmountBeforeDiscount * discountValue / 100) 
-    : 0;
+  // Calcul de la remise (mode % ou montant)
+  const parsedDiscountPercentage = discountPercentage ? parseFloat(discountPercentage) : 0;
+  const parsedDiscountAmount = discountAmountInput ? parseFloat(discountAmountInput) : 0;
+
+  const discountAmount =
+    discountMode === 'percentage'
+      ? parsedDiscountPercentage > 0 && parsedDiscountPercentage <= 100
+        ? (totalAmountBeforeDiscount * parsedDiscountPercentage) / 100
+        : 0
+      : parsedDiscountAmount > 0
+        ? Math.min(parsedDiscountAmount, totalAmountBeforeDiscount)
+        : 0;
+
+  const discountPercentageEffective =
+    discountAmount > 0 && totalAmountBeforeDiscount > 0
+      ? (discountAmount * 100) / totalAmountBeforeDiscount
+      : 0;
   
   const totalAmount = totalAmountBeforeDiscount - discountAmount;
   
   const handleConfirm = () => {
-    const discount = discountPercentage ? parseFloat(discountPercentage) : undefined;
-    onConfirm(discount, invoiceDate);
+    const discountToSave = discountPercentageEffective > 0 ? discountPercentageEffective : undefined;
+    onConfirm(discountToSave, invoiceDate);
   };
 
   return (
@@ -165,28 +181,79 @@ export function StockUpdateConfirmationDialog({
             </div>
             <div className="flex items-end gap-3">
               <div className="flex-1">
-                <Label htmlFor="discount" className="text-sm text-slate-600">
-                  Pourcentage de remise (%)
-                </Label>
-                <Input
-                  id="discount"
-                  type="text"
-                  inputMode="decimal"
-                  value={discountPercentage}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    // Permettre les nombres décimaux entre 0 et 100
-                    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                      const numValue = parseFloat(value);
-                      if (value === '' || (!isNaN(numValue) && numValue >= 0 && numValue <= 100)) {
-                        setDiscountPercentage(value);
-                      }
-                    }
-                  }}
-                  onWheel={(e) => e.currentTarget.blur()}
-                  placeholder="0"
-                  className="mt-1.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
+                <div className="flex gap-2 mb-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={discountMode === 'percentage' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setDiscountMode('percentage');
+                      setDiscountAmountInput('');
+                    }}
+                  >
+                    Pourcentage (%)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={discountMode === 'amount' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setDiscountMode('amount');
+                      setDiscountPercentage('');
+                    }}
+                  >
+                    Montant (€)
+                  </Button>
+                </div>
+
+                {discountMode === 'percentage' && (
+                  <>
+                    <Label htmlFor="discount" className="text-sm text-slate-600">
+                      Pourcentage de remise (%)
+                    </Label>
+                    <Input
+                      id="discount"
+                      type="text"
+                      inputMode="decimal"
+                      value={discountPercentage}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                          const numValue = parseFloat(value);
+                          if (value === '' || (!isNaN(numValue) && numValue >= 0 && numValue <= 100)) {
+                            setDiscountPercentage(value);
+                          }
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="0"
+                      className="mt-1.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </>
+                )}
+
+                {discountMode === 'amount' && (
+                  <>
+                    <Label htmlFor="discount-amount" className="text-sm text-slate-600">
+                      Montant de la remise (€)
+                    </Label>
+                    <Input
+                      id="discount-amount"
+                      type="text"
+                      inputMode="decimal"
+                      value={discountAmountInput}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '' || /^\d*\.?\d*$/.test(raw)) {
+                          setDiscountAmountInput(raw);
+                        }
+                      }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      placeholder="0"
+                      className="mt-1.5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                    />
+                  </>
+                )}
               </div>
               {discountAmount > 0 && (
                 <div className="text-right">
@@ -344,7 +411,7 @@ export function StockUpdateConfirmationDialog({
                     <span className="font-medium">{totalAmountBeforeDiscount.toFixed(2)} €</span>
                   </div>
                   <div className="flex justify-between items-center text-blue-700">
-                    <span>Remise ({discountValue}%)</span>
+                    <span>Remise ({discountPercentageEffective.toFixed(2)}%)</span>
                     <span className="font-medium">-{discountAmount.toFixed(2)} €</span>
                   </div>
                   <Separator />

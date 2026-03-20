@@ -51,6 +51,8 @@ export default function InvoicePage() {
   const [discountPercentage, setDiscountPercentage] = useState<number | null>(null);
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
   const [discountInput, setDiscountInput] = useState('');
+  const [discountMode, setDiscountMode] = useState<'percentage' | 'amount'>('percentage');
+  const [discountAmountInput, setDiscountAmountInput] = useState('');
   const [openPopovers, setOpenPopovers] = useState<Record<string, boolean>>({});
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [priceDialogRowId, setPriceDialogRowId] = useState<string | null>(null);
@@ -319,22 +321,55 @@ export default function InvoicePage() {
 
   const handleAddDiscount = () => {
     setDiscountInput('');
+    setDiscountAmountInput('');
+    setDiscountMode('percentage');
     setDiscountDialogOpen(true);
   };
 
   const handleSaveDiscount = () => {
-    const discount = parseFloat(discountInput.replace(',', '.'));
-    if (isNaN(discount) || discount < 0 || discount > 100) {
-      toast.error('Le pourcentage de remise doit être entre 0 et 100');
+    const totalHT = getTotalHT();
+
+    if (discountMode === 'percentage') {
+      const discount = parseFloat(discountInput.replace(',', '.'));
+      if (isNaN(discount) || discount < 0 || discount > 100) {
+        toast.error('Le pourcentage de remise doit être entre 0 et 100');
+        return;
+      }
+      setDiscountPercentage(discount);
+      setDiscountDialogOpen(false);
+      setDiscountInput('');
       return;
     }
-    setDiscountPercentage(discount);
+
+    // mode "montant"
+    const amount = parseFloat(discountAmountInput.replace(',', '.'));
+    if (isNaN(amount) || amount < 0) {
+      toast.error('Le montant de la remise doit être positif');
+      return;
+    }
+    if (totalHT <= 0) {
+      toast.error('Impossible de calculer la remise : total HT nul');
+      return;
+    }
+    if (amount > totalHT) {
+      toast.error('Le montant de la remise ne peut pas dépasser le total HT');
+      return;
+    }
+
+    const computedPercent = (amount * 100) / totalHT;
+    // Arrondir légèrement pour éviter des valeurs comme 9.999999
+    const computedPercentRounded = Math.min(100, Math.max(0, computedPercent));
+    setDiscountPercentage(computedPercentRounded);
     setDiscountDialogOpen(false);
     setDiscountInput('');
+    setDiscountAmountInput('');
   };
 
   const handleRemoveDiscount = () => {
     setDiscountPercentage(null);
+    setDiscountInput('');
+    setDiscountAmountInput('');
+    setDiscountMode('percentage');
   };
 
   const handleGenerateInvoice = async () => {
@@ -997,26 +1032,74 @@ export default function InvoicePage() {
             <DialogHeader>
               <DialogTitle>Ajouter une remise commerciale</DialogTitle>
               <DialogDescription>
-                Saisissez le pourcentage de remise (0-100)
+                Saisissez une remise en pourcentage ou en montant.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div>
-                <Label>Pourcentage de remise</Label>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={discountInput}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(',', '.');
-                    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-                      setDiscountInput(value);
-                    }
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={discountMode === 'percentage' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setDiscountMode('percentage');
+                    setDiscountInput('');
+                    setDiscountAmountInput('');
                   }}
-                  placeholder="Ex: 10"
-                  className="mt-1.5"
-                />
+                >
+                  Pourcentage (%)
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={discountMode === 'amount' ? 'default' : 'outline'}
+                  onClick={() => {
+                    setDiscountMode('amount');
+                    setDiscountInput('');
+                    setDiscountAmountInput('');
+                  }}
+                >
+                  Montant (€)
+                </Button>
               </div>
+
+              {discountMode === 'percentage' && (
+                <div>
+                  <Label>Pourcentage de remise</Label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={discountInput}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setDiscountInput(value);
+                      }
+                    }}
+                    placeholder="Ex: 10"
+                    className="mt-1.5"
+                  />
+                </div>
+              )}
+
+              {discountMode === 'amount' && (
+                <div>
+                  <Label>Montant de la remise (€)</Label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    value={discountAmountInput}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(',', '.');
+                      if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                        setDiscountAmountInput(value);
+                      }
+                    }}
+                    placeholder="Ex: 25"
+                    className="mt-1.5"
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button
@@ -1029,7 +1112,17 @@ export default function InvoicePage() {
               <Button
                 type="button"
                 onClick={handleSaveDiscount}
-                disabled={!discountInput || isNaN(parseFloat(discountInput.replace(',', '.')))}
+                disabled={
+                  discountMode === 'percentage'
+                    ? !discountInput ||
+                      isNaN(parseFloat(discountInput.replace(',', '.'))) ||
+                      parseFloat(discountInput.replace(',', '.')) < 0 ||
+                      parseFloat(discountInput.replace(',', '.')) > 100
+                    : !discountAmountInput ||
+                      isNaN(parseFloat(discountAmountInput.replace(',', '.'))) ||
+                      parseFloat(discountAmountInput.replace(',', '.')) < 0 ||
+                      parseFloat(discountAmountInput.replace(',', '.')) > getTotalHT()
+                }
               >
                 Valider
               </Button>

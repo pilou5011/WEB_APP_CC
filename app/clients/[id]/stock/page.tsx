@@ -1961,7 +1961,7 @@ export default function ClientDetailPage() {
           deposit_slip_pdf_path: null,
           invoice_email_sent_at: null,
           deposit_slip_email_sent_at: null,
-          status: 'completed', // Statut par défaut pour les dialogs
+          status: 'processing', // Statut par défaut pour les dialogs
           created_at: new Date().toISOString()
         } as Invoice;
         
