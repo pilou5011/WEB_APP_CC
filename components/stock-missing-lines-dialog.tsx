@@ -20,7 +20,11 @@ export function StockMissingLinesDialog({
 }: StockMissingLinesDialogProps) {
   const maxToShow = 10;
   const displayed = missingProducts.slice(0, maxToShow);
-  const othersCount = Math.max(0, missingProducts.length - displayed.length);
+  const isSubProductLine = (label: string) => label.startsWith('└ ');
+
+  const totalProductCount = missingProducts.filter((p) => !isSubProductLine(p)).length;
+  const displayedProductCount = displayed.filter((p) => !isSubProductLine(p)).length;
+  const othersCount = Math.max(0, totalProductCount - displayedProductCount);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -37,18 +41,23 @@ export function StockMissingLinesDialog({
           {missingProducts.length === 0 ? null : (
             <>
               <p className="text-sm text-slate-700 font-medium">
-                {missingProducts.length === 1
+                {totalProductCount === 1
                   ? '1 produit concerné :'
-                  : `${missingProducts.length} produits concernés :`}
+                  : `${totalProductCount} produits concernés :`}
               </p>
               <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
-                {displayed.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
+                {displayed.map((p) => {
+                  const isSubLine = isSubProductLine(p);
+                  return (
+                    <li key={p} className={isSubLine ? 'list-none marker:hidden' : undefined}>
+                      {p}
+                    </li>
+                  );
+                })}
               </ul>
               {othersCount > 0 && (
                 <p className="text-sm text-slate-600">
-                  Et {othersCount} autre{othersCount > 1 ? 's' : ''} produit{othersCount > 1 ? 's' : ''} non renseigné{othersCount > 1 ? 's' : ''} aussi.
+                  Et {othersCount} autre{othersCount > 1 ? 's' : ''} produit{othersCount > 1 ? 's' : ''} non renseigné{othersCount > 1 ? 's' : ''} également.
                 </p>
               )}
             </>
