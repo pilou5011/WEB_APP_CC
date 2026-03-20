@@ -225,7 +225,7 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-amber-50" : "align-top py-3 bg-amber-50"}>
+      <TableCell className="align-middle py-3 text-center bg-amber-50">
         {hasSubProducts ? (
           <p className="text-sm font-medium text-slate-600">
             {parentCountedStock}
@@ -244,7 +244,7 @@ function SortableProductRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className="h-9 placeholder:text-slate-400"
+            className="h-9 placeholder:text-slate-400 text-center"
           />
         )}
       </TableCell>
@@ -265,7 +265,7 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className={hasSubProducts ? "align-middle py-3 text-center bg-[#E8EDF2]" : "align-top py-3 bg-[#E8EDF2]"}>
+      <TableCell className="align-middle py-3 text-center bg-[#E8EDF2]">
         {hasSubProducts ? (
           <p className="text-sm font-medium text-slate-600">
             {parentCardsAdded}
@@ -285,7 +285,7 @@ function SortableProductRow({
             }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className="h-9 placeholder:text-slate-400"
+            className="h-9 placeholder:text-slate-400 text-center"
           />
         )}
       </TableCell>
@@ -3395,9 +3395,9 @@ export default function ClientDetailPage() {
                             <TableHead className="w-[15%] font-semibold">Produit</TableHead>
                             <TableHead className="w-[5%] font-semibold"></TableHead>
                             <TableHead className="w-[10%] font-semibold bg-[#E8EDF2]">Ancien dépôt</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-amber-50">Stock compté</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-amber-50 text-center">Stock compté</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-green-50">Réassort</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2]">Nouveau dépôt</TableHead>
+                            <TableHead className="w-[12%] font-semibold bg-[#E8EDF2] text-center">Nouveau dépôt</TableHead>
                             <TableHead className="w-[20%] font-semibold">Info produit</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de cession (HT)</TableHead>
                             <TableHead className="w-[10%] text-right font-semibold">Prix de vente conseillé (TTC)</TableHead>
@@ -3486,7 +3486,7 @@ export default function ClientDetailPage() {
                                       {currentStock}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 bg-amber-50">
+                                  <TableCell className="align-middle py-2 bg-amber-50 text-center">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3499,7 +3499,7 @@ export default function ClientDetailPage() {
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       placeholder="......"
-                                      className="h-8 text-sm placeholder:text-slate-400"
+                                      className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center bg-green-50">
@@ -3513,7 +3513,7 @@ export default function ClientDetailPage() {
                                       })()}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-top py-2 bg-[#E8EDF2]">
+                                  <TableCell className="align-middle py-2 bg-[#E8EDF2] text-center">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
@@ -3526,7 +3526,7 @@ export default function ClientDetailPage() {
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       placeholder="......"
-                                      className="h-8 text-sm placeholder:text-slate-400"
+                                      className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
                                   <TableCell className="align-top py-2">
