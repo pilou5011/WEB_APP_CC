@@ -541,15 +541,6 @@ export default function InvoicePage() {
         throw pdfError;
       }
 
-      // Delete draft after successful invoice generation
-      try {
-        await draft.deleteDraft();
-        console.log('[Draft Invoice] Draft deleted after successful invoice generation');
-      } catch (error) {
-        console.error('[Draft Invoice] Error deleting draft after invoice generation:', error);
-        // Don't show error to user, invoice was created successfully
-      }
-
       toast.success('Facture générée avec succès');
       setConfirmDialogOpen(false);
       setPreviewDialogOpen(false);
@@ -568,6 +559,15 @@ export default function InvoicePage() {
         // Ouvrir automatiquement la prévisualisation de la facture générée
         setSelectedGlobalInvoice(updatedInvoice as Invoice);
         setGlobalInvoiceDialogOpen(true);
+
+        // Supprimer le draft uniquement si la facture est bien passée en completed
+        try {
+          await draft.deleteDraft();
+          console.log('[Draft Invoice] Draft deleted after invoice completed');
+        } catch (error) {
+          console.error('[Draft Invoice] Error deleting draft after invoice completed:', error);
+          // Ne pas bloquer si le draft n'arrive pas à se supprimer
+        }
       }
 
       // Reset form

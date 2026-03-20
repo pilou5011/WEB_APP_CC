@@ -1733,37 +1733,58 @@ export default function ClientDetailPage() {
         } else {
           console.log('[Draft] No draft found to delete');
         }
+
+        // IMPORTANT: Ne pas supprimer le brouillon si la facture n'est pas réellement en `completed`.
+        let deleteDraftAllowed = true;
+        if (invoiceData) {
+          const { data: refreshedInvoice } = await supabase
+            .from('invoices')
+            .select('id')
+            .eq('id', invoiceData.id)
+            .eq('company_id', companyId)
+            .eq('status', 'completed')
+            .maybeSingle();
+
+          if (!refreshedInvoice) {
+            deleteDraftAllowed = false;
+            console.warn('[Draft] Invoice not completed yet, keeping draft:', invoiceData.id);
+          }
+        }
         
         // Supprimer le brouillon via le hook
-        await draft.deleteDraft();
-        setHasDraft(false);
-        console.log('[Draft] Draft deleted successfully after successful stock update');
+        if (deleteDraftAllowed) {
+          await draft.deleteDraft();
+          setHasDraft(false);
+          console.log('[Draft] Draft deleted successfully after successful stock update');
+        }
         
         // Vérifier que la suppression a bien fonctionné
-        const { data: verifyDraft, error: verifyError } = await supabase
-          .from('draft_stock_updates')
-          .select('id')
-          .eq('client_id', clientId)
-          .maybeSingle();
-        
-        if (verifyError) {
-          console.error('[Draft] Error verifying draft deletion:', verifyError);
-        } else if (verifyDraft) {
-          console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
-          // Essayer une suppression directe (soft delete)
-          const { error: directDeleteError } = await supabase
+        if (deleteDraftAllowed) {
+          const { data: verifyDraft, error: verifyError } = await supabase
             .from('draft_stock_updates')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', verifyDraft.id);
+            .select('id')
+            .eq('client_id', clientId)
+            .maybeSingle();
           
-          if (directDeleteError) {
-            console.error('[Draft] Direct deletion also failed:', directDeleteError);
-            throw directDeleteError;
+          if (verifyError) {
+            console.error('[Draft] Error verifying draft deletion:', verifyError);
+          } else if (verifyDraft) {
+            console.warn('[Draft] WARNING: Draft still exists after deletion! ID:', verifyDraft.id);
+            // Essayer une suppression directe (soft delete)
+            const { error: directDeleteError } = await supabase
+              .from('draft_stock_updates')
+              .update({ deleted_at: new Date().toISOString() })
+              .eq('id', verifyDraft.id);
+            
+            if (directDeleteError) {
+              console.error('[Draft] Direct deletion also failed:', directDeleteError);
+              throw directDeleteError;
+            } else {
+              console.log('[Draft] Draft deleted via direct deletion');
+            }
           } else {
-            console.log('[Draft] Draft deleted via direct deletion');
+            console.log('[Draft] Draft deletion verified: no draft remains');
           }
-        } else {
-          console.log('[Draft] Draft deletion verified: no draft remains');
         }
         
         // Réinitialiser les formulaires pour éviter qu'un auto-save recrée le brouillon
