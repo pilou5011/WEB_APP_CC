@@ -5,7 +5,7 @@ import { Client, Product, ClientProduct, UserProfile, StockUpdate, SubProduct, C
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Download, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { isMobileOrTablet } from '@/lib/utils';
 
@@ -29,6 +29,7 @@ export function StockReportDialog({
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfGenerated, setPdfGenerated] = useState(false);
@@ -335,6 +336,81 @@ export function StockReportDialog({
     }
   };
 
+  const handleSendEmail = async () => {
+    if (!client.email) {
+      toast.error('Aucune adresse email renseignée pour ce client');
+      return;
+    }
+
+    if (!pdfBlob) {
+      toast.error('Veuillez patienter, le PDF est en cours de génération');
+      return;
+    }
+
+    try {
+      setSendingEmail(true);
+
+      // Convertir le blob en base64
+      const reader = new FileReader();
+      reader.readAsDataURL(pdfBlob);
+
+      reader.onloadend = async () => {
+        try {
+          const base64data = reader.result?.toString().split(',')[1];
+          if (!base64data) {
+            throw new Error('Erreur de conversion du PDF');
+          }
+
+          const fileName = `Releve_stock_${client.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+          const releveStockDate = invoice?.created_at
+            ? new Date(invoice.created_at).toLocaleDateString('fr-FR')
+            : new Date().toLocaleDateString('fr-FR');
+
+          const response = await fetch('/api/send-invoice', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              clientEmail: client.email,
+              clientName: client.name,
+              pdfBase64: base64data,
+              fileName,
+              invoiceDate: releveStockDate,
+              documentType: 'stock_report',
+              senderEmail: userProfile?.email,
+              senderName: `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim() || undefined,
+              senderCompanyName: userProfile?.company_name_short || userProfile?.company_name || undefined,
+              senderPhone: userProfile?.phone,
+            }),
+          });
+
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || 'Erreur lors de l\'envoi');
+          }
+
+          toast.success(`Relevé de stock envoyé avec succès à ${client.email}`);
+          setSendingEmail(false);
+        } catch (error) {
+          console.error('Erreur:', error);
+          toast.error('Erreur lors de l\'envoi de l\'email');
+          setSendingEmail(false);
+        }
+      };
+
+      reader.onerror = () => {
+        setSendingEmail(false);
+        toast.error('Erreur de lecture du PDF');
+      };
+    } catch (error) {
+      console.error('Erreur:', error);
+      toast.error('Erreur lors de l\'envoi de l\'email');
+      setSendingEmail(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[95vw] w-[95vw] h-[95vh] p-0 gap-0 flex flex-col">
@@ -416,7 +492,30 @@ export function StockReportDialog({
 
         <div className="flex justify-between items-center gap-3 px-6 py-3 border-t bg-white flex-shrink-0">
           <div className="flex gap-2">
-            {/* Espace réservé pour d'éventuels boutons futurs */}
+            {client.email && (
+              <Button
+                variant="outline"
+                onClick={handleSendEmail}
+                disabled={!pdfBlob || generating || sendingEmail}
+              >
+                {sendingEmail ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Envoi en cours...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="mr-2 h-4 w-4" />
+                    Envoyer par email
+                  </>
+                )}
+              </Button>
+            )}
+            {!client.email && (
+              <div className="text-sm text-slate-500 italic flex items-center">
+                Aucun email renseigné pour ce client
+              </div>
+            )}
           </div>
           
           <div className="flex gap-3">
