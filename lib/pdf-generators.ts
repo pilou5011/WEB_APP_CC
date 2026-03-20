@@ -358,7 +358,13 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
-    yPosition += 10;
+    const responsableName = client.responsable_name?.trim();
+    if (responsableName) {
+      doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
+      yPosition += 12;
+    } else {
+      yPosition += 10;
+    }
 
     // Titre "Facture N°[numero_facture]" en gras
     doc.setFont('helvetica', 'bold');
@@ -889,7 +895,13 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     
     const invoiceDateText = `Date de facture : ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`;
     doc.text(invoiceDateText, 15, yPosition);
-    yPosition += 10;
+    const responsableName = client.responsable_name?.trim();
+    if (responsableName) {
+      doc.text(`Nom du responsable : ${responsableName}`, 15, yPosition + 5);
+      yPosition += 12;
+    } else {
+      yPosition += 10;
+    }
 
     // Titre "Relevé de stock"
     doc.setFont('helvetica', 'bold');
@@ -1561,8 +1573,14 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     // Date
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-  doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
-    yPosition += 10;
+    doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
+    const responsableName = client.responsable_name?.trim();
+    if (responsableName) {
+      doc.text(`Nom du responsable : ${responsableName}`, 15, yPosition + 5);
+      yPosition += 12;
+    } else {
+      yPosition += 10;
+    }
 
     // Titre "Bon de dépôt"
     doc.setFont('helvetica', 'bold');
@@ -2053,7 +2071,13 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(`Date: ${new Date(creditNote.credit_note_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
-    yPosition += 10;
+    const responsableName = client.responsable_name?.trim();
+    if (responsableName) {
+      doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
+      yPosition += 12;
+    } else {
+      yPosition += 10;
+    }
 
     // Titre "Avoir N° [numero_avoir]"
     doc.setFont('helvetica', 'bold');
@@ -2240,7 +2264,7 @@ export async function generateClientInfoPDF(
      * HEADER
      * -------------------------------------------------- */
     // Premier contact en haut à gauche (nom + téléphone)
-    const contactName = client.phone_1_info?.trim() || null;
+    const contactName = client.responsable_name?.trim() || client.phone_1_info?.trim() || null;
     const contactPhone = client.phone?.trim()
       ? formatPhoneNumber(client.phone)
       : null;
@@ -2515,6 +2539,16 @@ export async function generateClientInfoPDF(
         ].filter(Boolean).join(' '), 
         fullWidth: true 
       },
+      {
+        label: 'Nom du responsable',
+        value: client.responsable_name || '',
+        column: 'left',
+      },
+      {
+        label: 'Email',
+        value: client.email || '',
+        column: 'right',
+      },
       { 
         label: 'Téléphone 2', 
         value: [
@@ -2529,7 +2563,6 @@ export async function generateClientInfoPDF(
           client.phone_3_info
         ].filter(Boolean).join(' - ') || ''
       },
-      { label: 'Email', value: client.email || '' },
     ]);
 
     const complementaryFields: any[] = [];

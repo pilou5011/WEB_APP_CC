@@ -140,6 +140,7 @@ export default function NewClientPage() {
     longitude: null as number | null,
     phone: '',
     phone_1_info: '',
+    responsable_name: '',
     phone_2: '',
     phone_2_info: '',
     phone_3: '',
@@ -692,6 +693,7 @@ export default function NewClientPage() {
           longitude: formData.longitude,
           phone: formData.phone?.trim() || null,
           phone_1_info: formData.phone_1_info?.trim() || null,
+          responsable_name: formData.responsable_name?.trim() || null,
           phone_2: formData.phone_2?.trim() || null,
           phone_2_info: formData.phone_2_info?.trim() || null,
           phone_3: formData.phone_3?.trim() || null,
@@ -1028,6 +1030,32 @@ export default function NewClientPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
+                    <Label htmlFor="responsable_name">
+                      Nom du responsable
+                      <span className="text-xs text-slate-500 ml-2">(pour facture & bon de dépôt)</span>
+                    </Label>
+                    <Input
+                      id="responsable_name"
+                      value={formData.responsable_name}
+                      onChange={(e) => setFormData({ ...formData, responsable_name: e.target.value })}
+                      placeholder="Ex: M. Dupont"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="contact@exemple.fr"
+                      className="mt-1.5"
+                    />
+                  </div>
+
+                  <div>
                     <Label htmlFor="phone">Téléphone 1</Label>
                     <Input
                       id="phone"
@@ -1092,18 +1120,6 @@ export default function NewClientPage() {
                       value={formData.phone_3_info}
                       onChange={(e) => setFormData({ ...formData, phone_3_info: e.target.value })}
                       placeholder="Ex: Jean Martin"
-                      className="mt-1.5"
-                    />
-                  </div>
-
-                  <div>
-                    <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="contact@exemple.fr"
                       className="mt-1.5"
                     />
                   </div>
