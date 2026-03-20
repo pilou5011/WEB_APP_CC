@@ -1215,37 +1215,69 @@ export default function ClientDetailPage() {
   };
 
   const getNonCompletedProductsForStockUpdate = () => {
-    // Produit non renseigné = pour ce produit (et/ou ses sous-produits),
-    // au moins une "ligne" a stock compté + nouveau dépôt vides.
-    const missing = new Map<string, string>();
+    // Liste unifiée (produits + sous-produits) ayant une ligne totalement vide :
+    // - stock compté vide
+    // - nouveau dépôt vide
+    // La liste est ensuite tronquée à 10 éléments côté dialog.
+    const items: string[] = [];
+    const seenProductNames = new Set<string>();
+    const seenSubProductIds = new Set<string>();
 
     for (const cp of clientProducts) {
       const productSubProducts = subProducts[cp.product_id] || [];
       const productName = cp.product?.name || 'Produit';
 
       if (productSubProducts.length > 0) {
-        let hasEmptyLine = false;
+        let hasEmptySubLines = false;
+        const emptySubProductNames: string[] = [];
+
         for (const sp of productSubProducts) {
           const formData = perSubProductForm[sp.id];
           const counted = formData?.counted_stock?.trim() ?? '';
           const added = formData?.stock_added?.trim() ?? '';
 
           if (counted === '' && added === '') {
-            hasEmptyLine = true;
-            break;
+            hasEmptySubLines = true;
+            emptySubProductNames.push(sp.name);
           }
         }
-        if (hasEmptyLine) missing.set(productName, productName);
+
+        // Conserver l'affichage "produit" (comme avant), si au moins un sous-produit est vide.
+        if (hasEmptySubLines && !seenProductNames.has(productName)) {
+          items.push(productName);
+          seenProductNames.add(productName);
+        }
+
+        // Ajouter aussi les sous-produits vides dans la même liste.
+        for (const spName of emptySubProductNames) {
+          // dedup par id via la boucle précédente n'est pas directement possible ici,
+          // on se déduplique ensuite via un label unique construit depuis le nom + produit.
+          // (les sp.id sont uniques, donc on peut aussi éviter doublons en utilisant sp.id à la place,
+          // mais on garde ce niveau de détail simple.)
+          const label = `└ ${spName}`;
+          // Limiter les doublons affichés : si deux produits ont le même nom de sous-produit,
+          // on n'a qu'un item par nom. (Les sp étant uniques en base, cette contrainte n'est
+          // généralement pas problématique.)
+          if (!seenSubProductIds.has(label)) {
+            items.push(label);
+            seenSubProductIds.add(label);
+          }
+        }
       } else {
         const formData = perProductForm[cp.id];
         const counted = formData?.counted_stock?.trim() ?? '';
         const added = formData?.stock_added?.trim() ?? '';
 
-        if (counted === '' && added === '') missing.set(productName, productName);
+        if (counted === '' && added === '') {
+          if (!seenProductNames.has(productName)) {
+            items.push(productName);
+            seenProductNames.add(productName);
+          }
+        }
       }
     }
 
-    return Array.from(missing.values());
+    return items;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
