@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings } from 'lucide-react';
+import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getCurrentUser, isCurrentUserSuperAdmin } from '@/lib/auth-helpers';
@@ -168,6 +168,7 @@ export function Header() {
     { label: 'Accueil', href: '/', icon: Home },
     { label: 'Clients', href: '/clients', icon: Users },
     { label: 'Produits', href: '/products', icon: Package },
+    { label: 'Bibliothèque', href: '/library', icon: Library },
   ];
 
   // Obtenir les initiales pour l'avatar
