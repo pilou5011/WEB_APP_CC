@@ -382,11 +382,18 @@ export function DepositSlipDialog({
       doc.setTextColor(0, 0, 0);
       clientYPosition += 4;
       
-      const clientCompanyName = client.company_name || client.name;
-      if (clientCompanyName) {
+      const clientLegalName = client.company_name || client.name;
+      const clientCommercialName = client.name;
+      if (clientLegalName) {
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.text(clientCompanyName, rightBoxX + 2, clientYPosition);
+        doc.text(clientLegalName, rightBoxX + 2, clientYPosition);
+        clientYPosition += 5;
+      }
+      if (clientCommercialName && clientCommercialName !== clientLegalName) {
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(clientCommercialName, rightBoxX + 2, clientYPosition);
         clientYPosition += 5;
       }
       
