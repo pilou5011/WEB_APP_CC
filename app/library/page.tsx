@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { StoredPdfPreviewDialog } from '@/components/stored-pdf-preview-dialog';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import JSZip from 'jszip';
@@ -67,6 +68,11 @@ export default function LibraryPage() {
   const [periodFilterOpen, setPeriodFilterOpen] = useState(false);
   const [typeFilterOpen, setTypeFilterOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
+  const [pdfPreview, setPdfPreview] = useState<{
+    storagePath: string;
+    title: string;
+    downloadFileName: string;
+  } | null>(null);
 
   // Filtres
   const [clientId, setClientId] = useState<string | null>(null);
@@ -293,6 +299,14 @@ export default function LibraryPage() {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  };
+
+  const openDocumentPreview = (doc: LibraryDocument) => {
+    setPdfPreview({
+      storagePath: doc.storagePath,
+      title: `${DOCUMENT_TYPE_LABELS[doc.type]} — ${doc.name}`,
+      downloadFileName: doc.name,
     });
   };
 
@@ -681,7 +695,16 @@ export default function LibraryPage() {
                           onCheckedChange={() => toggleSelect(doc.id)}
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{doc.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <button
+                          type="button"
+                          onClick={() => openDocumentPreview(doc)}
+                          className="text-left text-[#0B1F33] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1F33]/30 rounded-sm cursor-pointer bg-transparent border-0 p-0 font-medium"
+                          title="Ouvrir la prévisualisation (comme sur la fiche client)"
+                        >
+                          {doc.name}
+                        </button>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="secondary">
                           {DOCUMENT_TYPE_LABELS[doc.type]}
@@ -733,6 +756,16 @@ export default function LibraryPage() {
           </CardContent>
         </Card>
       </div>
+
+      <StoredPdfPreviewDialog
+        open={pdfPreview !== null}
+        onOpenChange={(open) => {
+          if (!open) setPdfPreview(null);
+        }}
+        title={pdfPreview?.title ?? ''}
+        storagePath={pdfPreview?.storagePath ?? null}
+        downloadFileName={pdfPreview?.downloadFileName ?? 'document.pdf'}
+      />
     </div>
   );
 }

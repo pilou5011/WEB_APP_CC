@@ -1299,7 +1299,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
                 // - ou produit sans sous-produits (lignes "totales" de produit sans sous-produits)
                 if (isSubProduct || isProductWithoutSubProducts) {
                   data.cell.styles.fontStyle = 'bold';
-                  data.cell.styles.fontSize = 10;
+                  data.cell.styles.fontSize = 12;
                   data.cell.styles.textColor = [0, 0, 0];
                 } else if (isSubProductsTotal) {
                   data.cell.styles.fontStyle = 'normal';
