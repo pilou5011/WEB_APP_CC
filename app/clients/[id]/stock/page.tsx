@@ -175,6 +175,7 @@ function SortableProductRow({
   lastStockUpdatesByProduct,
   lastStockUpdatesBySubProduct,
   stockInputMode,
+  soldColumnCollapsed,
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -199,6 +200,7 @@ function SortableProductRow({
   lastStockUpdatesByProduct: Record<string, StockUpdate>;
   lastStockUpdatesBySubProduct: Record<string, StockUpdate>;
   stockInputMode: 'reassort' | 'deposit';
+  soldColumnCollapsed: boolean;
 }) {
   const {
     attributes,
@@ -266,8 +268,14 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className="relative align-middle py-3 px-1 text-center w-[9%] min-w-[4.5rem]">
+      <TableCell
+        className={cn(
+          'relative align-middle text-center',
+          soldColumnCollapsed ? 'py-3 px-0 w-[2%] min-w-[1.4rem]' : 'py-3 px-1 w-[9%] min-w-[4.5rem]'
+        )}
+      >
         {(() => {
+          if (soldColumnCollapsed) return null;
           if (hasSubProducts) {
             // Produit total = somme des sous-produits : ne pas afficher un % au niveau "produit".
             return null;
@@ -600,6 +608,7 @@ export default function ClientDetailPage() {
   // Form per sub-product: { [subProductId]: { counted_stock, stock_added, reassort_saisie } }
   const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }>>({});
   const [stockInputMode, setStockInputMode] = useState<'reassort' | 'deposit'>('deposit');
+  const [soldColumnCollapsed, setSoldColumnCollapsed] = useState(false);
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -3670,7 +3679,25 @@ export default function ClientDetailPage() {
                             <TableHead className="w-[15%] font-semibold text-center">Produit</TableHead>
                             <TableHead className="w-[2%] font-semibold text-center"></TableHead>
                             <TableHead className="w-[10%] font-semibold bg-[#E8EDF2] text-center">Ancien dépôt</TableHead>
-                            <TableHead className="w-[9%] text-center text-xs font-semibold text-blue-700">Vendu</TableHead>
+                            <TableHead
+                              className={cn(
+                                'text-center text-xs font-semibold text-blue-700',
+                                soldColumnCollapsed ? 'w-[2%] min-w-[1.4rem] px-0' : 'w-[9%] min-w-[4.5rem]'
+                              )}
+                            >
+                              <div className="flex flex-col items-center justify-center gap-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setSoldColumnCollapsed(prev => !prev)}
+                                  className="h-4 w-4 rounded border border-blue-300 bg-white text-[10px] leading-none text-blue-700 hover:bg-blue-50"
+                                  title={soldColumnCollapsed ? 'Afficher la colonne Vendu' : 'Masquer la colonne Vendu'}
+                                  aria-label={soldColumnCollapsed ? 'Afficher la colonne Vendu' : 'Masquer la colonne Vendu'}
+                                >
+                                  {soldColumnCollapsed ? '+' : '-'}
+                                </button>
+                                {!soldColumnCollapsed && <span>Vendu</span>}
+                              </div>
+                            </TableHead>
                             <TableHead className="w-[12%] font-semibold bg-amber-50 text-center">Stock compté</TableHead>
                             {stockInputMode === 'reassort' && (
                               <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort (saisie)</TableHead>
@@ -3740,6 +3767,7 @@ export default function ClientDetailPage() {
                               onAdjustStock={() => handleAdjustStockClick('product', cp.id)}
                               clientId={clientId}
                               stockInputMode={stockInputMode}
+                              soldColumnCollapsed={soldColumnCollapsed}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
@@ -3750,7 +3778,7 @@ export default function ClientDetailPage() {
                               return (
                                 <TableRow key={sp.id} className="hover:bg-slate-50/30 bg-slate-25">
                                   <TableCell className="align-middle py-2 pl-8">
-                                    <p className="text-sm text-slate-600 text-center w-full break-words">└ {sp.name}</p>
+                                    <p className="text-sm text-slate-600 text-left w-full break-words">└ {sp.name}</p>
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center w-[2%]">
                                     <Button
@@ -3768,8 +3796,14 @@ export default function ClientDetailPage() {
                                       {currentStock}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="relative align-middle py-2 px-1 text-center w-[9%] min-w-[4.5rem]">
+                                  <TableCell
+                                    className={cn(
+                                      'relative align-middle text-center',
+                                      soldColumnCollapsed ? 'py-2 px-0 w-[2%] min-w-[1.4rem]' : 'py-2 px-1 w-[9%] min-w-[4.5rem]'
+                                    )}
+                                  >
                                     {(() => {
+                                      if (soldColumnCollapsed) return null;
                                       const ancienDepot = currentStock;
                                       const countedStr = perSubProductForm[sp.id]?.counted_stock ?? '';
                                       const countedTrim = countedStr.trim();
