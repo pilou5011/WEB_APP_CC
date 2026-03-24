@@ -263,13 +263,17 @@ export type UserProfile = {
   email: string | null;
   phone: string | null;
   terms_and_conditions: string | null;
+  stock_input_mode_preference: 'deposit' | 'reassort';
   created_at: string;
   updated_at: string;
 };
 
 export type DraftStockUpdateData = {
-  perProductForm: Record<string, { counted_stock: string; stock_added: string; product_info: string }>;
-  perSubProductForm?: Record<string, { counted_stock: string; stock_added: string }>;
+  perProductForm: Record<
+    string,
+    { counted_stock: string; stock_added: string; product_info: string; reassort?: string; reassort_saisie?: string }
+  >;
+  perSubProductForm?: Record<string, { counted_stock: string; stock_added: string; reassort_saisie?: string }>;
   pendingAdjustments: { operation_name: string; unit_price: string; quantity: string }[];
 };
 

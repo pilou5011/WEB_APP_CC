@@ -115,6 +115,41 @@ function periodsOverlap(p1: VacationPeriod, p2: VacationPeriod): boolean {
   return start1 <= end2 && start2 <= end1;
 }
 
+const TOAST_NOUVEAU_DEPOT_LOCKED =
+  'Le nouveau dépôt ne peut pas être modifié car une valeur a été saisie dans « Réassort (saisie) ».';
+const TOAST_NOUVEAU_DEPOT_LOCKED_MODE_REASSORT =
+  'Le nouveau dépôt ne peut pas être modifié lorsque le mode « Réassort » est sélectionné.';
+
+/** Saisie en cours : vide, « - » seul, ou chiffres avec signe optionnel */
+function isValidReassortSaisieInput(value: string): boolean {
+  if (value === '') return true;
+  return /^-?\d*$/.test(value);
+}
+
+/** Nouveau dépôt = stock compté + réassort ; si réassort vide → nouveau dépôt effacé ; « - » incomplet → effacé */
+function stockAddedFromReassortSaisie(countedStr: string, reassortSaisie: string): string {
+  const t = reassortSaisie.trim();
+  if (t === '') return '';
+  const rs = parseInt(t, 10);
+  if (Number.isNaN(rs)) return '';
+  const counted = parseInt(countedStr, 10) || 0;
+  return String(counted + rs);
+}
+
+const emptyPerProductFormRow = (): {
+  counted_stock: string;
+  stock_added: string;
+  reassort: string;
+  product_info: string;
+  reassort_saisie: string;
+} => ({
+  counted_stock: '',
+  stock_added: '',
+  reassort: '',
+  product_info: '',
+  reassort_saisie: '',
+});
+
 // Component for sortable product row
 function SortableProductRow({
   cp,
@@ -138,7 +173,8 @@ function SortableProductRow({
   onAdjustStock,
   clientId,
   lastStockUpdatesByProduct,
-  lastStockUpdatesBySubProduct
+  lastStockUpdatesBySubProduct,
+  stockInputMode,
 }: {
   cp: ClientProduct & { product?: Product };
   effectivePrice: number;
@@ -150,11 +186,11 @@ function SortableProductRow({
   parentCountedStock: number;
   parentCardsAdded: number;
   parentCurrentStock: number;
-  perProductForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>;
-  setPerProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>>;
+  perProductForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }>;
+  setPerProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }>>>;
   clientSubProducts: Record<string, ClientSubProduct>;
-  perSubProductForm: Record<string, { counted_stock: string; stock_added: string }>;
-  setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string }>>>;
+  perSubProductForm: Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }>;
+  setPerSubProductForm: React.Dispatch<React.SetStateAction<Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }>>>;
   onEditPrice: () => void;
   onDelete: () => void;
   subProducts: Record<string, SubProduct[]>;
@@ -162,6 +198,7 @@ function SortableProductRow({
   clientId: string;
   lastStockUpdatesByProduct: Record<string, StockUpdate>;
   lastStockUpdatesBySubProduct: Record<string, StockUpdate>;
+  stockInputMode: 'reassort' | 'deposit';
 }) {
   const {
     attributes,
@@ -229,7 +266,7 @@ function SortableProductRow({
           </p>
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center w-[2%]">
+      <TableCell className="relative align-middle py-3 px-1 text-center w-[9%] min-w-[4.5rem]">
         {(() => {
           if (hasSubProducts) {
             // Produit total = somme des sous-produits : ne pas afficher un % au niveau "produit".
@@ -246,8 +283,18 @@ function SortableProductRow({
           const countedStock = parseInt(countedTrim, 10);
           if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
 
-          const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
-          return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+          const stockSold = Math.max(0, ancienDepot - countedStock);
+          const percent = ancienDepot > 0 ? (stockSold / ancienDepot) * 100 : 0;
+          return (
+            <>
+              <span className="absolute top-1 right-1 text-[10px] font-normal leading-none text-blue-600/90 select-none">
+                ({percent.toFixed(0)}%)
+              </span>
+              <div className="flex min-h-[2.25rem] items-center justify-center text-blue-600">
+                <span className="text-sm font-medium tabular-nums">{stockSold}</span>
+              </div>
+            </>
+          );
         })()}
       </TableCell>
       <TableCell className="align-middle py-3 text-center bg-amber-50">
@@ -263,8 +310,12 @@ function SortableProductRow({
             onChange={(e) => {
               const value = e.target.value;
               if (value === '' || /^\d+$/.test(value)) {
-                const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-                setPerProductForm(p => ({ ...p, [cp.id]: { ...current, counted_stock: value } }));
+                const current = perProductForm[cp.id] || emptyPerProductFormRow();
+                const next = { ...current, counted_stock: value };
+                if (next.reassort_saisie && next.reassort_saisie.trim() !== '') {
+                  next.stock_added = stockAddedFromReassortSaisie(value, next.reassort_saisie);
+                }
+                setPerProductForm(p => ({ ...p, [cp.id]: next }));
               }
             }}
             onWheel={(e) => e.currentTarget.blur()}
@@ -273,23 +324,51 @@ function SortableProductRow({
           />
         )}
       </TableCell>
-      <TableCell className="align-middle py-3 text-center bg-green-50">
-        {hasSubProducts ? (
-          <p className="text-sm font-medium text-slate-600">
-            {parentCardsAdded - parentCountedStock}
-          </p>
-        ) : (
-          <p className="text-sm font-medium text-slate-600">
-            {(() => {
-              const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
-              const counted = parseInt(current.counted_stock) || 0;
-              const added = parseInt(current.stock_added) || 0;
-              // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
-              return added - counted;
-            })()}
-          </p>
-        )}
-      </TableCell>
+      {stockInputMode === 'reassort' && (
+        <TableCell className="align-middle py-3 text-center bg-green-50">
+          {hasSubProducts ? (
+            <span className="text-xs text-slate-400">—</span>
+          ) : (
+            <Input
+              type="text"
+              inputMode="text"
+              value={perProductForm[cp.id]?.reassort_saisie || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (!isValidReassortSaisieInput(value)) return;
+                const current = perProductForm[cp.id] || emptyPerProductFormRow();
+                const stock_added = stockAddedFromReassortSaisie(current.counted_stock, value);
+                setPerProductForm(p => ({
+                  ...p,
+                  [cp.id]: { ...current, reassort_saisie: value, stock_added },
+                }));
+              }}
+              onWheel={(e) => e.currentTarget.blur()}
+              placeholder="......"
+              className="h-9 placeholder:text-slate-400 text-center bg-white/90 border-green-200 focus-visible:ring-green-500/25"
+            />
+          )}
+        </TableCell>
+      )}
+      {stockInputMode === 'deposit' && (
+        <TableCell className="align-middle py-3 text-center bg-green-50">
+          {hasSubProducts ? (
+            <p className="text-sm font-medium text-slate-600">
+              {parentCardsAdded - parentCountedStock}
+            </p>
+          ) : (
+            <p className="text-sm font-medium text-slate-600">
+              {(() => {
+                const current = perProductForm[cp.id] || emptyPerProductFormRow();
+                const counted = parseInt(current.counted_stock) || 0;
+                const added = parseInt(current.stock_added) || 0;
+                // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
+                return added - counted;
+              })()}
+            </p>
+          )}
+        </TableCell>
+      )}
       <TableCell className="align-middle py-3 text-center bg-[#E8EDF2]">
         {hasSubProducts ? (
           <p className="text-sm font-medium text-slate-600">
@@ -299,18 +378,34 @@ function SortableProductRow({
           <Input
             type="text"
             inputMode="numeric"
+            readOnly={stockInputMode === 'reassort' || !!(perProductForm[cp.id]?.reassort_saisie?.trim())}
             value={perProductForm[cp.id]?.stock_added || ''}
             onChange={(e) => {
               const value = e.target.value;
               if (value === '' || /^\d+$/.test(value)) {
-                const current = perProductForm[cp.id] || { counted_stock: '', stock_added: '', reassort: '', product_info: '' };
+                const current = perProductForm[cp.id] || emptyPerProductFormRow();
                 // Just update stock_added, reassort will be calculated automatically in the display
                 setPerProductForm(p => ({ ...p, [cp.id]: { ...current, stock_added: value } }));
               }
             }}
+            onFocus={(e) => {
+              if (stockInputMode === 'reassort') {
+                e.target.blur();
+                toast.error(TOAST_NOUVEAU_DEPOT_LOCKED_MODE_REASSORT);
+                return;
+              }
+              if (perProductForm[cp.id]?.reassort_saisie?.trim()) {
+                e.target.blur();
+                toast.error(TOAST_NOUVEAU_DEPOT_LOCKED);
+              }
+            }}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="......"
-            className="h-9 placeholder:text-slate-400 text-center"
+            className={cn(
+              'h-9 placeholder:text-slate-400 text-center',
+              (stockInputMode === 'reassort' || perProductForm[cp.id]?.reassort_saisie?.trim()) &&
+                'cursor-not-allowed bg-slate-100 text-slate-600'
+            )}
           />
         )}
       </TableCell>
@@ -501,9 +596,10 @@ export default function ClientDetailPage() {
   const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
 
   // Form per product: { [clientProductId]: { counted_stock, stock_added, product_info } }
-  const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }>>({});
-  // Form per sub-product: { [subProductId]: { counted_stock, stock_added } }
-  const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string }>>({});
+  const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }>>({});
+  // Form per sub-product: { [subProductId]: { counted_stock, stock_added, reassort_saisie } }
+  const [perSubProductForm, setPerSubProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }>>({});
+  const [stockInputMode, setStockInputMode] = useState<'reassort' | 'deposit'>('deposit');
 
   // Reprise de stock (ajustements de facture)
   const [pendingAdjustments, setPendingAdjustments] = useState<{ operation_name: string; unit_price: string; quantity: string }[]>([]);
@@ -642,20 +738,31 @@ export default function ClientDetailPage() {
             setDraftRecoveryOpen(true);
             // Immediately restore draft data to prevent it from being overwritten
             // Add reassort field to existing draft data if missing
-            const draftFormWithReassort: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
+            const draftFormWithReassort: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }> = {};
             if (draftData.perProductForm) {
               const perProductForm = draftData.perProductForm;
               Object.keys(perProductForm).forEach(key => {
                 const oldData = perProductForm[key] as any;
                 draftFormWithReassort[key] = {
                   ...oldData,
-                  reassort: oldData.reassort || ''
+                  reassort: oldData.reassort || '',
+                  reassort_saisie: oldData.reassort_saisie ?? '',
                 };
               });
             }
             setPerProductForm(draftFormWithReassort);
             if (draftData.perSubProductForm) {
-              setPerSubProductForm(draftData.perSubProductForm);
+              const raw = draftData.perSubProductForm as Record<string, { counted_stock?: string; stock_added?: string; reassort_saisie?: string }>;
+              const normalized: Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }> = {};
+              Object.keys(raw).forEach((k) => {
+                const o = raw[k];
+                normalized[k] = {
+                  counted_stock: o.counted_stock ?? '',
+                  stock_added: o.stock_added ?? '',
+                  reassort_saisie: o.reassort_saisie ?? '',
+                };
+              });
+              setPerSubProductForm(normalized);
             }
             if (draftData.pendingAdjustments) {
               setPendingAdjustments(draftData.pendingAdjustments);
@@ -675,11 +782,12 @@ export default function ClientDetailPage() {
   // Initialize sub-product forms when subProducts data is loaded
   useEffect(() => {
     if (!loading && Object.keys(subProducts).length > 0) {
-      const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string }> = {};
+      const initialSubProductForm: Record<string, { counted_stock: string; stock_added: string; reassort_saisie: string }> = {};
       Object.values(subProducts).flat().forEach((sp) => {
         initialSubProductForm[sp.id] = {
           counted_stock: perSubProductForm[sp.id]?.counted_stock || '',
-          stock_added: perSubProductForm[sp.id]?.stock_added || ''
+          stock_added: perSubProductForm[sp.id]?.stock_added || '',
+          reassort_saisie: perSubProductForm[sp.id]?.reassort_saisie || '',
         };
       });
       // Only update if there are new sub-products not yet in the form
@@ -753,6 +861,20 @@ export default function ClientDetailPage() {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
         throw new Error('Non autorisé');
+      }
+
+      // Charger la préférence utilisateur pour le mode d'affichage par défaut
+      const { data: userProfilePref } = await supabase
+        .from('user_profile')
+        .select('stock_input_mode_preference')
+        .eq('company_id', companyId)
+        .limit(1)
+        .maybeSingle();
+
+      if (userProfilePref?.stock_input_mode_preference === 'reassort') {
+        setStockInputMode('reassort');
+      } else {
+        setStockInputMode('deposit');
       }
 
       const { data: clientData, error: clientError } = await supabase
@@ -981,7 +1103,7 @@ export default function ClientDetailPage() {
       // et on ne doit PAS préserver les données. On crée des formulaires complètement vides.
       const currentForm = perProductForm;
       const currentSubProductForm = perSubProductForm;
-      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }> = {};
       
       // Si le formulaire a été explicitement vidé (objet vide), ne pas préserver les données
       const shouldPreserveFormData = Object.keys(currentForm).length > 0;
@@ -999,7 +1121,8 @@ export default function ClientDetailPage() {
             counted_stock: '', 
             stock_added: '', 
             reassort: '',
-            product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
+            product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '',
+            reassort_saisie: '',
           };
         } else {
           // Preserve existing form data if it exists, otherwise use defaults
@@ -1008,7 +1131,8 @@ export default function ClientDetailPage() {
             counted_stock: existingForm?.counted_stock || '', 
             stock_added: existingForm?.stock_added || '', 
             reassort: existingForm?.reassort || '',
-            product_info: existingForm?.product_info || (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
+            product_info: existingForm?.product_info || (cp as ClientProduct & { product_info?: string | null }).product_info || '',
+            reassort_saisie: existingForm?.reassort_saisie ?? '',
           };
         }
       });
@@ -1356,7 +1480,7 @@ export default function ClientDetailPage() {
       console.log('[Draft] Draft deleted successfully, reinitializing form');
       
       // Reinitialize form with default values (from last invoice)
-      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string }> = {};
+      const initialForm: Record<string, { counted_stock: string; stock_added: string; reassort: string; product_info: string; reassort_saisie: string }> = {};
       clientProducts.forEach((cp) => {
         // Find the last stock update for this product (most recent, regardless of product_info)
           const lastUpdate = stockUpdates.find(
@@ -1368,7 +1492,8 @@ export default function ClientDetailPage() {
           counted_stock: '', 
           stock_added: '', 
           reassort: '',
-          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '' 
+          product_info: (cp as ClientProduct & { product_info?: string | null }).product_info || '',
+          reassort_saisie: '',
         };
       });
       
@@ -3498,6 +3623,37 @@ export default function ClientDetailPage() {
               {clientProducts.length === 0 ? (
                 <p className="text-sm text-slate-600">Aucun produit associé.</p>
               ) : (
+                <>
+                  <div className="mb-3 flex justify-start">
+                    <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setStockInputMode('reassort')}
+                        className={cn(
+                          'rounded-none h-8 px-3 text-xs transition-colors',
+                          stockInputMode === 'reassort'
+                            ? 'bg-green-100 text-green-700 hover:bg-green-100 font-bold ring-2 ring-inset ring-green-500'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        )}
+                      >
+                        Réassort
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setStockInputMode('deposit')}
+                        className={cn(
+                          'rounded-none h-8 px-3 text-xs border-l border-slate-300 transition-colors',
+                          stockInputMode === 'deposit'
+                            ? 'bg-[#E8EDF2] text-slate-700 hover:bg-[#E8EDF2] font-bold ring-2 ring-inset ring-slate-500'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        )}
+                      >
+                        Dépôt
+                      </Button>
+                    </div>
+                  </div>
                 <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
                   <DndContext
                     sensors={sensors}
@@ -3514,9 +3670,14 @@ export default function ClientDetailPage() {
                             <TableHead className="w-[15%] font-semibold text-center">Produit</TableHead>
                             <TableHead className="w-[2%] font-semibold text-center"></TableHead>
                             <TableHead className="w-[10%] font-semibold bg-[#E8EDF2] text-center">Ancien dépôt</TableHead>
-                            <TableHead className="w-[2%] text-center text-xs text-blue-700">% vendu</TableHead>
+                            <TableHead className="w-[9%] text-center text-xs font-semibold text-blue-700">Vendu</TableHead>
                             <TableHead className="w-[12%] font-semibold bg-amber-50 text-center">Stock compté</TableHead>
-                            <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort</TableHead>
+                            {stockInputMode === 'reassort' && (
+                              <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort (saisie)</TableHead>
+                            )}
+                            {stockInputMode === 'deposit' && (
+                              <TableHead className="w-[12%] font-semibold bg-green-50 text-center">Réassort</TableHead>
+                            )}
                             <TableHead className="w-[12%] font-semibold bg-[#E8EDF2] text-center">Nouveau dépôt</TableHead>
                             <TableHead className="w-[20%] font-semibold text-center">Info produit</TableHead>
                             <TableHead className="w-[10%] text-center font-semibold">Prix de cession (HT)</TableHead>
@@ -3578,6 +3739,7 @@ export default function ClientDetailPage() {
                               subProducts={subProducts}
                               onAdjustStock={() => handleAdjustStockClick('product', cp.id)}
                               clientId={clientId}
+                              stockInputMode={stockInputMode}
                             />
                             {/* Sub-products rows */}
                             {hasSubProducts && productSubProducts.map((sp) => {
@@ -3606,7 +3768,7 @@ export default function ClientDetailPage() {
                                       {currentStock}
                                     </p>
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center w-[2%]">
+                                  <TableCell className="relative align-middle py-2 px-1 text-center w-[9%] min-w-[4.5rem]">
                                     {(() => {
                                       const ancienDepot = currentStock;
                                       const countedStr = perSubProductForm[sp.id]?.counted_stock ?? '';
@@ -3617,8 +3779,18 @@ export default function ClientDetailPage() {
                                       const countedStock = parseInt(countedTrim, 10);
                                       if (Number.isNaN(countedStock)) return <span className="text-xs text-slate-400">-</span>;
 
-                                      const percent = ((ancienDepot - countedStock) / ancienDepot) * 100;
-                                      return <span className="text-xs text-blue-600">{percent.toFixed(0)}%</span>;
+                                      const stockSold = Math.max(0, ancienDepot - countedStock);
+                                      const percent = ancienDepot > 0 ? (stockSold / ancienDepot) * 100 : 0;
+                                      return (
+                                        <>
+                                          <span className="absolute top-1 right-1 text-[10px] font-normal leading-none text-blue-600/90 select-none">
+                                            ({percent.toFixed(0)}%)
+                                          </span>
+                                          <div className="flex min-h-[2rem] items-center justify-center text-blue-600">
+                                            <span className="text-sm font-medium tabular-nums">{stockSold}</span>
+                                          </div>
+                                        </>
+                                      );
                                     })()}
                                   </TableCell>
                                   <TableCell className="align-middle py-2 bg-amber-50 text-center">
@@ -3629,7 +3801,12 @@ export default function ClientDetailPage() {
                                       onChange={(e) => {
                                         const value = e.target.value;
                                         if (value === '' || /^\d+$/.test(value)) {
-                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', stock_added: '' }), counted_stock: value } }));
+                                          const base = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '', reassort_saisie: '' };
+                                          const next = { ...base, counted_stock: value };
+                                          if (next.reassort_saisie && next.reassort_saisie.trim() !== '') {
+                                            next.stock_added = stockAddedFromReassortSaisie(value, next.reassort_saisie);
+                                          }
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: next }));
                                         }
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
@@ -3637,31 +3814,71 @@ export default function ClientDetailPage() {
                                       className="h-8 text-sm placeholder:text-slate-400 text-center"
                                     />
                                   </TableCell>
-                                  <TableCell className="align-middle py-2 text-center bg-green-50">
-                                    <p className="text-xs font-medium text-slate-600">
-                                      {(() => {
-                                        const formData = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '' };
-                                        const counted = parseInt(formData.counted_stock) || 0;
-                                        const added = parseInt(formData.stock_added) || 0;
-                                        // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
-                                        return added - counted;
-                                      })()}
-                                    </p>
-                                  </TableCell>
+                                  {stockInputMode === 'reassort' && (
+                                    <TableCell className="align-middle py-2 text-center bg-green-50">
+                                      <Input
+                                        type="text"
+                                        inputMode="text"
+                                        value={perSubProductForm[sp.id]?.reassort_saisie || ''}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          if (!isValidReassortSaisieInput(value)) return;
+                                          const current = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '', reassort_saisie: '' };
+                                          const stock_added = stockAddedFromReassortSaisie(current.counted_stock, value);
+                                          setPerSubProductForm(p => ({
+                                            ...p,
+                                            [sp.id]: { ...current, reassort_saisie: value, stock_added },
+                                          }));
+                                        }}
+                                        onWheel={(e) => e.currentTarget.blur()}
+                                        placeholder="......"
+                                        className="h-8 text-sm placeholder:text-slate-400 text-center bg-white/90 border-green-200 focus-visible:ring-green-500/25"
+                                      />
+                                    </TableCell>
+                                  )}
+                                  {stockInputMode === 'deposit' && (
+                                    <TableCell className="align-middle py-2 text-center bg-green-50">
+                                      <p className="text-xs font-medium text-slate-600">
+                                        {(() => {
+                                          const formData = perSubProductForm[sp.id] || { counted_stock: '', stock_added: '', reassort_saisie: '' };
+                                          const counted = parseInt(formData.counted_stock) || 0;
+                                          const added = parseInt(formData.stock_added) || 0;
+                                          // Calculate reassort: Réassort = Nouveau dépôt - Stock compté
+                                          return added - counted;
+                                        })()}
+                                      </p>
+                                    </TableCell>
+                                  )}
                                   <TableCell className="align-middle py-2 bg-[#E8EDF2] text-center">
                                     <Input
                                       type="text"
                                       inputMode="numeric"
+                                      readOnly={stockInputMode === 'reassort' || !!(perSubProductForm[sp.id]?.reassort_saisie?.trim())}
                                       value={perSubProductForm[sp.id]?.stock_added || ''}
                                       onChange={(e) => {
                                         const value = e.target.value;
                                         if (value === '' || /^\d+$/.test(value)) {
-                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', stock_added: '' }), stock_added: value } }));
+                                          setPerSubProductForm(p => ({ ...p, [sp.id]: { ...(p[sp.id] || { counted_stock: '', stock_added: '', reassort_saisie: '' }), stock_added: value } }));
+                                        }
+                                      }}
+                                      onFocus={(e) => {
+                                        if (stockInputMode === 'reassort') {
+                                          e.target.blur();
+                                          toast.error(TOAST_NOUVEAU_DEPOT_LOCKED_MODE_REASSORT);
+                                          return;
+                                        }
+                                        if (perSubProductForm[sp.id]?.reassort_saisie?.trim()) {
+                                          e.target.blur();
+                                          toast.error(TOAST_NOUVEAU_DEPOT_LOCKED);
                                         }
                                       }}
                                       onWheel={(e) => e.currentTarget.blur()}
                                       placeholder="......"
-                                      className="h-8 text-sm placeholder:text-slate-400 text-center"
+                                      className={cn(
+                                        'h-8 text-sm placeholder:text-slate-400 text-center',
+                                        (stockInputMode === 'reassort' || perSubProductForm[sp.id]?.reassort_saisie?.trim()) &&
+                                          'cursor-not-allowed bg-slate-100 text-slate-600'
+                                      )}
                                     />
                                   </TableCell>
                                   <TableCell className="align-middle py-2 text-center">
@@ -3691,6 +3908,7 @@ export default function ClientDetailPage() {
                     </SortableContext>
                   </DndContext>
                 </div>
+                </>
               )}
             </CardContent>
           </Card>
