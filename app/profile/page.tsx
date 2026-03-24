@@ -36,7 +36,8 @@ export default function ProfilePage() {
     tva_number: '',
     email: '',
     phone: '',
-    terms_and_conditions: ''
+    terms_and_conditions: '',
+    stock_input_mode_preference: 'deposit' as 'deposit' | 'reassort',
   });
 
   // Fonction pour générer les conditions générales par défaut avec le nom de la société
@@ -104,7 +105,9 @@ export default function ProfilePage() {
           tva_number: data.tva_number || '',
           email: data.email || '',
           phone: data.phone || '',
-          terms_and_conditions: data.terms_and_conditions || getDefaultTermsAndConditions(data.company_name)
+          terms_and_conditions: data.terms_and_conditions || getDefaultTermsAndConditions(data.company_name),
+          stock_input_mode_preference:
+            data.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
         });
       }
     } catch (error) {
@@ -172,6 +175,7 @@ export default function ProfilePage() {
         email: formData.email || null,
         phone: formData.phone || null,
         terms_and_conditions: formData.terms_and_conditions || null,
+        stock_input_mode_preference: formData.stock_input_mode_preference,
         updated_at: new Date().toISOString()
       };
 
@@ -382,6 +386,22 @@ export default function ProfilePage() {
                     </div>
                   </div>
 
+                  {/* Préférences d'utilisation */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                      <User className="h-5 w-5" />
+                      <h3>Préférences</h3>
+                    </div>
+                    <Separator />
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Mode par défaut pour la mise à jour de stock</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {profile.stock_input_mode_preference === 'reassort' ? 'Réassort' : 'Nouveau dépôt'}
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Conditions générales de vente */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 text-slate-700 font-semibold">
@@ -435,7 +455,9 @@ export default function ProfilePage() {
                     tva_number: profile.tva_number || '',
                     email: profile.email || '',
                     phone: profile.phone || '',
-                    terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name)
+                    terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name),
+                    stock_input_mode_preference:
+                      profile.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
                   });
                 }
               }}
@@ -614,6 +636,48 @@ export default function ProfilePage() {
                 </div>
               </div>
 
+              {/* Préférences d'utilisation */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-slate-700 font-semibold">
+                  <User className="h-5 w-5" />
+                  <h3>Préférences</h3>
+                </div>
+                <Separator />
+
+                <div>
+                  <Label>Mode par défaut pour la mise à jour de stock</Label>
+                  <p className="text-xs text-slate-500 mt-1 mb-2">
+                    Ce choix détermine le mode affiché par défaut dans l&apos;onglet « Facturer (dépôt) ».
+                  </p>
+                  <div className="inline-flex rounded-md border border-slate-300 overflow-hidden mt-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setFormData(prev => ({ ...prev, stock_input_mode_preference: 'reassort' }))}
+                      className={`rounded-none h-9 px-4 text-sm ${
+                        formData.stock_input_mode_preference === 'reassort'
+                          ? 'bg-green-100 text-green-700 font-bold ring-2 ring-inset ring-green-500 hover:bg-green-100'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      Réassort
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setFormData(prev => ({ ...prev, stock_input_mode_preference: 'deposit' }))}
+                      className={`rounded-none h-9 px-4 text-sm border-l border-slate-300 ${
+                        formData.stock_input_mode_preference === 'deposit'
+                          ? 'bg-[#E8EDF2] text-slate-700 font-bold ring-2 ring-inset ring-slate-500 hover:bg-[#E8EDF2]'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      Nouveau dépôt
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
               {/* Conditions générales de vente */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-slate-700 font-semibold">
@@ -702,7 +766,9 @@ export default function ProfilePage() {
                         tva_number: profile.tva_number || '',
                         email: profile.email || '',
                         phone: profile.phone || '',
-                        terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name)
+                        terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name),
+                        stock_input_mode_preference:
+                          profile.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
                       });
                     }
                   }}

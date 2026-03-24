@@ -280,13 +280,22 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
   const isDraftEmpty = useCallback((data: DraftStockUpdateData): boolean => {
     // Check if any product form has data
     const hasProductData = Object.values(data.perProductForm).some(
-      form => form.counted_stock !== '' || form.stock_added !== '' || form.product_info !== ''
+      form =>
+        form.counted_stock !== '' ||
+        form.stock_added !== '' ||
+        form.product_info !== '' ||
+        (form.reassort_saisie && form.reassort_saisie !== '')
     );
 
     // Check if any sub-product form has data
-    const hasSubProductData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.stock_added !== ''
-    ) : false;
+    const hasSubProductData = data.perSubProductForm
+      ? Object.values(data.perSubProductForm).some(
+          form =>
+            form.counted_stock !== '' ||
+            form.stock_added !== '' ||
+            (form.reassort_saisie && form.reassort_saisie !== '')
+        )
+      : false;
 
     // Check if any adjustments exist
     const hasAdjustments = data.pendingAdjustments.length > 0;
@@ -299,13 +308,21 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
   const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
     // Check if any product form has stock data (not just product_info)
     const hasStockData = Object.values(data.perProductForm).some(
-      form => form.counted_stock !== '' || form.stock_added !== ''
+      form =>
+        form.counted_stock !== '' ||
+        form.stock_added !== '' ||
+        (form.reassort_saisie && form.reassort_saisie !== '')
     );
 
     // Check if any sub-product form has stock data
-    const hasSubProductStockData = data.perSubProductForm ? Object.values(data.perSubProductForm).some(
-      form => form.counted_stock !== '' || form.stock_added !== ''
-    ) : false;
+    const hasSubProductStockData = data.perSubProductForm
+      ? Object.values(data.perSubProductForm).some(
+          form =>
+            form.counted_stock !== '' ||
+            form.stock_added !== '' ||
+            (form.reassort_saisie && form.reassort_saisie !== '')
+        )
+      : false;
 
     // Adjustments also count as meaningful data
     const hasAdjustments = data.pendingAdjustments.length > 0;
