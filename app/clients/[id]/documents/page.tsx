@@ -912,13 +912,35 @@ export default function ClientDetailPage() {
         .order('created_at', { ascending: false });
 
       if (updatesError) throw updatesError;
-      setStockUpdates(updatesData || []);
+      // Inclure:
+      // - tous les stock_updates sans facture (invoice_id = null), ex: ajustements manuels
+      // - uniquement les stock_updates liés à des factures completed
+      const invoiceIds = Array.from(
+        new Set((updatesData || []).map((u) => u.invoice_id).filter((id): id is string => !!id))
+      );
+      let completedInvoiceIds = new Set<string>();
+      if (invoiceIds.length > 0) {
+        const { data: completedInvoices, error: completedInvoicesError } = await supabase
+          .from('invoices')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('status', 'completed')
+          .in('id', invoiceIds);
+        if (completedInvoicesError) throw completedInvoicesError;
+        completedInvoiceIds = new Set((completedInvoices || []).map((i) => i.id));
+      }
+
+      const effectiveUpdatesData = (updatesData || []).filter(
+        (u) => !u.invoice_id || completedInvoiceIds.has(u.invoice_id)
+      );
+
+      setStockUpdates(effectiveUpdatesData);
 
       // Créer un map optimisé pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
       const lastStockUpdatesByProductMap: Record<string, StockUpdate> = {};
       const lastStockUpdatesBySubProductMap: Record<string, StockUpdate> = {};
       
-      (updatesData || []).forEach((update: StockUpdate) => {
+      effectiveUpdatesData.forEach((update: StockUpdate) => {
         if (update.product_id && !update.sub_product_id) {
           // Produit sans sous-produit
           const key = update.product_id;
@@ -1689,7 +1711,8 @@ export default function ClientDetailPage() {
           .from('client_sub_products')
           .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
           .eq('id', upd.id)
-          .eq('company_id', companyId);
+          .eq('company_id', companyId)
+          .is('deleted_at', null);
         if (cspUpdateError) throw cspUpdateError;
       }
 
@@ -1699,7 +1722,8 @@ export default function ClientDetailPage() {
           .from('client_products')
           .update({ current_stock: upd.new_stock, updated_at: new Date().toISOString() })
           .eq('id', upd.id)
-          .eq('company_id', companyId);
+          .eq('company_id', companyId)
+          .is('deleted_at', null);
         if (cpUpdateError) throw cpUpdateError;
       }
 
@@ -2304,6 +2328,7 @@ export default function ClientDetailPage() {
           .eq('sub_product_id', itemToAdjust.id)
           .eq('client_id', clientId)
           .eq('company_id', companyId)
+          .is('deleted_at', null)
           .maybeSingle();
 
         if (checkError) throw checkError;
@@ -2313,7 +2338,8 @@ export default function ClientDetailPage() {
             .from('client_sub_products')
             .update({ current_stock: newStockValue })
             .eq('id', existingCSP.id)
-            .eq('company_id', companyId);
+            .eq('company_id', companyId)
+            .is('deleted_at', null);
 
           if (updateError) throw updateError;
         } else {

@@ -240,7 +240,8 @@ export function StockReportDialog({
         .from('client_sub_products')
         .select('*')
         .eq('client_id', client.id)
-        .eq('company_id', companyId);
+        .eq('company_id', companyId)
+        .is('deleted_at', null);
 
       if (clientSubProductsError) throw clientSubProductsError;
 

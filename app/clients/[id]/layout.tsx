@@ -64,44 +64,26 @@ export default function ClientLayout({
   );
 
   return (
-    <div className="flex flex-col lg:flex-row min-h-[calc(100vh-4rem)]">
-      {/* Barre de navigation en haut sur tablette */}
-      <nav className="lg:hidden sticky top-16 z-40 border-b border-slate-200 bg-slate-50 py-2 overflow-x-auto">
+    <div className="flex flex-col min-h-[calc(100vh-4rem)]">
+      {/* Barre de navigation en haut (tous appareils) */}
+      <nav className="sticky top-16 z-40 border-b border-slate-200 bg-slate-50 py-2 overflow-x-auto">
         <div className="flex justify-center w-full px-4">
           <div className="flex gap-2 min-w-max">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(linkClassName(isActive), 'flex-shrink-0')}
-              >
-                {navLinkContent(item, isActive)}
-              </Link>
-            );
-          })}
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(linkClassName(isActive), 'flex-shrink-0')}
+                >
+                  {navLinkContent(item, isActive)}
+                </Link>
+              );
+            })}
           </div>
         </div>
       </nav>
-
-      {/* Sidebar (PC uniquement) */}
-      <aside className="hidden lg:block sticky top-16 h-[calc(100vh-4rem)] w-64 border-r border-slate-200 bg-slate-50 p-4 overflow-y-auto flex-shrink-0">
-        <nav className="space-y-2">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={linkClassName(isActive)}
-              >
-                {navLinkContent(item, isActive)}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
 
       {/* Main content */}
       <main className="flex-1 min-w-0">
