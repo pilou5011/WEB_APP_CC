@@ -24,6 +24,7 @@ export default function UsersPage() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<'admin' | 'user'>('user');
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   useEffect(() => {
     checkAccess();
@@ -154,17 +155,47 @@ export default function UsersPage() {
 
       if (inviteError) throw inviteError;
 
-      // TODO: Envoyer l'email d'invitation avec le lien
-      // Pour l'instant, on affiche le lien dans un toast
       const inviteUrl = `${window.location.origin}/auth/accept-invitation?token=${token}`;
-      toast.success(
-        `Invitation créée. Lien: ${inviteUrl}`,
-        { duration: 10000 }
-      );
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Session expirée. Reconnectez-vous.');
+        throw new Error('Session expirée');
+      }
+
+      setSendingInvite(true);
+      try {
+        const emailRes = await fetch('/api/send-invitation', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ token }),
+        });
+        const emailJson = await emailRes.json().catch(() => ({}));
+        if (!emailRes.ok) {
+          console.error('send-invitation:', emailJson);
+          toast.error(
+            emailJson.error ||
+              "L'invitation est enregistrée mais l'email n'a pas pu être envoyé."
+          );
+          toast.info('Lien à transmettre manuellement', {
+            description: inviteUrl,
+            duration: 30000,
+          });
+        } else {
+          toast.success(`Invitation envoyée à ${inviteEmail.trim().toLowerCase()}`);
+        }
+      } finally {
+        setSendingInvite(false);
+      }
 
       setInviteDialogOpen(false);
       setInviteEmail('');
-      setInviteRole('admin');
+      setInviteRole('user');
       loadData();
     } catch (error: any) {
       console.error('Error inviting user:', error);
@@ -396,8 +427,8 @@ export default function UsersPage() {
               <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
                 Annuler
               </Button>
-              <Button onClick={handleInviteUser}>
-                Envoyer l'invitation
+              <Button onClick={handleInviteUser} disabled={sendingInvite}>
+                {sendingInvite ? 'Envoi…' : "Envoyer l'invitation"}
               </Button>
             </DialogFooter>
           </DialogContent>
