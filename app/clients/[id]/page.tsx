@@ -1563,6 +1563,7 @@ export default function ClientDetailPage() {
             if (isNaN(unitPrice) || isNaN(quantity)) return null;
             const amount = unitPrice * quantity;
             return {
+              company_id: companyId,
               client_id: clientId,
               invoice_id: invoiceId,
               operation_name: a.operation_name,

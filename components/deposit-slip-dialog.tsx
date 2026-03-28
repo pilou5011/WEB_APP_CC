@@ -440,7 +440,13 @@ export function DepositSlipDialog({
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
-      yPosition += 10;
+      const responsableName = client.responsable_name?.trim();
+      if (responsableName) {
+        doc.text(`Nom du responsable : ${responsableName}`, 15, yPosition + 5);
+        yPosition += 12;
+      } else {
+        yPosition += 10;
+      }
 
       // Titre "Bon de dépôt"
       doc.setFont('helvetica', 'bold');
@@ -494,6 +500,22 @@ export function DepositSlipDialog({
         tableWidth * 0.15  // Prix conseillé TTC
       ];
 
+      // Conditions de Dépôt-Vente (version profil uniquement, sans fallback par défaut)
+      const leftMargin = 15;
+      const rightMargin = 15;
+      const availableWidth = pageWidth - leftMargin - rightMargin;
+      const profileTerms = userProfile?.terms_and_conditions?.trim() || '';
+      const conditionsText = profileTerms
+        ? profileTerms
+        : 'Conditions de Dépôt-Vente non renseignées dans le profil.';
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+      const conditionsHeight = Math.max(conditionsLines.length * 3.5, 7);
+      // Réserve une zone fixe en bas de page pour éviter tout chevauchement avec le tableau.
+      const reservedBottomForConditions = conditionsHeight + 12;
+
       autoTable(doc, {
         startY: yPosition,
         head: [[
@@ -506,7 +528,7 @@ export function DepositSlipDialog({
         ]],
         body: tableData,
         theme: 'grid',
-        margin: { left: marginLeft, right: marginRight },
+        margin: { left: marginLeft, right: marginRight, bottom: reservedBottomForConditions },
         headStyles: {
           fillColor: [71, 85, 105],
           textColor: 255,
@@ -533,23 +555,25 @@ export function DepositSlipDialog({
         }
       });
 
-      // Conditions de Dépôt-Vente en bas de page
-      const footerY = pageHeight - 20;
-      
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7);
+      // Conditions en bas de la dernière page, sans chevauchement avec le tableau
+      const totalPages = doc.getNumberOfPages();
+      doc.setPage(totalPages);
       doc.setTextColor(0, 0, 0);
-      
-      const conditionsText = [
-        "Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de Castel Carterie SAS. Le dépositaire s'engage à régler comptant",
-        "les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts",
-        "des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de Castel Carterie SAS. Tout retard de paiement entraîne une indemnité",
-        "forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal."
-      ];
-      
-      conditionsText.forEach((line, index) => {
-        doc.text(line, 15, footerY + (index * 3.5));
+      const conditionsStartY = pageHeight - 8 - conditionsHeight;
+      conditionsLines.forEach((line: string, index: number) => {
+        doc.text(line, leftMargin, conditionsStartY + (index * 3.5), { maxWidth: availableWidth });
       });
+
+      // Pagination visible uniquement si plusieurs pages (aligné avec les autres PDF)
+      if (totalPages > 1) {
+        for (let page = 1; page <= totalPages; page++) {
+          doc.setPage(page);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(30, 30, 30);
+          doc.text(`Page ${page}/${totalPages}`, pageWidth - 15, pageHeight - 8, { align: 'right' });
+        }
+      }
 
       // Generate PDF blob for preview (NE PAS SAUVEGARDER)
       const pdfBlobData = doc.output('blob');

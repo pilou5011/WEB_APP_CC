@@ -45,6 +45,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { StoredPdfPreviewDialog } from '@/components/stored-pdf-preview-dialog';
+import Link from 'next/link';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import JSZip from 'jszip';
@@ -57,6 +58,12 @@ const DOCUMENT_TYPES: LibraryDocumentType[] = [
 ];
 
 const PAGE_SIZE = 50;
+
+const formatFilterDateFr = (dateValue: string) => {
+  const [year, month, day] = dateValue.split('-');
+  if (!year || !month || !day) return dateValue;
+  return `${day}/${month}/${year}`;
+};
 
 export default function LibraryPage() {
   const [documents, setDocuments] = useState<LibraryDocument[]>([]);
@@ -535,7 +542,7 @@ export default function LibraryPage() {
                     <Button variant="outline" className="w-[280px] justify-start">
                       <Calendar className="mr-2 h-4 w-4" />
                       {startDate && endDate
-                        ? `${startDate} → ${endDate}`
+                        ? `${formatFilterDateFr(startDate)} → ${formatFilterDateFr(endDate)}`
                         : 'Toutes les dates'}
                     </Button>
                   </PopoverTrigger>
@@ -710,7 +717,15 @@ export default function LibraryPage() {
                           {DOCUMENT_TYPE_LABELS[doc.type]}
                         </Badge>
                       </TableCell>
-                      <TableCell>{doc.clientName}</TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/clients/${doc.clientId}`}
+                          className="text-[#0B1F33] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0B1F33]/30 rounded-sm"
+                          title="Ouvrir la page client"
+                        >
+                          {doc.clientName}
+                        </Link>
+                      </TableCell>
                       <TableCell>
                         {format(
                           new Date(doc.createdAt),

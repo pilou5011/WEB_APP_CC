@@ -1735,6 +1735,21 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       // Total: 0.12 + 0.28 + 0.10 + 0.20 + 0.15 + 0.15 = 1.00
     ];
 
+    // Conditions de Dépôt-Vente: réserver une zone basse pour éviter tout chevauchement
+    const leftMargin = 15;
+    const rightMargin = 15;
+    const availableWidth = pageWidth - leftMargin - rightMargin;
+    const getDefaultConditions = (companyName: string | null): string => {
+      const company = companyName || 'Votre Société';
+      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+    };
+    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+    const conditionsHeight = Math.max(conditionsLines.length * 3.5, 7);
+    const reservedBottomForConditions = conditionsHeight + 12;
+
     autoTable(doc, {
       startY: yPosition,
       head: [[
@@ -1747,7 +1762,7 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       ]],
       body: tableData,
       theme: 'grid',
-      margin: { left: marginLeft, right: marginRight },
+      margin: { left: marginLeft, right: marginRight, bottom: reservedBottomForConditions },
       headStyles: {
         fillColor: [71, 85, 105],
         textColor: 255,
@@ -1774,30 +1789,13 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
       }
     });
 
-    // Conditions de Dépôt-Vente en bas de page
-    const footerY = pageHeight - 20;
-    
-    // Définir les marges pour les conditions générales
-    const leftMargin = 15;
-    const rightMargin = 15;
-    const availableWidth = pageWidth - leftMargin - rightMargin;
-    
-    // Récupérer les conditions générales personnalisées ou utiliser la valeur par défaut
-    const getDefaultConditions = (companyName: string | null): string => {
-      const company = companyName || 'Votre Société';
-      return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
-    };
-    const conditionsText = userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
-    
-    // Diviser le texte en lignes adaptées à la largeur disponible
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
-    
+    // Dessiner les conditions en bas de la dernière page
+    const totalPages = doc.getNumberOfPages();
+    doc.setPage(totalPages);
     doc.setTextColor(0, 0, 0);
-    
+    const conditionsStartY = pageHeight - 8 - conditionsHeight;
     conditionsLines.forEach((line: string, index: number) => {
-      doc.text(line, leftMargin, footerY + (index * 3.5), { maxWidth: availableWidth });
+      doc.text(line, leftMargin, conditionsStartY + (index * 3.5), { maxWidth: availableWidth });
     });
 
     // Add page numbers (footer) before generating the blob
