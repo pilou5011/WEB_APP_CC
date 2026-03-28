@@ -277,8 +277,40 @@ function SortableProductRow({
         {(() => {
           if (soldColumnCollapsed) return null;
           if (hasSubProducts) {
-            // Produit total = somme des sous-produits : ne pas afficher un % au niveau "produit".
-            return null;
+            let sumSold = 0;
+            let sumAncienDepot = 0;
+
+            productSubProducts.forEach((sp) => {
+              const lastSubUpdate = lastStockUpdatesBySubProduct[sp.id];
+              const ancienDepot = lastSubUpdate ? lastSubUpdate.new_stock : 0;
+              const countedStr = perSubProductForm[sp.id]?.counted_stock ?? '';
+              const countedTrim = countedStr.trim();
+
+              // N'inclure que les lignes renseignées pour les sous-produits
+              if (!ancienDepot || ancienDepot <= 0) return;
+              if (!countedTrim) return;
+
+              const countedStock = parseInt(countedTrim, 10);
+              if (Number.isNaN(countedStock)) return;
+
+              const sold = Math.max(0, ancienDepot - countedStock);
+              sumSold += sold;
+              sumAncienDepot += ancienDepot;
+            });
+
+            if (sumAncienDepot <= 0) return <span className="text-xs text-slate-400">-</span>;
+
+            const percent = (sumSold / sumAncienDepot) * 100;
+            return (
+              <>
+                <span className="absolute top-1 right-1 text-[10px] font-normal leading-none text-blue-600/90 select-none">
+                  ({percent.toFixed(0)}%)
+                </span>
+                <div className="flex min-h-[2.25rem] items-center justify-center text-blue-600">
+                  <span className="text-sm font-medium tabular-nums">{sumSold}</span>
+                </div>
+              </>
+            );
           }
 
           const lastUpdate = lastStockUpdatesByProduct[cp.product_id || ''];
@@ -1830,6 +1862,7 @@ export default function ClientDetailPage() {
             if (isNaN(unitPrice) || isNaN(quantity)) return null;
             const amount = unitPrice * quantity;
             return {
+              company_id: companyId,
               client_id: clientId,
               invoice_id: invoiceId,
               operation_name: a.operation_name,
