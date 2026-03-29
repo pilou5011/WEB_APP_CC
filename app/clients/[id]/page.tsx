@@ -3189,10 +3189,12 @@ export default function ClientDetailPage() {
                   
                   {/* Commentaire */}
                   {client.comment && (
-                    <div className="mt-3">
-                      <div className="flex items-start gap-2">
+                    <div className="mt-3 min-w-0">
+                      <div className="flex items-start gap-2 min-w-0">
                         <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-[#0B1F33] text-base flex-1">{client.comment}</p>
+                        <p className="text-[#0B1F33] text-base flex-1 min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                          {client.comment}
+                        </p>
                       </div>
                     </div>
                   )}

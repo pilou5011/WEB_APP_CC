@@ -2335,6 +2335,9 @@ export async function generateClientInfoPDF(
     /* --------------------------------------------------
      * Section helper (padding contenu symétrique)
      * -------------------------------------------------- */
+    const pageHeightMm = doc.internal.pageSize.getHeight();
+    const pageBottomMargin = 12;
+
     const addSection = (
       title: string,
       fields: Array<{ label: string; value: string; fullWidth?: boolean; column?: 'left' | 'right' }>
@@ -2350,74 +2353,119 @@ export async function generateClientInfoPDF(
       const lineHeight = 5;
       const fieldSpacing = 2; // Espacement vertical entre chaque label
 
-      const sectionStartY = yPosition;
+      const measureSectionHeight = (commentFontSize: number, commentLineHeight: number) => {
+        const sectionStartMeas = yPosition;
+        const contentStartMeas = sectionStartMeas + titleHeight + paddingVertical;
+        let leftYM = contentStartMeas;
+        let rightYM = contentStartMeas;
+        let cursorLeftM = true;
 
-      // 🔑 Début du contenu (APRÈS le titre)
-      const contentStartY =
-        sectionStartY + titleHeight + paddingVertical;
+        fields.forEach((field) => {
+          const isFull = field.fullWidth;
+          const value = field.value || 'Non renseigné';
 
-      /* ----------------------------
-       * 1️⃣ Calcul hauteur contenu
-       * ---------------------------- */
-      let leftY = contentStartY;
-      let rightY = contentStartY;
-      let cursorLeft = true;
+          const availableWidth = isFull
+            ? sectionWidth - paddingHorizontal * 2
+            : columnWidth;
 
-      fields.forEach(field => {
-        const isFull = field.fullWidth;
-        const value = field.value || 'Non renseigné';
+          const label = `${field.label.trim()} : `;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          const labelWidth = doc.getTextWidth(label);
 
-        const availableWidth = isFull
-          ? sectionWidth - paddingHorizontal * 2
-          : columnWidth;
+          const isBelowLabelLayout =
+            field.label === "Horaires d'ouverture" ||
+            field.label === 'Commentaire';
+          const valueWrapWidth = isBelowLabelLayout
+            ? availableWidth
+            : availableWidth - labelWidth;
 
-        const label = `${field.label.trim()} : `;
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        const labelWidth = doc.getTextWidth(label);
+          const isComment = field.label === 'Commentaire';
+          const valueFontSize = isComment ? commentFontSize : 10;
+          let valueLines = splitText(value, valueWrapWidth, valueFontSize);
+          const maxCommentLines = 95;
+          if (isComment && valueLines.length > maxCommentLines) {
+            valueLines = [
+              ...valueLines.slice(0, maxCommentLines - 1),
+              '… (suite sur la fiche client dans l’application)',
+            ];
+          }
+          const valueLH = isComment ? commentLineHeight : lineHeight;
 
-        const valueLines = splitText(
-          value,
-          availableWidth - labelWidth,
-          9
-        );
+          const blockHeight = isBelowLabelLayout
+            ? lineHeight +
+              Math.max(1, valueLines.length) * valueLH +
+              fieldSpacing
+            : Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
 
-        const blockHeight =
-          Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
+          const forceColumn = field.column;
 
-        const forceColumn = field.column;
+          if (isFull) {
+            const y = Math.max(leftYM, rightYM);
+            leftYM = y + blockHeight;
+            rightYM = leftYM;
+            cursorLeftM = true;
+          } else if (forceColumn === 'right') {
+            rightYM += blockHeight;
+          } else if (forceColumn === 'left' || cursorLeftM) {
+            leftYM += blockHeight;
+            if (!forceColumn) cursorLeftM = false;
+          } else {
+            rightYM += blockHeight;
+            const maxY = Math.max(leftYM, rightYM);
+            leftYM = maxY;
+            rightYM = maxY;
+            cursorLeftM = true;
+          }
+        });
 
-        if (isFull) {
-          const y = Math.max(leftY, rightY);
-          leftY = y + blockHeight;
-          rightY = leftY;
-          cursorLeft = true;
-        } else if (forceColumn === 'right') {
-          rightY += blockHeight;
-        } else if (forceColumn === 'left' || cursorLeft) {
-          leftY += blockHeight;
-          if (!forceColumn) cursorLeft = false;
-        } else {
-          rightY += blockHeight;
-          const maxY = Math.max(leftY, rightY);
-          leftY = maxY;
-          rightY = maxY;
-          cursorLeft = true;
+        const contentEndYM = Math.max(leftYM, rightYM);
+        const contentH = contentEndYM - contentStartMeas - fieldSpacing;
+        const sectionH =
+          titleHeight + paddingVertical + contentH + paddingVertical;
+        return { contentH, sectionH, contentStartMeas };
+      };
+
+      let pdfCommentFontSize = 10;
+      let pdfCommentLineHeight = 5;
+      let { contentHeight, sectionHeight } = (() => {
+        let m = measureSectionHeight(pdfCommentFontSize, pdfCommentLineHeight);
+        const maxH = pageHeightMm - pageBottomMargin;
+        // Réduire police du commentaire si la section dépasse une page
+        while (
+          yPosition + m.sectionH > maxH &&
+          pdfCommentFontSize > 7 &&
+          fields.some((f) => f.label === 'Commentaire')
+        ) {
+          pdfCommentFontSize -= 1;
+          pdfCommentLineHeight = pdfCommentFontSize <= 8 ? 4 : 4.5;
+          m = measureSectionHeight(pdfCommentFontSize, pdfCommentLineHeight);
         }
-      });
+        return { contentHeight: m.contentH, sectionHeight: m.sectionH };
+      })();
 
-      const contentEndY = Math.max(leftY, rightY);
-      // Retirer le fieldSpacing du dernier élément pour avoir un padding symétrique
-      const contentHeight = contentEndY - contentStartY - fieldSpacing;
+      if (yPosition + sectionHeight > pageHeightMm - pageBottomMargin) {
+        doc.addPage();
+        yPosition = margin + 10;
+        // Recalculer après saut de page (place dispo = page entière)
+        pdfCommentFontSize = 10;
+        pdfCommentLineHeight = 5;
+        let m = measureSectionHeight(pdfCommentFontSize, pdfCommentLineHeight);
+        while (
+          yPosition + m.sectionH > pageHeightMm - pageBottomMargin &&
+          pdfCommentFontSize > 7 &&
+          fields.some((f) => f.label === 'Commentaire')
+        ) {
+          pdfCommentFontSize -= 1;
+          pdfCommentLineHeight = pdfCommentFontSize <= 8 ? 4 : 4.5;
+          m = measureSectionHeight(pdfCommentFontSize, pdfCommentLineHeight);
+        }
+        contentHeight = m.contentH;
+        sectionHeight = m.sectionH;
+      }
 
-      /* ----------------------------
-       * 2️⃣ Hauteur section (clé)
-       * ---------------------------- */
-      const sectionHeight =
-        titleHeight +
-        paddingVertical +
-        contentHeight +
-        paddingVertical;
+      const sectionStartY = yPosition;
+      const contentStartY = sectionStartY + titleHeight + paddingVertical;
 
       /* ----------------------------
        * 3️⃣ Cadre
@@ -2452,9 +2500,9 @@ export async function generateClientInfoPDF(
       doc.setFontSize(10);
       doc.setTextColor('#013258');
 
-      leftY = contentStartY;
-      rightY = contentStartY;
-      cursorLeft = true;
+      let leftY = contentStartY;
+      let rightY = contentStartY;
+      let cursorLeft = true;
 
       fields.forEach(field => {
         // Ignorer les champs vides (utilisés pour forcer l'alignement)
@@ -2495,25 +2543,45 @@ export async function generateClientInfoPDF(
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
-        const valueLines = splitText(
-          value,
-          availableWidth - labelWidth,
-          10
-        );
+
+        const isBelowLabelLayout =
+          field.label === "Horaires d'ouverture" ||
+          field.label === 'Commentaire';
+        const valueWrapWidth = isBelowLabelLayout
+          ? availableWidth
+          : availableWidth - labelWidth;
+
+        const isCommentField = field.label === 'Commentaire';
+        const valueFontSize = isCommentField ? pdfCommentFontSize : 10;
+        const valueLineH = isCommentField ? pdfCommentLineHeight : lineHeight;
+
+        let valueLines = splitText(value, valueWrapWidth, valueFontSize);
+        const maxCommentLinesRender = 95;
+        if (isCommentField && valueLines.length > maxCommentLinesRender) {
+          valueLines = [
+            ...valueLines.slice(0, maxCommentLinesRender - 1),
+            '… (suite sur la fiche client dans l’application)',
+          ];
+        }
 
         valueLines.forEach((line, i) => {
-          // Pour "Horaires d'ouverture", mettre les valeurs sur une nouvelle ligne
-          const isOpeningHours = field.label === "Horaires d'ouverture";
-          const xPos = isOpeningHours ? x : (i === 0 ? x + labelWidth : x);
-          const yPos = isOpeningHours ? y + (i + 1) * lineHeight : y + i * lineHeight;
-          doc.setFontSize(10);
+          const xPos = isBelowLabelLayout
+            ? x
+            : i === 0
+              ? x + labelWidth
+              : x;
+          const yPos = isBelowLabelLayout
+            ? y + (i + 1) * valueLineH
+            : y + i * lineHeight;
+          doc.setFontSize(valueFontSize);
           doc.text(line, xPos, yPos);
         });
 
-        // Pour "Horaires d'ouverture", ajouter une ligne supplémentaire pour l'espacement
-        const isOpeningHours = field.label === "Horaires d'ouverture";
-        const blockHeight =
-          Math.max(1, valueLines.length) * lineHeight + fieldSpacing + (isOpeningHours ? lineHeight : 0);
+        const blockHeight = isBelowLabelLayout
+          ? lineHeight +
+            Math.max(1, valueLines.length) * valueLineH +
+            fieldSpacing
+          : Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
 
         if (isFull) {
           leftY = y + blockHeight;
@@ -2620,9 +2688,6 @@ export async function generateClientInfoPDF(
         });
       }
     }
-    if (client.comment) {
-      rightComplementary.push({ label: 'Commentaire', value: client.comment, column: 'right' });
-    }
     rightComplementary.push({
       label: 'Règlement',
       value: paymentMethod?.name || '',
@@ -2646,8 +2711,15 @@ export async function generateClientInfoPDF(
       });
     }
 
-    // Assembler : horaires à gauche, reste à droite
+    // Assembler : horaires à gauche, reste à droite ; commentaire en pleine largeur en dernier (meilleure coupure)
     complementaryFields.push(...leftComplementary, ...rightComplementary);
+    if (client.comment) {
+      complementaryFields.push({
+        label: 'Commentaire',
+        value: client.comment,
+        fullWidth: true,
+      });
+    }
 
     addSection('Informations complémentaires', complementaryFields);
 

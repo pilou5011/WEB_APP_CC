@@ -1419,8 +1419,8 @@ export default function ClientInfoPage() {
   // Vue d'affichage
   if (!isEditing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="container mx-auto py-8 px-4 max-w-4xl">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 overflow-x-clip">
+        <div className="container mx-auto max-w-4xl min-w-0 px-4 py-8">
           <div className="flex gap-3 mb-6">
             <Button
               variant="ghost"
@@ -1431,11 +1431,11 @@ export default function ClientInfoPage() {
             </Button>
           </div>
 
-          <Card className="border-slate-200 shadow-md">
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="text-3xl flex items-center gap-2">
+          <Card className="border-slate-200 shadow-md min-w-0 overflow-hidden">
+            <CardHeader className="min-w-0 space-y-0">
+              <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-start min-w-0">
+                <div className="min-w-0 shrink">
+                  <CardTitle className="text-3xl flex flex-wrap items-center gap-2 [word-break:break-word]">
                     <Building2 className="h-8 w-8" />
                     {client.name}
                   </CardTitle>
@@ -1443,7 +1443,7 @@ export default function ClientInfoPage() {
                     Détails complets du client
                   </CardDescription>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2 shrink-0">
                   <Button variant="outline" onClick={handleExportClientInfo}>
                     <Download className="mr-2 h-4 w-4" />
                     Exporter la fiche
@@ -1455,8 +1455,8 @@ export default function ClientInfoPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
+            <CardContent className="min-w-0">
+              <div className="space-y-6 min-w-0">
                 {/* Informations générales */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 text-slate-700 font-semibold">
@@ -1641,23 +1641,26 @@ export default function ClientInfoPage() {
                 </div>
 
                 {/* Informations complémentaires */}
-                <div className="space-y-4">
+                <div className="space-y-4 min-w-0">
                   <div className="flex items-center gap-2 text-slate-700 font-semibold">
                     <MessageSquare className="h-5 w-5" />
                     <h3>Informations complémentaires</h3>
                   </div>
                   <Separator />
-                  
-                  <div className="grid grid-cols-1 gap-6">
-                    <div>
-                      <Label className="text-slate-500 text-sm">Horaires d'ouverture</Label>
-                      <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-200">
+
+                  {/* Deux colonnes : horaires à gauche, commentaire + règlement à droite */}
+                  <div className="grid grid-cols-1 gap-6 lg:gap-8 items-start lg:[grid-template-columns:minmax(0,1fr)_minmax(0,1fr)]">
+                    <div className="min-w-0 max-w-full">
+                      <div className="text-sm font-bold text-[#1873c0]">
+                        Horaires d&apos;ouverture :
+                      </div>
+                      <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-200 min-w-0 max-w-full overflow-x-auto">
                         {client.opening_hours ? (
-                          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm font-medium">
+                          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm font-medium min-w-0">
                             {formatWeekScheduleData(client.opening_hours).map((item, index) => (
                               <React.Fragment key={`schedule-${index}`}>
-                                <div className="text-slate-600">{item.day}</div>
-                                <div className="text-slate-800">{item.hours}</div>
+                                <div className="text-slate-600 whitespace-nowrap">{item.day}</div>
+                                <div className="text-slate-800 min-w-0 break-words [overflow-wrap:anywhere]">{item.hours}</div>
                               </React.Fragment>
                             ))}
                           </div>
@@ -1667,6 +1670,23 @@ export default function ClientInfoPage() {
                       </div>
                     </div>
 
+                    <div className="min-w-0 max-w-full space-y-5">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#1873c0]">Commentaire :</div>
+                        <p className="text-base font-medium mt-2 text-[#0B1F33] w-full max-w-full min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word]">
+                          {client.comment || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#1873c0]">Règlement :</div>
+                        <p className="text-base font-medium mt-2 text-[#0B1F33] w-full max-w-full min-w-0 break-words [overflow-wrap:anywhere]">
+                          {paymentMethodName || <span className="text-slate-400">Non renseigné</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-6">
                     <div>
                       <Label className="text-slate-500 text-sm">Fréquence de passage</Label>
                       <p className="text-lg font-medium mt-1">
@@ -1713,20 +1733,6 @@ export default function ClientInfoPage() {
                           ? formatVacationPeriods(client.vacation_periods as VacationPeriod[])
                           : <span className="text-slate-400">Non renseigné</span>
                         }
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label className="text-slate-500 text-sm">Règlement</Label>
-                      <p className="text-lg font-medium mt-1">
-                        {paymentMethodName || <span className="text-slate-400">Non renseigné</span>}
-                      </p>
-                    </div>
-
-                    <div>
-                      <Label className="text-slate-500 text-sm">Commentaire</Label>
-                      <p className="text-base font-medium mt-1 whitespace-pre-wrap">
-                        {client.comment || <span className="text-slate-400">Non renseigné</span>}
                       </p>
                     </div>
 
