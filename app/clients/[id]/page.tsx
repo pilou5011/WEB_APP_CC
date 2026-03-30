@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed, User } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -3154,6 +3154,17 @@ export default function ClientDetailPage() {
                       </div>
                     )}
                     
+                    {/* Responsable (indépendant du contact tél. 1) */}
+                    {client.responsable_name && (
+                      <div className="flex items-start gap-2">
+                        <User className="h-5 w-5 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <span className="font-medium text-slate-700 text-base">Responsable : </span>
+                          <span className="text-[#0B1F33] font-semibold text-base">{client.responsable_name}</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Téléphone 1 */}
                     {client.phone && (
                       <div className="flex items-start gap-2">
@@ -3161,9 +3172,9 @@ export default function ClientDetailPage() {
                         <div>
                           <span className="font-medium text-slate-700 text-base">Tél : </span>
                           <span className="text-[#0B1F33] font-bold text-base">{formatPhoneNumber(client.phone)}</span>
-                    {(client.responsable_name || client.phone_1_info) && (
-                      <span className="text-slate-500 ml-1 text-sm">({client.responsable_name || client.phone_1_info})</span>
-                    )}
+                          {client.phone_1_info && (
+                            <span className="text-slate-500 ml-1 text-sm">({client.phone_1_info})</span>
+                          )}
                         </div>
                       </div>
                     )}
