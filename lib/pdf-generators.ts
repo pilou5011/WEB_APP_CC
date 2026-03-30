@@ -2289,10 +2289,12 @@ export async function generateClientInfoPDF(
     /* --------------------------------------------------
      * HEADER
      * -------------------------------------------------- */
-    // Premier contact en haut à gauche (nom + téléphone)
-    const contactName = client.responsable_name?.trim() || client.phone_1_info?.trim() || null;
+    // En-tête : nom du responsable uniquement (pas le contact tél. 1) ; tél. 1 = numéro + info contact
+    const contactName = client.responsable_name?.trim() || null;
+    const phone1Info = client.phone_1_info?.trim();
     const contactPhone = client.phone?.trim()
-      ? formatPhoneNumber(client.phone)
+      ? formatPhoneNumber(client.phone) +
+        (phone1Info ? ` (${phone1Info})` : '')
       : null;
     if (contactName || contactPhone) {
       const leftX = margin;
