@@ -159,13 +159,20 @@ export function Header() {
     }
   };
 
-  // Ne pas afficher le header sur la page d'authentification
-  if (pathname?.startsWith('/auth')) {
+  // Ne pas afficher le header sur les pages publiques
+  if (
+    pathname?.startsWith('/auth') ||
+    pathname === '/' ||
+    pathname === '/landing' ||
+    pathname === '/mentions-legales' ||
+    pathname === '/politique-confidentialite' ||
+    pathname === '/conditions-generales-utilisation'
+  ) {
     return null;
   }
 
   const navItems = [
-    { label: 'Accueil', href: '/', icon: Home },
+    { label: 'Accueil', href: '/app', icon: Home },
     { label: 'Clients', href: '/clients', icon: Users },
     { label: 'Produits', href: '/products', icon: Package },
     { label: 'Bibliothèque', href: '/library', icon: Library },

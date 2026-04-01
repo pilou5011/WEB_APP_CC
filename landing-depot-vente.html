@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logiciel depot-vente: facturation, stock et commissions</title>
+  <meta
+    name="description"
+    content="Solution SaaS dediee aux professionnels du depot-vente: gestion des depots, suivi des ventes, commissions et facturation conforme. Anticipez la facturation electronique."
+  />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:title" content="Logiciel depot-vente: facturation, stock et commissions" />
+  <meta
+    property="og:description"
+    content="Le logiciel specialise pour piloter votre depot-vente: stock, depots, factures conformes et preparation a la facturation electronique."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="fr_FR" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: "#eef6ff",
+              100: "#d7eaff",
+              500: "#0f6fff",
+              600: "#0c57ca",
+              700: "#0b469f",
+              900: "#0a1f44"
+            }
+          },
+          boxShadow: {
+            soft: "0 10px 30px rgba(13, 26, 51, 0.08)"
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    html {
+      scroll-behavior: smooth;
+    }
+    .gradient-hero {
+      background:
+        radial-gradient(circle at 10% 20%, rgba(15, 111, 255, 0.15), transparent 35%),
+        radial-gradient(circle at 80% 10%, rgba(12, 87, 202, 0.15), transparent 40%),
+        linear-gradient(180deg, #f9fbff 0%, #ffffff 60%);
+    }
+  </style>
+</head>
+<body class="bg-white text-slate-800 antialiased">
+  <header class="sticky top-0 z-40 border-b border-slate-100 bg-white/95 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+      <a href="#hero" class="text-lg font-semibold tracking-tight text-brand-900">DepotVente Pro</a>
+      <nav class="hidden gap-6 text-sm text-slate-600 md:flex">
+        <a class="transition hover:text-brand-700" href="#solution">Solution</a>
+        <a class="transition hover:text-brand-700" href="#fonctionnalites">Fonctionnalites</a>
+        <a class="transition hover:text-brand-700" href="#facturation-electronique">Facturation electronique</a>
+        <a class="transition hover:text-brand-700" href="#devis">Demander un devis</a>
+      </nav>
+      <a
+        href="#devis"
+        class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+      >
+        Demander un devis
+      </a>
+    </div>
+  </header>
+
+  <main>
+    <section id="hero" class="gradient-hero">
+      <div class="mx-auto grid max-w-7xl gap-12 px-6 py-16 md:grid-cols-2 md:py-24">
+        <div>
+          <p class="mb-4 inline-flex rounded-full bg-brand-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-brand-700">
+            Specialise 100% depot-vente
+          </p>
+          <h1 class="text-4xl font-bold leading-tight text-brand-900 md:text-5xl">
+            Le logiciel depot-vente qui simplifie votre gestion et securise votre facturation
+          </h1>
+          <p class="mt-6 max-w-xl text-lg text-slate-600">
+            Centralisez vos depots, vos stocks, vos ventes et vos commissions dans une interface claire. Gagnez du temps chaque jour tout en restant conforme aux obligations fiscales.
+          </p>
+          <div class="mt-8 flex flex-wrap gap-4">
+            <a
+              href="#devis"
+              class="rounded-lg bg-brand-500 px-6 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-brand-600"
+            >
+              Demander un devis
+            </a>
+            <a
+              href="#solution"
+              class="rounded-lg border border-slate-200 px-6 py-3 font-semibold text-slate-700 transition hover:border-brand-300 hover:text-brand-700"
+            >
+              Voir la solution
+            </a>
+          </div>
+          <div class="mt-8 grid grid-cols-3 gap-4 text-sm text-slate-600">
+            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-soft">
+              <p class="text-xl font-bold text-brand-900">-40%</p>
+              <p>de temps administratif</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-soft">
+              <p class="text-xl font-bold text-brand-900">100%</p>
+              <p>oriente depot-vente</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-white p-3 shadow-soft">
+              <p class="text-xl font-bold text-brand-900">Conforme</p>
+              <p>facturation et suivi</p>
+            </div>
+          </div>
+        </div>
+        <div class="relative">
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+            <div class="mb-4 rounded-xl bg-slate-100 p-2 text-xs text-slate-500">Apercu de l'interface (placeholder)</div>
+            <div class="space-y-3">
+              <div class="rounded-lg bg-slate-50 p-4">
+                <p class="text-sm font-semibold text-slate-700">Depots en cours</p>
+                <p class="mt-1 text-2xl font-bold text-brand-900">324</p>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div class="rounded-lg bg-slate-50 p-4">
+                  <p class="text-xs text-slate-500">Ventes du jour</p>
+                  <p class="text-lg font-bold text-brand-900">4 280 EUR</p>
+                </div>
+                <div class="rounded-lg bg-slate-50 p-4">
+                  <p class="text-xs text-slate-500">Commissions</p>
+                  <p class="text-lg font-bold text-brand-900">812 EUR</p>
+                </div>
+              </div>
+              <div class="rounded-lg bg-slate-50 p-4">
+                <p class="text-xs text-slate-500">Factures emises</p>
+                <p class="text-lg font-bold text-brand-900">38 ce mois-ci</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mx-auto max-w-7xl px-6 py-16">
+      <h2 class="text-3xl font-bold text-brand-900">Les difficultes quotidiennes en depot-vente</h2>
+      <p class="mt-3 max-w-3xl text-slate-600">
+        Entre les depots, les ventes, les commissions et les obligations fiscales, gerer un depot-vente manuellement devient vite chronophage et risquee.
+      </p>
+      <div class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Gestion manuelle compliquee</h3>
+          <p class="mt-2 text-sm text-slate-600">Fichiers disperses, saisies repetitives, manque de vision globale.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Erreurs de facturation</h3>
+          <p class="mt-2 text-sm text-slate-600">Risque d'erreur sur les montants, la TVA ou les informations legales.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Suivi des depots difficile</h3>
+          <p class="mt-2 text-sm text-slate-600">Difficulte a savoir ce qui est vendu, disponible ou a restituer.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Perte de temps importante</h3>
+          <p class="mt-2 text-sm text-slate-600">Le temps administratif prend le pas sur la vente et la relation client.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Commissions complexes</h3>
+          <p class="mt-2 text-sm text-slate-600">Calculer juste et rapidement les reversions aux deposants reste sensible.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:-translate-y-1 hover:shadow-soft">
+          <h3 class="font-semibold text-brand-900">Contraintes legales evolutives</h3>
+          <p class="mt-2 text-sm text-slate-600">Les obligations changent, et anticiper devient indispensable.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="solution" class="bg-slate-50 py-16">
+      <div class="mx-auto max-w-7xl px-6">
+        <h2 class="text-3xl font-bold text-brand-900">Une solution pensee pour votre metier</h2>
+        <p class="mt-3 max-w-3xl text-slate-600">
+          DepotVente Pro reunit toutes les fonctions essentielles d'un depot-vente dans un seul outil. Vous travaillez plus vite, avec moins d'erreurs et une meilleure tracabilite.
+        </p>
+        <div class="mt-8 grid gap-4 md:grid-cols-2">
+          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Gestion des depots simplifiee</h3>
+            <p class="mt-2 text-sm text-slate-600">Enregistrez les articles, les deposants et les conditions de vente en quelques clics.</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Facturation automatisee et conforme</h3>
+            <p class="mt-2 text-sm text-slate-600">Generez rapidement des factures fiables et alignees avec les exigences fiscales.</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Suivi des ventes en temps reel</h3>
+            <p class="mt-2 text-sm text-slate-600">Visualisez vos mouvements de stock, vos ventes et vos marges sans attendre.</p>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Commissions claires et maitrisees</h3>
+            <p class="mt-2 text-sm text-slate-600">Calculez vos commissions et vos reversements de facon transparente.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="fonctionnalites" class="mx-auto max-w-7xl px-6 py-16">
+      <h2 class="text-3xl font-bold text-brand-900">Fonctionnalites cles</h2>
+      <div class="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">👥</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Gestion des deposants</h3>
+          <p class="mt-2 text-sm text-slate-600">Fiches deposants, historique des depots et suivi des reversements.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">📦</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Gestion des stocks</h3>
+          <p class="mt-2 text-sm text-slate-600">Etat en temps reel des articles disponibles, vendus ou a restituer.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">🧾</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Facturation conforme</h3>
+          <p class="mt-2 text-sm text-slate-600">Documents clairs et conformes pour limiter les erreurs administratives.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">📊</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Tableaux de bord</h3>
+          <p class="mt-2 text-sm text-slate-600">Indicateurs utiles pour piloter l'activite et prendre les bonnes decisions.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">🧮</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Gestion des commissions</h3>
+          <p class="mt-2 text-sm text-slate-600">Calcul automatique des commissions selon vos regles metier.</p>
+        </article>
+        <article class="rounded-xl border border-slate-200 p-5 transition hover:border-brand-300 hover:shadow-soft">
+          <p class="text-2xl">📁</p>
+          <h3 class="mt-2 font-semibold text-brand-900">Export et reporting</h3>
+          <p class="mt-2 text-sm text-slate-600">Exports exploitables pour la comptabilite et le pilotage mensuel.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="bg-brand-900 py-16 text-white">
+      <div class="mx-auto max-w-7xl px-6">
+        <h2 class="text-3xl font-bold">Pourquoi nous choisir</h2>
+        <div class="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+          <div class="rounded-xl border border-white/20 bg-white/5 p-4">100% dedie depot-vente</div>
+          <div class="rounded-xl border border-white/20 bg-white/5 p-4">Prise en main rapide</div>
+          <div class="rounded-xl border border-white/20 bg-white/5 p-4">Gain de temps massif</div>
+          <div class="rounded-xl border border-white/20 bg-white/5 p-4">Solution evolutive</div>
+          <div class="rounded-xl border border-white/20 bg-white/5 p-4">Conformite legale</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mx-auto max-w-7xl px-6 py-16" aria-labelledby="seo-title">
+      <h2 id="seo-title" class="text-3xl font-bold text-brand-900">Logiciel depot-vente: visibilite SEO et metier</h2>
+      <p class="mt-4 max-w-4xl text-slate-600">
+        Si vous recherchez un <strong>logiciel facturation depot vente</strong>, une solution de <strong>gestion depot vente</strong> ou un <strong>logiciel depot vente</strong> vraiment adapte a votre activite, DepotVente Pro repond aux besoins concrets du terrain. Notre plateforme vous accompagne egalement sur la <strong>facturation electronique depot vente</strong> pour aborder sereinement les prochaines obligations.
+      </p>
+    </section>
+
+    <section id="facturation-electronique" class="bg-slate-50 py-16">
+      <div class="mx-auto max-w-7xl px-6">
+        <h2 class="text-3xl font-bold text-brand-900">Anticipez la facturation electronique obligatoire</h2>
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+          <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Une obligation qui approche</h3>
+            <p class="mt-2 text-sm text-slate-600">Les exigences de facturation evoluent et demandent une organisation fiable.</p>
+          </article>
+          <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Un enjeu de conformite</h3>
+            <p class="mt-2 text-sm text-slate-600">Mieux vaut structurer vos processus maintenant pour eviter les urgences.</p>
+          </article>
+          <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-soft">
+            <h3 class="font-semibold text-brand-900">Un accompagnement progressif</h3>
+            <p class="mt-2 text-sm text-slate-600">Notre application vous aide a poser les bonnes bases des aujourd'hui.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mx-auto max-w-7xl px-6 py-16">
+      <h2 class="text-3xl font-bold text-brand-900">Ils nous font confiance</h2>
+      <div class="mt-8 grid gap-4 md:grid-cols-3">
+        <blockquote class="rounded-xl border border-slate-200 p-5 shadow-soft">
+          <p class="text-sm text-slate-600">"Nous avons reduit le temps de gestion des depots de facon visible en quelques semaines."</p>
+          <footer class="mt-3 text-sm font-semibold text-brand-900">Boutique Vintage Lyon (placeholder)</footer>
+        </blockquote>
+        <blockquote class="rounded-xl border border-slate-200 p-5 shadow-soft">
+          <p class="text-sm text-slate-600">"Le suivi des commissions est enfin clair, et les erreurs de facturation ont chute."</p>
+          <footer class="mt-3 text-sm font-semibold text-brand-900">Concept Store Bordeaux (placeholder)</footer>
+        </blockquote>
+        <blockquote class="rounded-xl border border-slate-200 p-5 shadow-soft">
+          <p class="text-sm text-slate-600">"Une solution vraiment pensee pour le depot-vente, pas un outil generaliste."</p>
+          <footer class="mt-3 text-sm font-semibold text-brand-900">Reseau Depot Plus (placeholder)</footer>
+        </blockquote>
+      </div>
+    </section>
+
+    <section class="bg-slate-50 py-16">
+      <div class="mx-auto max-w-4xl px-6">
+        <h2 class="text-3xl font-bold text-brand-900">FAQ</h2>
+        <div class="mt-6 space-y-3">
+          <details class="group rounded-xl border border-slate-200 bg-white p-4">
+            <summary class="cursor-pointer list-none font-semibold text-brand-900">Le logiciel est-il reserve au depot-vente ?</summary>
+            <p class="mt-2 text-sm text-slate-600">Oui. Toute la logique est concue pour les depots, les deposants, les ventes et les commissions.</p>
+          </details>
+          <details class="group rounded-xl border border-slate-200 bg-white p-4">
+            <summary class="cursor-pointer list-none font-semibold text-brand-900">Combien de temps faut-il pour demarrer ?</summary>
+            <p class="mt-2 text-sm text-slate-600">La prise en main est rapide. Nous adaptons l'onboarding a votre niveau et a votre volume d'articles.</p>
+          </details>
+          <details class="group rounded-xl border border-slate-200 bg-white p-4">
+            <summary class="cursor-pointer list-none font-semibold text-brand-900">Puis-je suivre mes commissions automatiquement ?</summary>
+            <p class="mt-2 text-sm text-slate-600">Oui, le calcul des commissions et les reversements sont structures pour gagner du temps et fiabiliser vos chiffres.</p>
+          </details>
+          <details class="group rounded-xl border border-slate-200 bg-white p-4">
+            <summary class="cursor-pointer list-none font-semibold text-brand-900">La solution aide-t-elle pour la facturation electronique ?</summary>
+            <p class="mt-2 text-sm text-slate-600">Oui, elle vous aide a preparer vos flux et vos pratiques pour anticiper l'evolution reglementaire.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section id="devis" class="py-16">
+      <div class="mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white px-6 py-10 shadow-soft">
+        <h2 class="text-3xl font-bold text-brand-900">Parlons de votre depot-vente</h2>
+        <p class="mt-3 text-slate-600">
+          Decrivez votre besoin en 1 minute. Nous revenons vers vous rapidement avec une proposition adaptee.
+        </p>
+        <form id="quote-form" class="mt-8 grid gap-4 md:grid-cols-2" novalidate>
+          <div>
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="nom">Nom</label>
+            <input id="nom" name="nom" type="text" required class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="prenom">Prenom</label>
+            <input id="prenom" name="prenom" type="text" required class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="email">Email</label>
+            <input id="email" name="email" type="email" required class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="entreprise">Nom de l'entreprise</label>
+            <input id="entreprise" name="entreprise" type="text" required class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="message">Message</label>
+            <textarea id="message" name="message" rows="5" required class="w-full rounded-lg border border-slate-300 px-3 py-2 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100" placeholder="Ex: nombre de deposants, volume mensuel, besoins de facturation..."></textarea>
+          </div>
+          <div class="md:col-span-2 flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              class="rounded-lg bg-brand-500 px-6 py-3 font-semibold text-white transition hover:-translate-y-0.5 hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
+            >
+              Demander un devis
+            </button>
+            <p class="text-sm text-slate-500">Reponse rapide par email.</p>
+          </div>
+          <p id="form-feedback" class="md:col-span-2 text-sm text-red-600" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+    </section>
+
+    <section class="bg-brand-900 py-14 text-white">
+      <div class="mx-auto flex max-w-5xl flex-col items-center gap-5 px-6 text-center">
+        <h2 class="text-3xl font-bold">Transformez la gestion de votre depot-vente</h2>
+        <p class="max-w-2xl text-white/85">
+          Une solution specialisee, simple et fiable pour gagner du temps, rester conforme et preparer l'avenir.
+        </p>
+        <a href="#devis" class="rounded-lg bg-white px-6 py-3 font-semibold text-brand-900 transition hover:bg-slate-100">
+          Demander un devis
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-200 bg-white">
+    <div class="mx-auto grid max-w-7xl gap-6 px-6 py-10 md:grid-cols-3">
+      <div>
+        <p class="font-semibold text-brand-900">DepotVente Pro</p>
+        <p class="mt-2 text-sm text-slate-600">La plateforme SaaS specialisee pour les professionnels du depot-vente.</p>
+      </div>
+      <div>
+        <p class="font-semibold text-brand-900">Contact</p>
+        <p class="mt-2 text-sm text-slate-600">Email: contact@votre-domaine.fr</p>
+        <p class="text-sm text-slate-600">Tel: 01 23 45 67 89</p>
+      </div>
+      <div>
+        <p class="font-semibold text-brand-900">Informations legales</p>
+        <p class="mt-2 text-sm text-slate-600">Mentions legales (placeholder)</p>
+        <p class="text-sm text-slate-600">Politique de confidentialite (placeholder)</p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      const form = document.getElementById("quote-form");
+      const feedback = document.getElementById("form-feedback");
+      const recipient = "contact@votre-domaine.fr";
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        feedback.textContent = "";
+
+        const data = new FormData(form);
+        const nom = String(data.get("nom") || "").trim();
+        const prenom = String(data.get("prenom") || "").trim();
+        const email = String(data.get("email") || "").trim();
+        const entreprise = String(data.get("entreprise") || "").trim();
+        const message = String(data.get("message") || "").trim();
+
+        if (!nom || !prenom || !email || !entreprise || !message) {
+          feedback.textContent = "Merci de remplir tous les champs avant l'envoi.";
+          return;
+        }
+
+        const subject = encodeURIComponent("Demande de devis - " + entreprise);
+        const body = encodeURIComponent(
+          "Nom: " + nom + "\n" +
+          "Prenom: " + prenom + "\n" +
+          "Email: " + email + "\n" +
+          "Entreprise: " + entreprise + "\n\n" +
+          "Message:\n" + message
+        );
+
+        window.location.href = "mailto:" + recipient + "?subject=" + subject + "&body=" + body;
+      });
+    })();
+  </script>
+</body>
+</html>
