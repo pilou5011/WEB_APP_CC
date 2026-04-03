@@ -1,13 +1,36 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { LANDING_FAQ_ITEMS } from '@/lib/landing-faq';
 
 export default function LandingClient() {
+  const router = useRouter();
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showContactInfo, setShowContactInfo] = useState(false);
   const recipient = 'contact@gastonstock.com';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const redirectIfAuthenticated = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!cancelled && session) {
+        router.replace('/app');
+      }
+    };
+
+    redirectIfAuthenticated();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -247,7 +270,9 @@ export default function LandingClient() {
 
       <section id="solution" className="bg-slate-50 py-16">
         <div className="mx-auto max-w-7xl px-6">
-          <h2 className="text-3xl font-bold text-[#0B1F33]">Gaston Stock, la solution métier pour le dépôt-vente</h2>
+          <h2 className="text-3xl font-bold text-[#0B1F33]">
+            Gestion dépôt-vente : la solution métier Gaston Stock
+          </h2>
           <p className="mt-3 max-w-3xl text-slate-600">
             Gaston Stock est pensé pour les professionnels qui enchaînent dépôts en point de vente et relevés espacés
             dans le temps. L&apos;application structure tout le cycle pour remplacer une gestion encore trop manuelle
@@ -284,12 +309,12 @@ export default function LandingClient() {
       </section>
 
       <section id="fonctionnalites" className="mx-auto max-w-7xl px-6 py-16">
-        <h2 className="text-3xl font-bold text-[#0B1F33]">Fonctionnalités clés</h2>
+        <h2 className="text-3xl font-bold text-[#0B1F33]">Logiciel dépôt-vente : fonctionnalités clés</h2>
         <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {[
-            ['👥', 'Gestion des clients', 'Fiches complètes, historique des dépôts, suivi des ventes et aide à la préaparation des tournées.'],
+            ['👥', 'Gestion des clients', 'Fiches complètes, historique des dépôts, suivi des ventes et aide à la préparation des tournées.'],
             ['📦', 'Gestion des produits et du stock', 'Vision claire des articles déposés chez vos clients.'],
-            ['🧾', 'Facturation conforme', 'Documents clairs et conformes pour limiter les erreurs administratives. compatible avec la facturation électronique.'],
+            ['🧾', 'Facturation dépôt-vente conforme', 'Documents clairs et conformes pour limiter les erreurs administratives. Compatible avec la facturation électronique.'],
             ['📊', 'Relevé de stock et suivi de ventes', "Visualisation claire des ventes et analyses des ventes passées."],
             ['🧮', 'Commissions et reprises de stock', 'Calcul automatique des factures, du bon de dépôt, et gardez une traçabilité fiable.'],
             ['📁', 'Bon de dépôt, exports et reporting', 'Générez vos documents et facilitez la comptabilité. Exportez facilement vos données pour la comptabilité.'],
@@ -324,19 +349,20 @@ export default function LandingClient() {
 
       <section className="mx-auto max-w-7xl px-6 py-16" aria-labelledby="seo-title">
         <h2 id="seo-title" className="text-3xl font-bold text-[#0B1F33]">
-          Un positionnement clair pour les pros du dépôt-vente
+          Logiciel dépôt-vente : pourquoi choisir Gaston Stock
         </h2>
         <p className="mt-4 max-w-4xl text-slate-600">
-          Si vous recherchez un <strong>logiciel de facturation</strong>, une solution de
-          <strong> gestion dépôt vente</strong> ou un <strong>logiciel conçu sur mesure pour votre activité</strong>,
-          Gaston Stock répond à vos besoins quotidiens. La plateforme vous aide aussi à préparer la
-          <strong> facturation électronique dépôt vente</strong> avec une base solide.
+          Si vous recherchez un <strong>logiciel dépôt-vente</strong> pour la <strong>gestion dépôt-vente</strong> et la{' '}
+          <strong>facturation dépôt-vente</strong>, Gaston Stock centralise dépôts, relevés et commissions. La
+          plateforme vous prépare aussi à la <strong>facturation électronique dépôt-vente</strong> sur des bases fiables.
         </p>
       </section>
 
       <section id="facturation-electronique" className="bg-slate-50 py-16">
         <div className="mx-auto max-w-7xl px-6">
-          <h2 className="text-3xl font-bold text-[#0B1F33]">Anticipez la facturation électronique obligatoire</h2>
+          <h2 className="text-3xl font-bold text-[#0B1F33]">
+            Facturation électronique dépôt-vente : anticiper l&apos;obligation
+          </h2>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
             {[
               ['Une obligation qui arrive', 'Les règles évoluent et demandent des données structurées et fiables.'],
@@ -356,44 +382,7 @@ export default function LandingClient() {
         <div className="mx-auto max-w-4xl px-6">
           <h2 className="text-3xl font-bold text-[#0B1F33]">FAQ</h2>
           <div className="mt-6 space-y-3">
-            {[
-              [
-                'Gaston Stock est-il réservé aux activités de dépôt-vente ?',
-                "Oui. Toute la logique de l'outil est conçue spécifiquement pour des activités qui fonctionnent en dépôt-vente. Une entreprise qui cumule vente ferme et vente en dépôt peut tout à fait utiliser Gaston Stock pour gérer son activité.",
-              ],
-              [
-                'Combien de temps faut-il pour démarrer ?',
-                "La prise en main de l'application est très rapide. Grâce à une interface simple et intuitive, vous pouvez commencer à utiliser Gaston Stock en quelques minutes. Vous pouvez également bénéficier d'un accompagnement personnalisé pour vous aider à démarrer rapidement.",
-              ],
-              [
-                'La solution aide-t-elle pour la facturation électronique ?',
-                "Oui. Gaston Stock vous aide à préparer vos flux de facturation pour anticiper l'évolution réglementaire.",
-              ],
-              [
-                "Quel est le prix de l'application ?",
-                "Le prix dépend des caractéristiques de votre activité et de vos besoins (volume, organisation, fonctionnalités attendues). Nous vous proposons un chiffrage adapté après échange.",
-              ],
-              [
-                'Puis-je importer mes clients / produits / stocks existants (Excel, CSV, autre) ?',
-                'La reprise de données s’organise avec vous au démarrage. Indiquez dans votre demande de devis quels fichiers vous avez (Excel, export CSV, autre outil) : nous vous proposons la méthode la plus adaptée pour basculer sans perdre l’essentiel de votre historique.',
-              ],
-              [
-                'L’application fonctionne-t-elle sur tablette / mobile pour le terrain ?',
-                'Gaston Stock est une application web : vous y accédez via un navigateur sur ordinateur, avec un pc ou une tablette idéalement.',
-              ],
-              [
-                'Plusieurs utilisateurs et droits (admin, commercial, comptabilité) sont-ils possibles ?',
-                'Oui. Vous pouvez travailler à plusieurs au sein de votre structure, avec des comptes distincts et des rôles différenciés (par exemple administration, exploitation au quotidien, ou accès plus restreint). La répartition exacte des droits peut être affinée selon votre organisation.',
-              ],
-              [
-                'Gestion de la TVA, avoirs, régularisations : comment c’est géré ?',
-                'Les avoirs et les régularisations liées au cycle dépôt-vente (mouvements de stock, reprises, corrections) sont pris en charge dans le flux documentaire de l’application. Pour toute validation fiscale ou comptable pointue, nous recommandons de croiser avec votre expert-comptable.',
-              ],
-              [
-                'Où sont hébergées les données (UE) ?',
-                'Les données sont hébergées sur une infrastructure cloud sécurisée située dans l’Union européenne. Les règles de confidentialité des données sont respectées et vos données sont protégées.',
-              ],
-            ].map(([q, a]) => (
+            {LANDING_FAQ_ITEMS.map(([q, a]) => (
               <details key={q} className="rounded-xl border border-slate-200 bg-white p-4">
                 <summary className="cursor-pointer list-none font-semibold text-[#0B1F33]">{q}</summary>
                 <p className="mt-2 text-sm text-slate-600">{a}</p>
@@ -528,9 +517,24 @@ export default function LandingClient() {
             </p>
           </div>
           <div>
-            <p className="font-semibold text-[#0B1F33]">Contact</p>
-            <p className="mt-2 text-sm text-slate-600">Email: {recipient}</p>
-            <p className="text-sm text-slate-600">Tél: 06 23 93 74 52</p>
+            <p className="font-semibold text-[#0B1F33]">Contact & devis</p>
+            <p className="mt-2 text-sm">
+              <a href="#devis" className="text-[#0B1F33] font-medium underline decoration-[#0B1F33]/30 underline-offset-2 hover:decoration-[#0B1F33]">
+                Demander un devis
+              </a>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Email :{' '}
+              <a href={`mailto:${recipient}`} className="text-slate-600 underline hover:text-[#0B1F33]">
+                {recipient}
+              </a>
+            </p>
+            <p className="text-sm text-slate-600">
+              Tél :{' '}
+              <a href="tel:+33623937452" className="text-slate-600 underline hover:text-[#0B1F33]">
+                06 23 93 74 52
+              </a>
+            </p>
           </div>
           <div>
             <p className="font-semibold text-[#0B1F33]">Informations légales</p>

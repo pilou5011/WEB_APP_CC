@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: 'Politique de confidentialité | Gaston Stock',
   description:
     'Politique de confidentialité de Gaston Stock : collecte, usage, conservation et protection des données personnelles.',
+  alternates: {
+    canonical: '/politique-confidentialite',
+  },
 };
 
 export default function PolitiqueConfidentialitePage() {
@@ -261,7 +264,7 @@ export default function PolitiqueConfidentialitePage() {
         </section>
 
         <div className="mt-10 border-t border-slate-200 pt-6 text-sm">
-          <Link href="/landing" className="text-blue-700 hover:underline">
+          <Link href="/" className="text-blue-700 hover:underline">
             Retour à la page d&apos;accueil
           </Link>
         </div>

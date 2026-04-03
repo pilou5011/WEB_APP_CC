@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: "Conditions Générales d'Utilisation | Gaston Stock",
   description:
     "Conditions Générales d'Utilisation de Gaston Stock, solution SaaS de gestion et facturation pour les professionnels du dépôt-vente.",
+  alternates: {
+    canonical: '/conditions-generales-utilisation',
+  },
 };
 
 export default function ConditionsGeneralesUtilisationPage() {
@@ -165,7 +168,7 @@ export default function ConditionsGeneralesUtilisationPage() {
         </section>
 
         <div className="mt-10 border-t border-slate-200 pt-6 text-sm">
-          <Link href="/landing" className="text-blue-700 hover:underline">
+          <Link href="/" className="text-blue-700 hover:underline">
             Retour à la page d&apos;accueil
           </Link>
         </div>

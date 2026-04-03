@@ -165,7 +165,7 @@ export default function AcceptInvitationPage() {
       }
 
       toast.success('Compte créé avec succès ! Vous êtes maintenant connecté.');
-      router.push('/');
+      router.replace('/app');
     } catch (error: any) {
       console.error('Error accepting invitation:', error);
       toast.error(error.message || 'Erreur lors de l\'acceptation de l\'invitation');

@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   title: 'Mentions légales | Gaston Stock',
   description:
     'Mentions légales de Gaston Stock, logiciel SaaS de gestion et facturation pour les professionnels du dépôt-vente.',
+  alternates: {
+    canonical: '/mentions-legales',
+  },
 };
 
 export default function MentionsLegalesPage() {
@@ -93,7 +96,7 @@ export default function MentionsLegalesPage() {
         </section>
 
         <div className="mt-10 border-t border-slate-200 pt-6 text-sm">
-          <Link href="/landing" className="text-blue-700 hover:underline">
+          <Link href="/" className="text-blue-700 hover:underline">
             Retour à la page d&apos;accueil
           </Link>
         </div>

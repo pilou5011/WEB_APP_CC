@@ -163,7 +163,6 @@ export function Header() {
   if (
     pathname?.startsWith('/auth') ||
     pathname === '/' ||
-    pathname === '/landing' ||
     pathname === '/mentions-legales' ||
     pathname === '/politique-confidentialite' ||
     pathname === '/conditions-generales-utilisation'

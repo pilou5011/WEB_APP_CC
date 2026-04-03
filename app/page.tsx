@@ -1,12 +1,32 @@
 import type { Metadata } from 'next';
-import HomeGate from './landing/home-gate';
+import LandingClient from './landing/landing-client';
+import { LandingJsonLd } from './landing-json-ld';
+import { SITE_URL, absoluteUrl } from '@/lib/site-config';
+
+const homeDescription =
+  'Dépôts, relevés, commissions : gestion dépôt-vente et facturation conforme. Anticipez la facturation électronique. Gagnez du temps — devis sur mesure avec Gaston Stock.';
 
 export const metadata: Metadata = {
-  title: 'Gaston Stock | Logiciel de dépôt-vente',
-  description:
-    'Gaston Stock, solution SaaS pour les professionnels du dépôt-vente : gestion des dépôts, suivi des ventes, commissions et facturation conforme.',
+  title: {
+    absolute: 'Logiciel dépôt-vente | Gestion & facturation | Gaston Stock',
+  },
+  description: homeDescription,
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    url: SITE_URL,
+    title: 'Logiciel dépôt-vente | Gestion & facturation | Gaston Stock',
+    description: homeDescription,
+    images: [absoluteUrl('/og-gaston-stock.jpg')],
+  },
 };
 
 export default function HomePage() {
-  return <HomeGate />;
+  return (
+    <>
+      <LandingJsonLd />
+      <LandingClient />
+    </>
+  );
 }
