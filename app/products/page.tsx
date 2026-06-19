@@ -19,14 +19,33 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { CategoriesManager } from '@/components/categories-manager';
+import { saveListFilters, useRestoreListFilters } from '@/lib/list-filter-storage';
+
+const PRODUCTS_FILTERS_STORAGE_KEY = 'products-list-filters';
+
+type ProductsListFilters = {
+  searchTerm: string;
+  selectedCategories: string[];
+  selectedSubcategories: string[];
+};
+
+const DEFAULT_PRODUCTS_FILTERS: ProductsListFilters = {
+  searchTerm: '',
+  selectedCategories: [],
+  selectedSubcategories: [],
+};
 
 export default function ProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState(DEFAULT_PRODUCTS_FILTERS.searchTerm);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(
+    DEFAULT_PRODUCTS_FILTERS.selectedCategories
+  );
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(
+    DEFAULT_PRODUCTS_FILTERS.selectedSubcategories
+  );
   const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
   const [subcategoryFilterOpen, setSubcategoryFilterOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -61,11 +80,31 @@ export default function ProductsPage() {
   const [deleteCategoryDialogOpen, setDeleteCategoryDialogOpen] = useState(false);
   const [deleteSubcategoryDialogOpen, setDeleteSubcategoryDialogOpen] = useState(false);
 
+  const filtersRestored = useRestoreListFilters(
+    PRODUCTS_FILTERS_STORAGE_KEY,
+    DEFAULT_PRODUCTS_FILTERS,
+    (stored) => {
+      setSearchTerm(stored.searchTerm);
+      setSelectedCategories(stored.selectedCategories);
+      setSelectedSubcategories(stored.selectedSubcategories);
+    }
+  );
+
   useEffect(() => {
     loadProducts();
     loadCategories();
     loadSubcategories();
   }, []);
+
+  useEffect(() => {
+    if (!filtersRestored) return;
+
+    saveListFilters(PRODUCTS_FILTERS_STORAGE_KEY, {
+      searchTerm,
+      selectedCategories,
+      selectedSubcategories,
+    });
+  }, [filtersRestored, searchTerm, selectedCategories, selectedSubcategories]);
 
   const loadCategories = async () => {
     try {
