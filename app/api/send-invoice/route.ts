@@ -61,10 +61,14 @@ export async function POST(request: NextRequest) {
             ${messageBody}
           </p>
           <p style="margin: 0 0 12px 0;">
-            Pour toute question ou précision, merci de répondre directement à cette adresse : ${
+            Je reste à votre disposition pour toute question ou information complémentaire à cette adresse : ${
               senderEmail ? `<strong>${senderEmail}</strong>` : 'votre interlocuteur habituel'
             }.
           </p>
+          <p style="margin: 0 0 12px 0;">
+            Je vous remercie pour votre confiance et vous souhaite une excellente journée.
+          </p>
+          <p style="margin: 0 0 12px 0;">
             Bien cordialement,
             <br/>
             ${senderName || ''}${senderCompanyName ? ` - ${senderCompanyName}` : ''}${

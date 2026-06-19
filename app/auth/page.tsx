@@ -28,7 +28,7 @@ export default function AuthPage() {
   const checkSession = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
-      router.push('/');
+      router.replace('/app');
     }
   };
 
@@ -226,7 +226,7 @@ export default function AuthPage() {
             });
 
             toast.success('Compte corrigé et connexion réussie !');
-            router.push('/');
+            router.replace('/app');
             router.refresh();
             setLoading(false);
             return;
@@ -268,7 +268,7 @@ export default function AuthPage() {
           });
 
           toast.success('Compte activé et connexion réussie !');
-          router.push('/');
+          router.replace('/app');
           router.refresh();
           setLoading(false);
           return;
@@ -289,7 +289,7 @@ export default function AuthPage() {
       }
 
       toast.success('Connexion réussie');
-      router.push('/');
+      router.replace('/app');
       router.refresh(); // Forcer le rafraîchissement pour charger les nouvelles données
     } catch (error: any) {
       console.error('Login error:', error);
@@ -694,8 +694,8 @@ export default function AuthPage() {
 
       toast.success('Compte créé avec succès ! Vous êtes maintenant connecté.');
       
-      // Rediriger vers la page d'accueil
-      router.push('/');
+      // Rediriger vers l'application (évite un passage par la landing /)
+      router.replace('/app');
       router.refresh(); // Forcer le rafraîchissement pour charger les nouvelles données
     } catch (error: any) {
       console.error('Signup error:', error);

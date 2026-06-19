@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
@@ -49,6 +49,7 @@ import Link from 'next/link';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import JSZip from 'jszip';
+import { saveListFilters, useRestoreListFilters } from '@/lib/list-filter-storage';
 
 const DOCUMENT_TYPES: LibraryDocumentType[] = [
   'invoice',
@@ -56,6 +57,22 @@ const DOCUMENT_TYPES: LibraryDocumentType[] = [
   'deposit_slip',
   'credit_note',
 ];
+
+const LIBRARY_FILTERS_STORAGE_KEY = 'library-list-filters';
+
+type LibraryListFilters = {
+  clientId: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  documentTypes: LibraryDocumentType[];
+};
+
+const DEFAULT_LIBRARY_FILTERS: LibraryListFilters = {
+  clientId: null,
+  startDate: null,
+  endDate: null,
+  documentTypes: DOCUMENT_TYPES,
+};
 
 const PAGE_SIZE = 50;
 
@@ -80,13 +97,28 @@ export default function LibraryPage() {
     title: string;
     downloadFileName: string;
   } | null>(null);
+  const loadDocumentsRequestRef = useRef(0);
 
-  // Filtres
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState<string | null>(null);
-  const [endDate, setEndDate] = useState<string | null>(null);
+  // Filtres — état neutre au SSR, restauration après montage
+  const [clientId, setClientId] = useState<string | null>(DEFAULT_LIBRARY_FILTERS.clientId);
+  const [startDate, setStartDate] = useState<string | null>(DEFAULT_LIBRARY_FILTERS.startDate);
+  const [endDate, setEndDate] = useState<string | null>(DEFAULT_LIBRARY_FILTERS.endDate);
   const [documentTypes, setDocumentTypes] = useState<LibraryDocumentType[]>(
-    DOCUMENT_TYPES
+    DEFAULT_LIBRARY_FILTERS.documentTypes
+  );
+
+  const filtersRestored = useRestoreListFilters(
+    LIBRARY_FILTERS_STORAGE_KEY,
+    DEFAULT_LIBRARY_FILTERS,
+    (stored) => {
+      setClientId(stored.clientId);
+      setStartDate(stored.startDate);
+      setEndDate(stored.endDate);
+      const storedTypes = stored.documentTypes.filter((type) =>
+        DOCUMENT_TYPES.includes(type)
+      );
+      setDocumentTypes(storedTypes.length > 0 ? storedTypes : DOCUMENT_TYPES);
+    }
   );
 
   useEffect(() => {
@@ -94,9 +126,22 @@ export default function LibraryPage() {
   }, []);
 
   useEffect(() => {
+    if (!filtersRestored) return;
+
+    saveListFilters(LIBRARY_FILTERS_STORAGE_KEY, {
+      clientId,
+      startDate,
+      endDate,
+      documentTypes,
+    });
+  }, [filtersRestored, clientId, startDate, endDate, documentTypes]);
+
+  useEffect(() => {
+    if (!filtersRestored) return;
+
     loadDocuments();
     setCurrentPage(0);
-  }, [clientId, startDate, endDate, documentTypes]);
+  }, [filtersRestored, clientId, startDate, endDate, documentTypes]);
 
   const loadClients = async () => {
     try {
@@ -119,6 +164,8 @@ export default function LibraryPage() {
   };
 
   const loadDocuments = async () => {
+    const requestId = ++loadDocumentsRequestRef.current;
+
     try {
       setLoading(true);
       const companyId = await getCurrentUserCompanyId();
@@ -290,13 +337,19 @@ export default function LibraryPage() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
 
+      if (requestId !== loadDocumentsRequestRef.current) return;
+
       setDocuments(allDocs);
     } catch (err) {
+      if (requestId !== loadDocumentsRequestRef.current) return;
+
       console.error(err);
       toast.error('Erreur lors du chargement des documents');
       setDocuments([]);
     } finally {
-      setLoading(false);
+      if (requestId === loadDocumentsRequestRef.current) {
+        setLoading(false);
+      }
     }
   };
 

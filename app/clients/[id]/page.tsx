@@ -352,6 +352,11 @@ export default function ClientDetailPage() {
   const clientId = params.id as string;
 
   const [client, setClient] = useState<Client | null>(null);
+  const [commentEditDialogOpen, setCommentEditDialogOpen] = useState(false);
+  const [commentUnsavedDialogOpen, setCommentUnsavedDialogOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [savingComment, setSavingComment] = useState(false);
+  const commentOriginalRef = useRef('');
   const [stockUpdates, setStockUpdates] = useState<StockUpdate[]>([]);
   // Maps pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
   const [lastStockUpdatesByProduct, setLastStockUpdatesByProduct] = useState<Record<string, StockUpdate>>({});
@@ -719,6 +724,79 @@ export default function ClientDetailPage() {
   // }, [perProductForm, perSubProductForm, pendingAdjustments, loading, client, clientProducts.length, submitting, draftRecoveryOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
+
+  const openCommentEditDialog = () => {
+    const original = client?.comment ?? '';
+    commentOriginalRef.current = original;
+    setCommentDraft(original);
+    setCommentEditDialogOpen(true);
+  };
+
+  const hasCommentUnsavedChanges = () => commentDraft !== commentOriginalRef.current;
+
+  const handleCommentDialogOpenChange = (open: boolean) => {
+    if (open) {
+      setCommentEditDialogOpen(true);
+      return;
+    }
+
+    if (savingComment) return;
+
+    if (hasCommentUnsavedChanges()) {
+      setCommentUnsavedDialogOpen(true);
+    } else {
+      setCommentEditDialogOpen(false);
+    }
+  };
+
+  const handleCancelCommentEdit = () => {
+    setCommentDraft(commentOriginalRef.current);
+    setCommentEditDialogOpen(false);
+    setCommentUnsavedDialogOpen(false);
+  };
+
+  const handleDiscardCommentChanges = () => {
+    setCommentDraft(commentOriginalRef.current);
+    setCommentUnsavedDialogOpen(false);
+    setCommentEditDialogOpen(false);
+  };
+
+  const handleSaveComment = async () => {
+    if (!client) return;
+
+    setSavingComment(true);
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        throw new Error('Non autorisé');
+      }
+
+      const commentValue = commentDraft || null;
+
+      const { data, error } = await supabase
+        .from('clients')
+        .update({ comment: commentValue })
+        .eq('id', client.id)
+        .eq('company_id', companyId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const savedComment = data.comment ?? '';
+      commentOriginalRef.current = savedComment;
+      setClient((prev) => (prev ? { ...prev, comment: data.comment } : prev));
+      setCommentDraft(savedComment);
+      setCommentEditDialogOpen(false);
+      setCommentUnsavedDialogOpen(false);
+      toast.success('Commentaire enregistré');
+    } catch (error) {
+      console.error('Error saving comment:', error);
+      toast.error('Erreur lors de l\'enregistrement du commentaire');
+    } finally {
+      setSavingComment(false);
+    }
+  };
 
   const loadClientData = async () => {
     try {
@@ -3198,17 +3276,29 @@ export default function ClientDetailPage() {
                     {/* Jour de fermeture - removed as closing_day no longer exists */}
                   </div>
                   
-                  {/* Commentaire */}
-                  {client.comment && (
-                    <div className="mt-3 min-w-0">
-                      <div className="flex items-start gap-2 min-w-0">
-                        <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-[#0B1F33] text-base flex-1 min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                          {client.comment}
-                        </p>
-                      </div>
+                  {/* Informations (commentaire) */}
+                  <div className="mt-3 min-w-0">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Info className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                      <p
+                        className={cn(
+                          'flex-1 min-w-0 text-base whitespace-pre-wrap break-words [overflow-wrap:anywhere]',
+                          client.comment ? 'text-[#0B1F33]' : 'text-slate-400 italic'
+                        )}
+                      >
+                        {client.comment || 'Non renseigné'}
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={openCommentEditDialog}
+                        className="h-8 px-2 flex-shrink-0"
+                      >
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Modifier
+                      </Button>
                     </div>
-                  )}
+                  </div>
                   
                   {/* Périodes de fermeture dans les 2 prochains mois */}
                   {(() => {
@@ -3479,6 +3569,76 @@ export default function ClientDetailPage() {
             clientProducts={clientProducts}
           />
         )}
+
+        {/* Comment Edit Dialog */}
+        <Dialog open={commentEditDialogOpen} onOpenChange={handleCommentDialogOpenChange}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Modifier les informations</DialogTitle>
+              <DialogDescription>
+                Modifiez le commentaire associé à ce client.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              placeholder="Informations supplémentaires..."
+              rows={5}
+              className="min-h-[120px] resize-y"
+              disabled={savingComment}
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancelCommentEdit}
+                disabled={savingComment}
+              >
+                Annuler
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveComment}
+                disabled={savingComment}
+              >
+                {savingComment ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Comment unsaved changes confirmation */}
+        <AlertDialog
+          open={commentUnsavedDialogOpen}
+          onOpenChange={(open) => {
+            if (!savingComment) {
+              setCommentUnsavedDialogOpen(open);
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Modifications non enregistrées</AlertDialogTitle>
+              <AlertDialogDescription>
+                Vous avez des modifications non enregistrées. Voulez-vous continuer l&apos;édition ou abandonner les modifications ?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={handleDiscardCommentChanges}
+                disabled={savingComment}
+              >
+                Abandonner les modifications
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => setCommentUnsavedDialogOpen(false)}
+                disabled={savingComment}
+              >
+                Continuer l&apos;édition
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Delete Product Dialog */}
         <AlertDialog open={deleteProductDialogOpen} onOpenChange={setDeleteProductDialogOpen}>

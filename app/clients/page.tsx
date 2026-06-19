@@ -15,15 +15,38 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDepartment, getDepartmentFromPostalCode } from '@/lib/postal-code-utils';
+import { saveListFilters, useRestoreListFilters } from '@/lib/list-filter-storage';
+
+const CLIENTS_FILTERS_STORAGE_KEY = 'clients-list-filters';
+
+type ClientsListFilters = {
+  searchTerm: string;
+  selectedDepartments: string[];
+  selectedCities: string[];
+  selectedTours: string[];
+};
+
+const DEFAULT_CLIENTS_FILTERS: ClientsListFilters = {
+  searchTerm: '',
+  selectedDepartments: [],
+  selectedCities: [],
+  selectedTours: [],
+};
 
 export default function ClientsPage() {
   const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
-  const [selectedCities, setSelectedCities] = useState<string[]>([]);
-  const [selectedTours, setSelectedTours] = useState<string[]>([]);
+  const [searchTerm, setSearchTerm] = useState(DEFAULT_CLIENTS_FILTERS.searchTerm);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(
+    DEFAULT_CLIENTS_FILTERS.selectedDepartments
+  );
+  const [selectedCities, setSelectedCities] = useState<string[]>(
+    DEFAULT_CLIENTS_FILTERS.selectedCities
+  );
+  const [selectedTours, setSelectedTours] = useState<string[]>(
+    DEFAULT_CLIENTS_FILTERS.selectedTours
+  );
   const [departmentFilterOpen, setDepartmentFilterOpen] = useState(false);
   const [cityFilterOpen, setCityFilterOpen] = useState(false);
   const [tourFilterOpen, setTourFilterOpen] = useState(false);
@@ -31,9 +54,31 @@ export default function ClientsPage() {
   const [clientsWithTours, setClientsWithTours] = useState<(Client & { tour_name?: TourName | null })[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const filtersRestored = useRestoreListFilters(
+    CLIENTS_FILTERS_STORAGE_KEY,
+    DEFAULT_CLIENTS_FILTERS,
+    (stored) => {
+      setSearchTerm(stored.searchTerm);
+      setSelectedDepartments(stored.selectedDepartments);
+      setSelectedCities(stored.selectedCities);
+      setSelectedTours(stored.selectedTours);
+    }
+  );
+
   useEffect(() => {
     loadClients();
   }, []);
+
+  useEffect(() => {
+    if (!filtersRestored) return;
+
+    saveListFilters(CLIENTS_FILTERS_STORAGE_KEY, {
+      searchTerm,
+      selectedDepartments,
+      selectedCities,
+      selectedTours,
+    });
+  }, [filtersRestored, searchTerm, selectedDepartments, selectedCities, selectedTours]);
 
   // Extraire les départements uniques depuis les clients
   const availableDepartments = useMemo(() => {

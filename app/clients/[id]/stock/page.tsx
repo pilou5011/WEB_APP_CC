@@ -371,7 +371,7 @@ function SortableProductRow({
           ) : (
             <Input
               type="text"
-              inputMode="text"
+              inputMode="numeric"
               value={perProductForm[cp.id]?.reassort_saisie || ''}
               onChange={(e) => {
                 const value = e.target.value;
@@ -3913,7 +3913,7 @@ export default function ClientDetailPage() {
                                     <TableCell className="align-middle py-2 text-center bg-green-50">
                                       <Input
                                         type="text"
-                                        inputMode="text"
+                                        inputMode="numeric"
                                         value={perSubProductForm[sp.id]?.reassort_saisie || ''}
                                         onChange={(e) => {
                                           const value = e.target.value;
