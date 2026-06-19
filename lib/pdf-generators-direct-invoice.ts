@@ -260,12 +260,19 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     // Sauter une ligne
     clientYPosition += 4;
     
-    // Nom de la société en gras et police plus grande
-    const clientCompanyName = client.company_name || client.name;
-    if (clientCompanyName) {
+    // Nom juridique puis nom commercial (si différent)
+    const clientLegalName = client.company_name || client.name;
+    const clientCommercialName = client.name;
+    if (clientLegalName) {
       doc.setFontSize(11);
       doc.setFont('helvetica', 'bold');
-      doc.text(clientCompanyName, rightBoxX + 2, clientYPosition);
+      doc.text(clientLegalName, rightBoxX + 2, clientYPosition);
+      clientYPosition += 5;
+    }
+    if (clientCommercialName && clientCommercialName !== clientLegalName) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(clientCommercialName, rightBoxX + 2, clientYPosition);
       clientYPosition += 5;
     }
     
@@ -286,7 +293,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     }
     if (client.tva_number) {
       doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
-      clientYPosition += 3;
+      clientYPosition += 3; // Même espacement que N° Facture
     }
     
     const rightBoxHeight = clientYPosition - rightBoxY + 1;

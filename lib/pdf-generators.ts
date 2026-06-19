@@ -11,6 +11,7 @@ import { formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
 import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
 import { formatDepartment } from '@/lib/postal-code-utils';
+import { appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -179,6 +180,11 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     // Import jsPDF dynamically
     const jsPDF = (await import('jspdf')).default;
     const autoTable = (await import('jspdf-autotable')).default;
+
+    const companyId = await getCurrentUserCompanyId();
+    if (!companyId) {
+      throw new Error('Non autorisé');
+    }
     
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -360,18 +366,17 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     const infoBoxHeight = clientYPosition - infoBoxY + 1;
     doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
 
-    // Date de la facture
+    // Dates facture / dépôt précédent
     yPosition = Math.max(yPosition, clientYPosition) + 10;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
-    const responsableName = client.responsable_name?.trim();
-    if (responsableName) {
-      doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
-      yPosition += 12;
-    } else {
-      yPosition += 10;
-    }
+    const previousDepositDate = await fetchPreviousDepositDate(client.id, companyId, invoice.created_at);
+    yPosition = appendInvoiceDepositDateFields(
+      doc,
+      globalLeftMargin,
+      yPosition,
+      invoice.invoice_date,
+      previousDepositDate,
+      client.responsable_name
+    );
 
     // Titre "Facture N°[numero_facture]" en gras
     doc.setFont('helvetica', 'bold');
@@ -443,7 +448,38 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     });
 
     const dataRows = [...stockRows, ...adjustmentRows];
-    const tableData = [...dataRows];
+
+    const parseTableQuantity = (value: unknown): number => {
+      if (value === null || value === undefined) return 0;
+      const text = String(value).trim();
+      if (!text || text === '-' || text.toUpperCase() === 'NA' || text.toUpperCase() === 'N/A') {
+        return 0;
+      }
+      const parsed = Number(text);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const totalQuantities = dataRows.reduce(
+      (totals, row) => ({
+        remise: totals.remise + parseTableQuantity(row[3]),
+        reprise: totals.reprise + parseTableQuantity(row[4]),
+        vendue: totals.vendue + parseTableQuantity(row[5]),
+      }),
+      { remise: 0, reprise: 0, vendue: 0 }
+    );
+
+    const totalRow = [
+      { content: 'Total', styles: { fontStyle: 'bold' as const } },
+      '',
+      '',
+      { content: String(totalQuantities.remise), styles: { fontStyle: 'bold' as const, halign: 'center' as const } },
+      { content: String(totalQuantities.reprise), styles: { fontStyle: 'bold' as const, halign: 'center' as const } },
+      { content: String(totalQuantities.vendue), styles: { fontStyle: 'bold' as const, halign: 'center' as const } },
+      '',
+      '',
+    ];
+
+    const tableData = [...dataRows, totalRow];
 
     autoTable(doc, {
       startY: yPosition,
@@ -626,11 +662,6 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
         upsert: false // Never overwrite - factures are immutable
       });
 
-    const companyId = await getCurrentUserCompanyId();
-    if (!companyId) {
-      throw new Error('Non autorisé');
-    }
-
     if (uploadError) {
       if (uploadError.message?.includes('already exists') || 
           uploadError.message?.includes('duplicate') ||
@@ -718,18 +749,7 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
       .eq('company_id', companyId)
       .is('deleted_at', null);
 
-    // Get previous invoice date
-    const { data: previousInvoice } = await supabase
-      .from('invoices')
-      .select('created_at')
-      .eq('client_id', client.id)
-      .eq('company_id', companyId)
-      .lt('created_at', invoice.created_at)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const previousInvoiceDate = previousInvoice?.created_at || null;
+    const previousInvoiceDate = await fetchPreviousDepositDate(client.id, companyId, invoice.created_at);
 
     // Load historical stock updates
     const { data: historicalStockUpdates } = await supabase
@@ -901,14 +921,14 @@ export async function generateAndSaveStockReportPDF(params: GenerateStockReportP
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     
-    const previousDepositText = previousInvoiceDate 
-      ? `Dépôt précédent : ${new Date(previousInvoiceDate).toLocaleDateString('fr-FR')}`
-      : 'Dépôt précédent : -';
-    doc.text(previousDepositText, 15, yPosition);
-    yPosition += 5;
-    
     const invoiceDateText = `Date de facture : ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`;
     doc.text(invoiceDateText, 15, yPosition);
+    yPosition += 5;
+
+    const previousDepositText = previousInvoiceDate 
+      ? `Date dépôt précédent : ${new Date(previousInvoiceDate).toLocaleDateString('fr-FR')}`
+      : 'Date dépôt précédent : -';
+    doc.text(previousDepositText, 15, yPosition);
     const responsableName = client.responsable_name?.trim();
     if (responsableName) {
       doc.text(`Nom du responsable : ${responsableName}`, 15, yPosition + 5);
@@ -1591,17 +1611,15 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
 
     yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-    // Date
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.text(`Date: ${new Date().toLocaleDateString('fr-FR')}`, 15, yPosition);
-    const responsableName = client.responsable_name?.trim();
-    if (responsableName) {
-      doc.text(`Nom du responsable : ${responsableName}`, 15, yPosition + 5);
-      yPosition += 12;
-    } else {
-      yPosition += 10;
-    }
+    const previousDepositDate = await fetchPreviousDepositDate(client.id, companyId, invoice.created_at);
+    yPosition = appendInvoiceDepositDateFields(
+      doc,
+      15,
+      yPosition,
+      invoice.invoice_date,
+      previousDepositDate,
+      client.responsable_name
+    );
 
     // Titre "Bon de dépôt"
     doc.setFont('helvetica', 'bold');
