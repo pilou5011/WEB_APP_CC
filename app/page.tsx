@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
-import LandingClient from './landing/landing-client';
-import { LandingJsonLd } from './landing-json-ld';
+import Script from 'next/script';
+import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { SITE_URL, absoluteUrl } from '@/lib/site-config';
+import { createClient } from '@/lib/supabase/server';
+import { shouldRedirectHomeToAuth, homeKnownAccountRedirectScript } from '@/lib/supabase/auth-routing';
+import HomeRouteGate from './landing/home-route-gate';
 
 const homeDescription =
   'Dépôts, relevés, commissions : gestion dépôt-vente et facturation conforme. Anticipez la facturation électronique. Gagnez du temps — devis sur mesure avec Gaston Stock.';
@@ -22,11 +26,26 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomePage() {
+export default async function HomePage() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    redirect('/app');
+  }
+
+  if (shouldRedirectHomeToAuth(cookies().getAll())) {
+    redirect('/auth');
+  }
+
   return (
     <>
-      <LandingJsonLd />
-      <LandingClient />
+      <Script id="home-known-account-redirect" strategy="beforeInteractive">
+        {homeKnownAccountRedirectScript}
+      </Script>
+      <HomeRouteGate />
     </>
   );
 }

@@ -1,36 +1,14 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import { LANDING_FAQ_ITEMS } from '@/lib/landing-faq';
 
 export default function LandingClient() {
-  const router = useRouter();
   const [feedback, setFeedback] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showContactInfo, setShowContactInfo] = useState(false);
   const recipient = 'contact@gastonstock.com';
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const redirectIfAuthenticated = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!cancelled && session) {
-        router.replace('/app');
-      }
-    };
-
-    redirectIfAuthenticated();
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

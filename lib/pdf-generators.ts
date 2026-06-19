@@ -2284,9 +2284,7 @@ export async function generateClientInfoPDF(
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 4;
-    const contentWidth = pageWidth - 2 * margin;
     const columnGap = 8;
-    const columnWidth = (contentWidth - columnGap) / 2;
 
     let yPosition = margin + 10;
 
@@ -2301,34 +2299,26 @@ export async function generateClientInfoPDF(
       if (!text) return [];
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(fontSize);
-      return doc.splitTextToSize(text, maxWidth);
+      return doc.splitTextToSize(text, Math.max(1, maxWidth));
+    };
+
+    const splitBoldText = (
+      text: string,
+      maxWidth: number,
+      fontSize: number
+    ): string[] => {
+      if (!text) return [];
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(fontSize);
+      return doc.splitTextToSize(text, Math.max(1, maxWidth));
     };
 
     /* --------------------------------------------------
      * HEADER
      * -------------------------------------------------- */
-    // En-tête : nom du responsable uniquement (pas le contact tél. 1) ; tél. 1 = numéro + info contact
     const contactName = client.responsable_name?.trim() || null;
-    const phone1Info = client.phone_1_info?.trim();
-    const contactPhone = client.phone?.trim()
-      ? formatPhoneNumber(client.phone) +
-        (phone1Info ? ` (${phone1Info})` : '')
-      : null;
-    if (contactName || contactPhone) {
-      const leftX = margin;
-      let contactY = margin + 6;
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor('#013258');
-      if (contactName) {
-        doc.text(contactName, leftX, contactY, { align: 'left' });
-        contactY += 5;
-      }
-      if (contactPhone) {
-        doc.setFont('helvetica', 'normal');
-        doc.text(contactPhone, leftX, contactY, { align: 'left' });
-      }
-    }
+    const phoneDisplay = client.phone?.trim() ? formatPhoneNumber(client.phone) : null;
+    const headerContactLine = [contactName, phoneDisplay].filter(Boolean).join(' - ');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(30);
@@ -2346,11 +2336,35 @@ export async function generateClientInfoPDF(
 
     yPosition += 6;
 
-    doc.setFillColor('#013258');
-    doc.roundedRect(5, yPosition, pageWidth - 10, 2, 1, 1, 'F');
-    doc.roundedRect(5, yPosition + 3, pageWidth - 10, 2, 1, 1, 'F');
+    const barHeight = 2;
+    const barX = 5;
+    const barWidth = pageWidth - 10;
+    const barY1 = yPosition;
 
-    yPosition += 15;
+    doc.setFillColor('#013258');
+    doc.roundedRect(barX, barY1, barWidth, barHeight, 1, 1, 'F');
+
+    let barY2: number;
+    if (headerContactLine) {
+      const gapStart = barY1 + barHeight;
+      const contactGap = 10;
+      barY2 = gapStart + contactGap;
+      const gapCenterY = gapStart + contactGap / 2;
+      const headerCenterX = barX + barWidth / 2;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor('#013258');
+      doc.text(headerContactLine, headerCenterX, gapCenterY, {
+        align: 'center',
+        baseline: 'middle',
+      });
+    } else {
+      barY2 = barY1 + 3;
+    }
+
+    doc.roundedRect(barX, barY2, barWidth, barHeight, 1, 1, 'F');
+    yPosition = barY2 + barHeight + 10;
 
     /* --------------------------------------------------
      * Section helper (padding contenu symétrique)
@@ -2360,18 +2374,102 @@ export async function generateClientInfoPDF(
 
     const addSection = (
       title: string,
-      fields: Array<{ label: string; value: string; fullWidth?: boolean; column?: 'left' | 'right' }>
+      fields: Array<{
+        label: string;
+        value: string;
+        fullWidth?: boolean;
+        column?: 'left' | 'right';
+        valueOnly?: boolean;
+      }>
     ) => {
       const sectionX = 8;
       const sectionWidth = pageWidth - sectionX * 2;
 
       const paddingHorizontal = 4;
-      const paddingVertical = 8; // 🔴 padding HAUT = BAS (contenu uniquement) - augmenté pour éviter que le contenu touche les bords
+      const paddingVertical = 4;
 
-      const titleHeight = 6;
-      const sectionGap = 8;
+      const titleHeight = 4;
+      const sectionGap = 5;
       const lineHeight = 5;
-      const fieldSpacing = 2; // Espacement vertical entre chaque label
+      const fieldSpacing = 1;
+      const sectionColumnWidth =
+        (sectionWidth - paddingHorizontal * 2 - columnGap) / 2;
+
+      type FieldBlockMetrics = {
+        isBelowLabelLayout: boolean;
+        labelLines: string[];
+        valueLines: string[];
+        valueFontSize: number;
+        valueLineH: number;
+        labelWidth: number;
+        blockHeight: number;
+      };
+
+      const computeFieldBlock = (
+        field: {
+          label: string;
+          value: string;
+          valueOnly?: boolean;
+        },
+        availableWidth: number,
+        commentFontSize: number,
+        commentLineHeight: number
+      ): FieldBlockMetrics => {
+        const valueOnly = field.valueOnly === true;
+        const value = field.value || (valueOnly ? '' : 'Non renseigné');
+        const label = `${field.label.trim()} : `;
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        const labelWidth = valueOnly ? 0 : doc.getTextWidth(label);
+
+        const isBelowLabelLayout =
+          valueOnly ||
+          field.label === "Horaires d'ouverture" ||
+          field.label === 'Commentaire' ||
+          labelWidth >= availableWidth - 12;
+
+        const isCommentField = field.label === 'Commentaire';
+        const valueFontSize = isCommentField ? commentFontSize : 10;
+        const valueLineH = isCommentField ? commentLineHeight : lineHeight;
+
+        const labelLines = valueOnly
+          ? []
+          : isBelowLabelLayout
+          ? splitBoldText(label.trim(), availableWidth, 10)
+          : [label];
+
+        const valueWrapWidth = isBelowLabelLayout
+          ? availableWidth
+          : Math.max(12, availableWidth - labelWidth);
+
+        let valueLines = splitText(value, valueWrapWidth, valueFontSize);
+        const maxCommentLines = 95;
+        if (isCommentField && valueLines.length > maxCommentLines) {
+          valueLines = [
+            ...valueLines.slice(0, maxCommentLines - 1),
+            '… (suite sur la fiche client dans l’application)',
+          ];
+        }
+
+        const blockHeight = valueOnly
+          ? Math.max(1, valueLines.length) * valueLineH + fieldSpacing
+          : isBelowLabelLayout
+          ? labelLines.length * lineHeight +
+            Math.max(1, valueLines.length) * valueLineH +
+            fieldSpacing
+          : Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
+
+        return {
+          isBelowLabelLayout,
+          labelLines,
+          valueLines,
+          valueFontSize,
+          valueLineH,
+          labelWidth,
+          blockHeight,
+        };
+      };
 
       const measureSectionHeight = (commentFontSize: number, commentLineHeight: number) => {
         const sectionStartMeas = yPosition;
@@ -2382,41 +2480,16 @@ export async function generateClientInfoPDF(
 
         fields.forEach((field) => {
           const isFull = field.fullWidth;
-          const value = field.value || 'Non renseigné';
-
           const availableWidth = isFull
             ? sectionWidth - paddingHorizontal * 2
-            : columnWidth;
+            : sectionColumnWidth;
 
-          const label = `${field.label.trim()} : `;
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(10);
-          const labelWidth = doc.getTextWidth(label);
-
-          const isBelowLabelLayout =
-            field.label === "Horaires d'ouverture" ||
-            field.label === 'Commentaire';
-          const valueWrapWidth = isBelowLabelLayout
-            ? availableWidth
-            : availableWidth - labelWidth;
-
-          const isComment = field.label === 'Commentaire';
-          const valueFontSize = isComment ? commentFontSize : 10;
-          let valueLines = splitText(value, valueWrapWidth, valueFontSize);
-          const maxCommentLines = 95;
-          if (isComment && valueLines.length > maxCommentLines) {
-            valueLines = [
-              ...valueLines.slice(0, maxCommentLines - 1),
-              '… (suite sur la fiche client dans l’application)',
-            ];
-          }
-          const valueLH = isComment ? commentLineHeight : lineHeight;
-
-          const blockHeight = isBelowLabelLayout
-            ? lineHeight +
-              Math.max(1, valueLines.length) * valueLH +
-              fieldSpacing
-            : Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
+          const { blockHeight } = computeFieldBlock(
+            field,
+            availableWidth,
+            commentFontSize,
+            commentLineHeight
+          );
 
           const forceColumn = field.column;
 
@@ -2511,8 +2584,8 @@ export async function generateClientInfoPDF(
 
       const titleWidth = doc.getTextWidth(title) + 6;
       doc.setFillColor('#FFFFFF');
-      doc.rect(sectionX + 4, sectionStartY - 2, titleWidth, titleHeight, 'F');
-      doc.text(title, sectionX + 7, sectionStartY + 1);
+      doc.rect(sectionX + 4, sectionStartY - 1, titleWidth, titleHeight, 'F');
+      doc.text(title, sectionX + 7, sectionStartY + 0.5);
 
       /* ----------------------------
        * 5️⃣ Rendu contenu
@@ -2534,14 +2607,13 @@ export async function generateClientInfoPDF(
         }
         
         const isFull = field.fullWidth;
-        const value = field.value || 'Non renseigné';
         const forceColumn = field.column;
         const useRight = !isFull && (forceColumn === 'right' || (!forceColumn && !cursorLeft));
 
         const x = isFull
           ? sectionX + paddingHorizontal
           : useRight
-          ? sectionX + paddingHorizontal + columnWidth + columnGap
+          ? sectionX + paddingHorizontal + sectionColumnWidth + columnGap
           : sectionX + paddingHorizontal;
 
         const y = isFull
@@ -2552,56 +2624,46 @@ export async function generateClientInfoPDF(
 
         const availableWidth = isFull
           ? sectionWidth - paddingHorizontal * 2
-          : columnWidth;
+          : sectionColumnWidth;
 
-        const label = `${field.label.trim()} : `;
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text(label, x, y);
+        const {
+          isBelowLabelLayout,
+          labelLines,
+          valueLines,
+          valueFontSize,
+          valueLineH,
+          labelWidth,
+          blockHeight,
+        } = computeFieldBlock(field, availableWidth, pdfCommentFontSize, pdfCommentLineHeight);
 
-        const labelWidth = doc.getTextWidth(label);
+        if (isBelowLabelLayout) {
+          if (labelLines.length > 0) {
+            labelLines.forEach((line, i) => {
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(10);
+              doc.text(line, x, y + i * lineHeight);
+            });
+          }
+          const valueStartY =
+            labelLines.length > 0 ? y + labelLines.length * lineHeight : y;
+          valueLines.forEach((line, i) => {
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(valueFontSize);
+            doc.text(line, x, valueStartY + i * valueLineH);
+          });
+        } else {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(10);
+          doc.text(labelLines[0], x, y);
 
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-
-        const isBelowLabelLayout =
-          field.label === "Horaires d'ouverture" ||
-          field.label === 'Commentaire';
-        const valueWrapWidth = isBelowLabelLayout
-          ? availableWidth
-          : availableWidth - labelWidth;
-
-        const isCommentField = field.label === 'Commentaire';
-        const valueFontSize = isCommentField ? pdfCommentFontSize : 10;
-        const valueLineH = isCommentField ? pdfCommentLineHeight : lineHeight;
-
-        let valueLines = splitText(value, valueWrapWidth, valueFontSize);
-        const maxCommentLinesRender = 95;
-        if (isCommentField && valueLines.length > maxCommentLinesRender) {
-          valueLines = [
-            ...valueLines.slice(0, maxCommentLinesRender - 1),
-            '… (suite sur la fiche client dans l’application)',
-          ];
+          valueLines.forEach((line, i) => {
+            const xPos = i === 0 ? x + labelWidth : x;
+            const yPos = y + i * lineHeight;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(valueFontSize);
+            doc.text(line, xPos, yPos);
+          });
         }
-
-        valueLines.forEach((line, i) => {
-          const xPos = isBelowLabelLayout
-            ? x
-            : i === 0
-              ? x + labelWidth
-              : x;
-          const yPos = isBelowLabelLayout
-            ? y + (i + 1) * valueLineH
-            : y + i * lineHeight;
-          doc.setFontSize(valueFontSize);
-          doc.text(line, xPos, yPos);
-        });
-
-        const blockHeight = isBelowLabelLayout
-          ? lineHeight +
-            Math.max(1, valueLines.length) * valueLineH +
-            fieldSpacing
-          : Math.max(1, valueLines.length) * lineHeight + fieldSpacing;
 
         if (isFull) {
           leftY = y + blockHeight;
@@ -2632,6 +2694,23 @@ export async function generateClientInfoPDF(
     /* --------------------------------------------------
      * Sections
      * -------------------------------------------------- */
+
+    const commentText = client.comment?.trim() || '';
+    const hasComment =
+      commentText.length > 0 &&
+      commentText.toUpperCase() !== 'NA' &&
+      commentText.toUpperCase() !== 'N/A';
+
+    if (hasComment) {
+      addSection('Commentaire', [
+        {
+          label: 'Commentaire',
+          value: commentText,
+          fullWidth: true,
+          valueOnly: true,
+        },
+      ]);
+    }
 
     addSection('Informations générales', [
       { label: 'Nom Commercial', value: client.name || '' },
@@ -2731,15 +2810,8 @@ export async function generateClientInfoPDF(
       });
     }
 
-    // Assembler : horaires à gauche, reste à droite ; commentaire en pleine largeur en dernier (meilleure coupure)
+    // Assembler : horaires à gauche, reste à droite
     complementaryFields.push(...leftComplementary, ...rightComplementary);
-    if (client.comment) {
-      complementaryFields.push({
-        label: 'Commentaire',
-        value: client.comment,
-        fullWidth: true,
-      });
-    }
 
     addSection('Informations complémentaires', complementaryFields);
 

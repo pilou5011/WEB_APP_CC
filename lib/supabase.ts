@@ -1,11 +1,60 @@
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 import { getCurrentUserCompanyId } from './auth-helpers';
+import { setKnownAccountCookieClient } from './supabase/auth-routing';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (typeof window !== 'undefined') {
+  void supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session) {
+      setKnownAccountCookieClient();
+    }
+  });
+
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+      setKnownAccountCookieClient();
+    }
+  });
+}
+
+function migrateLegacyLocalStorageSession() {
+  if (typeof window === 'undefined') return;
+
+  void (async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session) return;
+
+    try {
+      const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+      const legacyKey = `sb-${projectRef}-auth-token`;
+      const legacy = localStorage.getItem(legacyKey);
+      if (!legacy) return;
+
+      const parsed = JSON.parse(legacy) as {
+        access_token?: string;
+        refresh_token?: string;
+      };
+
+      if (parsed.access_token && parsed.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: parsed.access_token,
+          refresh_token: parsed.refresh_token,
+        });
+      }
+    } catch {
+      // Ignore invalid legacy session data.
+    }
+  })();
+}
+
+migrateLegacyLocalStorageSession();
 
 /**
  * Helper pour effectuer une suppression logique (soft delete)
