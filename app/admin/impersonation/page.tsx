@@ -109,16 +109,35 @@ export default function AdminImpersonationPage() {
 
       const data = await response.json();
       if (!response.ok) {
-        toast.error(data?.error || 'Impossible de generer le lien de connexion');
+        toast.error(data?.error || 'Impossible de se connecter en tant que cet utilisateur');
         return;
       }
 
-      if (!data?.link) {
-        toast.error('Lien de connexion invalide');
+      if (!data?.session?.access_token || !data?.session?.refresh_token) {
+        toast.error('Session utilisateur invalide');
         return;
       }
 
-      window.location.assign(data.link);
+      const { error: setSessionError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+
+      if (setSessionError) {
+        toast.error('Impossible d\'activer la session utilisateur');
+        console.error('setSession error:', setSessionError);
+        return;
+      }
+
+      sessionStorage.setItem(
+        'admin_impersonation',
+        JSON.stringify({
+          active: true,
+          adminEmail: data.adminEmail || '',
+        })
+      );
+
+      window.location.assign(data.redirectTo || '/app?impersonation=1');
     } catch (error) {
       console.error('Error in handleLoginAsUser:', error);
       toast.error('Erreur lors de la connexion utilisateur');

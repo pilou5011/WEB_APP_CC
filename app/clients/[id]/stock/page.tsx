@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed, ChevronDown, ChevronRight } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -681,6 +681,7 @@ export default function ClientDetailPage() {
   
   // Combobox state for product selector
   const [productComboboxOpen, setProductComboboxOpen] = useState(false);
+  const [addProductSectionOpen, setAddProductSectionOpen] = useState(false);
 
   // Initialize draft management hook (only save when on this tab)
   const draft = useStockUpdateDraft(clientId, isActiveTab);
@@ -3478,14 +3479,27 @@ export default function ClientDetailPage() {
         <div className="space-y-6">
           
           <Card className="border-slate-200 shadow-md">
-            <CardHeader>
-              <CardTitle>Produits liés</CardTitle>
-              <CardDescription>
-                Associez des produits au client et gérez leur stock
-              </CardDescription>
+            <CardHeader className="pb-3">
+              <button
+                type="button"
+                onClick={() => setAddProductSectionOpen((open) => !open)}
+                className="flex w-full items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                aria-expanded={addProductSectionOpen}
+              >
+                {addProductSectionOpen ? (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
+                ) : (
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+                )}
+                <CardTitle className="text-lg">Ajouter un produit</CardTitle>
+              </button>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAssociate} className="space-y-4">
+            <div className={cn(!addProductSectionOpen && 'hidden')}>
+              <CardContent className="pt-0">
+                <CardDescription className="mb-4">
+                  Associez des produits au client et gérez leur stock
+                </CardDescription>
+                <form onSubmit={handleAssociate} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label>Produit</Label>
@@ -3687,8 +3701,10 @@ export default function ClientDetailPage() {
                   <Button type="submit" className="w-full md:w-auto">Ajouter le produit</Button>
                 </div>
               </form>
-
-              <Separator className="my-6" />
+              </CardContent>
+            </div>
+            <CardContent className={cn(!addProductSectionOpen && 'pt-0')}>
+              <Separator className={cn('mb-6', !addProductSectionOpen && 'mt-0')} />
 
               {clientProducts.length === 0 ? (
                 <p className="text-sm text-slate-600">Aucun produit associé.</p>
