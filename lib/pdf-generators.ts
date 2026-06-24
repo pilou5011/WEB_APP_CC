@@ -11,7 +11,7 @@ import { formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
 import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
 import { formatDepartment } from '@/lib/postal-code-utils';
-import { appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { appendDepositSlipDateFields, appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -1611,13 +1611,11 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
 
     yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-    const previousDepositDate = await fetchPreviousDepositDate(client.id, companyId, invoice.created_at);
-    yPosition = appendInvoiceDepositDateFields(
+    yPosition = appendDepositSlipDateFields(
       doc,
       15,
       yPosition,
       invoice.invoice_date,
-      previousDepositDate,
       client.responsable_name
     );
 
