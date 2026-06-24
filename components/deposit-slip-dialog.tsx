@@ -40,7 +40,7 @@ function formatSIRETNumber(siret: string | null): string {
 }
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
-import { appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { appendDepositSlipDateFields } from '@/lib/pdf-document-dates';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -437,18 +437,12 @@ export function DepositSlipDialog({
 
       yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-      const companyId = await getCurrentUserCompanyId();
       const invoiceDate = invoice?.invoice_date ?? new Date().toISOString();
-      const beforeDate = invoice?.created_at ?? new Date().toISOString();
-      const previousDepositDate = companyId
-        ? await fetchPreviousDepositDate(client.id, companyId, beforeDate)
-        : null;
-      yPosition = appendInvoiceDepositDateFields(
+      yPosition = appendDepositSlipDateFields(
         doc,
         15,
         yPosition,
         invoiceDate,
-        previousDepositDate,
         client.responsable_name
       );
 

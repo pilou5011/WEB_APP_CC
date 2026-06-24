@@ -7,6 +7,10 @@ export async function middleware(req: NextRequest) {
   const { supabaseResponse, user } = await updateSession(req);
   const pathname = req.nextUrl.pathname;
 
+  if (pathname.startsWith('/auth/callback')) {
+    return supabaseResponse;
+  }
+
   if (pathname === '/') {
     if (user) {
       const url = req.nextUrl.clone();

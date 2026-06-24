@@ -12,15 +12,6 @@ function getBearerToken(request: NextRequest): string | null {
   return authHeader.slice('Bearer '.length).trim();
 }
 
-function buildRedirectTo(request: NextRequest, adminEmail: string): string {
-  const origin = request.nextUrl.origin;
-  const params = new URLSearchParams({
-    impersonation: '1',
-    admin_email: adminEmail,
-  });
-  return `${origin}/?${params.toString()}`;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -88,7 +79,6 @@ export async function POST(request: NextRequest) {
 
     let targetEmail: string | undefined = targetEmailFromBody;
 
-    let targetUserEmailFromTable: string | null = null;
     if (targetUserId) {
       const { data: targetUserRow, error: targetUserRowError } = await adminClient
         .from('users')
@@ -100,8 +90,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Utilisateur cible introuvable' }, { status: 404 });
       }
 
-      targetUserEmailFromTable = (targetUserRow.email || '').toLowerCase();
-      targetEmail = targetEmail || targetUserEmailFromTable || undefined;
+      targetEmail = targetEmail || (targetUserRow.email || '').toLowerCase() || undefined;
     }
 
     if (!targetEmail) {
@@ -119,25 +108,62 @@ export async function POST(request: NextRequest) {
     }
 
     const currentEmail = (currentUser.email || '').toLowerCase();
-    const redirectTo = buildRedirectTo(request, currentEmail);
 
-    const { data, error } = await adminClient.auth.admin.generateLink({
+    const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
       type: 'magiclink',
       email: targetEmail,
-      options: {
-        redirectTo,
-      },
     });
 
-    if (error || !data.properties?.action_link) {
+    const tokenHash = linkData?.properties?.hashed_token;
+    if (linkError || !tokenHash) {
       return NextResponse.json(
-        { error: error?.message || 'Impossible de générer le magic link' },
+        { error: linkError?.message || 'Impossible de générer le token de connexion' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ link: data.properties.action_link });
-  } catch {
+    const { data: verifyData, error: verifyError } = await authClient.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: 'magiclink',
+    });
+
+    let targetSession = verifyData?.session ?? null;
+
+    if (verifyError || !targetSession) {
+      const { data: fallbackVerify, error: fallbackError } = await authClient.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: 'email',
+      });
+
+      if (fallbackError || !fallbackVerify.session) {
+        return NextResponse.json(
+          {
+            error:
+              fallbackError?.message ||
+              verifyError?.message ||
+              'Impossible de créer la session utilisateur',
+          },
+          { status: 500 }
+        );
+      }
+
+      targetSession = fallbackVerify.session;
+    }
+
+    return NextResponse.json({
+      session: {
+        access_token: targetSession.access_token,
+        refresh_token: targetSession.refresh_token,
+      },
+      adminEmail: currentEmail,
+      targetUserId: targetUserByEmail.id,
+      redirectTo: `/app?${new URLSearchParams({
+        impersonation: '1',
+        admin_email: currentEmail,
+      }).toString()}`,
+    });
+  } catch (error) {
+    console.error('login-as-user error:', error);
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
   }
 }
