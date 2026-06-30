@@ -3,15 +3,19 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { getCurrentUserSubscriptionPlan } from '@/lib/auth-helpers';
+import { SUBSCRIPTION_PLAN_DESCRIPTIONS, SUBSCRIPTION_PLAN_LABELS } from '@/lib/subscription';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, CreditCard, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import type { SubscriptionPlan } from '@/lib/subscription';
 
 export default function SubscriptionPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
+  const [plan, setPlan] = useState<SubscriptionPlan | null>(null);
 
   useEffect(() => {
     checkSession();
@@ -24,6 +28,8 @@ export default function SubscriptionPage() {
       return;
     }
     setHasSession(true);
+    const currentPlan = await getCurrentUserSubscriptionPlan();
+    setPlan(currentPlan);
     setLoading(false);
   };
 
@@ -65,7 +71,10 @@ export default function SubscriptionPage() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Check className="h-5 w-5 text-green-600" />
-                  <span>Plan de base - Fonctionnalités complètes</span>
+                  <span>
+                    {plan ? SUBSCRIPTION_PLAN_LABELS[plan] : 'Formule Standard'}
+                    {plan ? ` — ${SUBSCRIPTION_PLAN_DESCRIPTIONS[plan]}` : ''}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Check className="h-5 w-5 text-green-600" />
