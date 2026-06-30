@@ -1,9 +1,12 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { Package, FileText, Receipt, Calculator } from 'lucide-react';
+import { Package, FileText, Receipt, Calculator, Truck } from 'lucide-react';
+import { currentUserCanAccessFeature } from '@/lib/auth-helpers';
+import { FEATURES } from '@/lib/subscription';
 
 export default function ClientLayout({
   children,
@@ -13,12 +16,28 @@ export default function ClientLayout({
   const params = useParams();
   const pathname = usePathname();
   const clientId = params.id as string;
+  const [hasDeliveryNotesAccess, setHasDeliveryNotesAccess] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const access = await currentUserCanAccessFeature(FEATURES.DELIVERY_NOTES);
+      setHasDeliveryNotesAccess(access);
+    };
+    void load();
+  }, []);
+
+  const deliveryNotesTitle = hasDeliveryNotesAccess ? 'Bon de livraison' : '🔒 Bon de livraison';
 
   const navItems = [
     {
       title: 'Facturer (dépôt)',
       href: `/clients/${clientId}/stock`,
       icon: Package,
+    },
+    {
+      title: deliveryNotesTitle,
+      href: `/clients/${clientId}/delivery-notes`,
+      icon: Truck,
     },
     {
       title: 'Facturer (compte ferme)',
@@ -65,7 +84,6 @@ export default function ClientLayout({
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Barre de navigation en haut (tous appareils) */}
       <nav className="sticky top-16 z-40 border-b border-slate-200 bg-slate-50 py-2 overflow-x-auto">
         <div className="flex justify-center w-full px-4">
           <div className="flex gap-2 min-w-max">
@@ -85,11 +103,9 @@ export default function ClientLayout({
         </div>
       </nav>
 
-      {/* Main content */}
       <main className="flex-1 min-w-0">
         {children}
       </main>
     </div>
   );
 }
-

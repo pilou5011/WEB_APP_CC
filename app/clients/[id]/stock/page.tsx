@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
-import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote, DeliveryNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,10 @@ import { ClientCalendar } from '@/components/client-calendar';
 import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours-editor';
 import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriod, VacationPeriodsEditor } from '@/components/vacation-periods-editor';
+import { ImportDeliveryNoteSection } from '@/components/delivery-notes/import-delivery-note-section';
+import { fetchDraftDeliveryNotesForImport } from '@/lib/delivery-notes';
+import { currentUserCanAccessFeature } from '@/lib/auth-helpers';
+import { FEATURES } from '@/lib/subscription';
 
 // Helper functions for vacation periods (from vacation-periods-editor)
 function getDateFromWeek(week: number, year: number = new Date().getFullYear()): Date {
@@ -682,6 +686,9 @@ export default function ClientDetailPage() {
   // Combobox state for product selector
   const [productComboboxOpen, setProductComboboxOpen] = useState(false);
   const [addProductSectionOpen, setAddProductSectionOpen] = useState(false);
+  const [hasDeliveryNotesAccess, setHasDeliveryNotesAccess] = useState(false);
+  const [importDeliveryNoteSectionOpen, setImportDeliveryNoteSectionOpen] = useState(false);
+  const [draftDeliveryNotes, setDraftDeliveryNotes] = useState<DeliveryNote[]>([]);
 
   // Initialize draft management hook (only save when on this tab)
   const draft = useStockUpdateDraft(clientId, isActiveTab);
@@ -1007,6 +1014,15 @@ export default function ClientDetailPage() {
 
       if (productsError) throw productsError;
       setAllProducts(productsData || []);
+
+      const deliveryNotesAccess = await currentUserCanAccessFeature(FEATURES.DELIVERY_NOTES);
+      setHasDeliveryNotesAccess(deliveryNotesAccess);
+      if (deliveryNotesAccess) {
+        const draftNotes = await fetchDraftDeliveryNotesForImport(clientId, companyId);
+        setDraftDeliveryNotes(draftNotes);
+      } else {
+        setDraftDeliveryNotes([]);
+      }
 
       // Load client products with related product
       const { data: cpData, error: cpError } = await supabase
@@ -3703,6 +3719,42 @@ export default function ClientDetailPage() {
               </form>
               </CardContent>
             </div>
+
+            {hasDeliveryNotesAccess && (
+              <>
+                <Separator className="my-4" />
+                <CardHeader className="pb-3 pt-0">
+                  <button
+                    type="button"
+                    onClick={() => setImportDeliveryNoteSectionOpen((open) => !open)}
+                    className="flex w-full items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                    aria-expanded={importDeliveryNoteSectionOpen}
+                  >
+                    {importDeliveryNoteSectionOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+                    )}
+                    <CardTitle className="text-lg">Importer un bon de livraison</CardTitle>
+                  </button>
+                </CardHeader>
+                <div className={cn(!importDeliveryNoteSectionOpen && 'hidden')}>
+                  <CardContent className="pt-0">
+                    <CardDescription className="mb-4">
+                      Importez un bon de livraison brouillon dans les stocks du client (Ancien dépôt).
+                    </CardDescription>
+                    <ImportDeliveryNoteSection
+                      clientId={clientId}
+                      draftNotes={draftDeliveryNotes}
+                      onImported={() => {
+                        void loadClientData();
+                      }}
+                    />
+                  </CardContent>
+                </div>
+              </>
+            )}
+
             <CardContent className={cn(!addProductSectionOpen && 'pt-0')}>
               <Separator className={cn('mb-6', !addProductSectionOpen && 'mt-0')} />
 
