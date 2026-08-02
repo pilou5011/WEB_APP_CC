@@ -1,16 +1,17 @@
 import './globals.css';
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+import type { CSSProperties } from 'react';
 import type { Metadata } from 'next';
-import { Inter, Poppins } from 'next/font/google';
 import { Toaster } from '@/components/ui/sonner';
 import { LayoutWrapper } from '@/components/layout-wrapper';
 import { SITE_URL, absoluteUrl } from '@/lib/site-config';
 
-const inter = Inter({ subsets: ['latin'] });
-const poppins = Poppins({ 
-  subsets: ['latin'],
-  weight: ['600', '700'],
-  variable: '--font-poppins'
-});
+const bodyStyle = {
+  fontFamily: "'Inter Variable', Inter, system-ui, sans-serif",
+  ['--font-poppins' as string]: "'Poppins', system-ui, sans-serif",
+} as CSSProperties;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -58,7 +59,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr">
-      <body className={`${inter.className} ${poppins.variable}`}>
+      <body className="font-sans antialiased" style={bodyStyle}>
         <LayoutWrapper>
           {children}
         </LayoutWrapper>
