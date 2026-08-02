@@ -52,6 +52,7 @@ import { WeekSchedule, getDefaultWeekSchedule } from '@/components/opening-hours
 import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/market-days-editor';
 import { VacationPeriod, VacationPeriodsEditor } from '@/components/vacation-periods-editor';
 import { ImportDeliveryNoteSection } from '@/components/delivery-notes/import-delivery-note-section';
+import { SegmentedTwoOptionToggle } from '@/components/ui/segmented-two-option-toggle';
 import { fetchDraftDeliveryNotesForImport } from '@/lib/delivery-notes';
 import { currentUserCanAccessFeature } from '@/lib/auth-helpers';
 import { FEATURES } from '@/lib/subscription';
@@ -1291,9 +1292,11 @@ export default function ClientDetailPage() {
 
       if (hasSubProducts) {
         // For products with sub-products, validate and calculate from sub-products
+        // stockSold = Σ max(0, previous_i − counted_i) (même formule que l'insertion des stock_updates)
         let totalCountedStock = 0;
         let totalStockAdded = 0;
         let totalPreviousStock = 0;
+        let totalStockSold = 0;
         let hasAnySubProductData = false;
 
         for (const sp of productSubProducts) {
@@ -1332,11 +1335,16 @@ export default function ClientDetailPage() {
 
           if (!hasCountedStock || !hasNewDeposit) continue;
 
-          totalCountedStock += parseInt(formData.counted_stock) || 0;
-          totalStockAdded += parseInt(formData.stock_added) || 0;
+          const countedStock = parseInt(formData.counted_stock) || 0;
+          const newDeposit = parseInt(formData.stock_added) || 0;
           // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
           const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
-          totalPreviousStock += lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
+          const previousStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
+
+          totalCountedStock += countedStock;
+          totalStockAdded += newDeposit;
+          totalPreviousStock += previousStock;
+          totalStockSold += Math.max(0, previousStock - countedStock);
         }
 
         if (!hasAnySubProductData) continue;
@@ -1348,7 +1356,7 @@ export default function ClientDetailPage() {
         const previousStock = totalPreviousStock;
         const countedStock = totalCountedStock;
         const newDeposit = totalStockAdded;
-        const stockSold = Math.max(0, previousStock - countedStock);
+        const stockSold = totalStockSold;
         const newStock = newDeposit;
         const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = (cp as ClientProduct & { product_info?: string | null }).product_info || '';
@@ -3763,34 +3771,12 @@ export default function ClientDetailPage() {
               ) : (
                 <>
                   <div className="mb-3 flex justify-start">
-                    <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setStockInputMode('reassort')}
-                        className={cn(
-                          'rounded-none h-8 px-3 text-xs transition-colors',
-                          stockInputMode === 'reassort'
-                            ? 'bg-green-100 text-green-700 hover:bg-green-100 font-bold ring-2 ring-inset ring-green-500'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        )}
-                      >
-                        Réassort
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setStockInputMode('deposit')}
-                        className={cn(
-                          'rounded-none h-8 px-3 text-xs border-l border-slate-300 transition-colors',
-                          stockInputMode === 'deposit'
-                            ? 'bg-[#E8EDF2] text-slate-700 hover:bg-[#E8EDF2] font-bold ring-2 ring-inset ring-slate-500'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        )}
-                      >
-                        Dépôt
-                      </Button>
-                    </div>
+                    <SegmentedTwoOptionToggle
+                      value={stockInputMode}
+                      onChange={setStockInputMode}
+                      leftOption={{ value: 'reassort', label: 'Réassort' }}
+                      rightOption={{ value: 'deposit', label: 'Dépôt' }}
+                    />
                   </div>
                 <div className="border border-slate-200 rounded-lg max-h-[600px] overflow-auto">
                   <DndContext
