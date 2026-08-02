@@ -321,6 +321,8 @@ export type UserProfile = {
   phone: string | null;
   terms_and_conditions: string | null;
   stock_input_mode_preference: 'deposit' | 'reassort';
+  fiscal_year_end_month: number | null;
+  fiscal_year_end_day: number | null;
   created_at: string;
   updated_at: string;
 };

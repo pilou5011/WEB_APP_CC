@@ -21,6 +21,7 @@ export const FEATURES = {
   USER_MANAGEMENT: 'user_management',
   COMPANY_PROFILE: 'company_profile',
   DELIVERY_NOTES: 'delivery_notes',
+  DASHBOARD: 'dashboard',
 } as const;
 
 export type Feature = (typeof FEATURES)[keyof typeof FEATURES];
@@ -45,4 +46,5 @@ export const FEATURE_MIN_PLAN: Record<Feature, SubscriptionPlan> = {
   [FEATURES.USER_MANAGEMENT]: 'standard',
   [FEATURES.COMPANY_PROFILE]: 'standard',
   [FEATURES.DELIVERY_NOTES]: 'gold',
+  [FEATURES.DASHBOARD]: 'gold',
 };

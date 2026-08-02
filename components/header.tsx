@@ -14,10 +14,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library } from 'lucide-react';
+import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library, LayoutDashboard } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { getCurrentUser, isCurrentUserSuperAdmin } from '@/lib/auth-helpers';
+import { getCurrentUser, isCurrentUserSuperAdmin, currentUserCanAccessFeature } from '@/lib/auth-helpers';
+import { FEATURES } from '@/lib/subscription';
 
 export function Header() {
   const router = useRouter();
@@ -28,6 +29,15 @@ export function Header() {
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [impersonationAdminEmail, setImpersonationAdminEmail] = useState('');
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
+  const [hasDashboardAccess, setHasDashboardAccess] = useState(true);
+
+  useEffect(() => {
+    const loadDashboardAccess = async () => {
+      const access = await currentUserCanAccessFeature(FEATURES.DASHBOARD);
+      setHasDashboardAccess(access);
+    };
+    void loadDashboardAccess();
+  }, [userEmail]);
 
   useEffect(() => {
     // Récupérer l'email de l'utilisateur connecté
@@ -175,6 +185,11 @@ export function Header() {
     { label: 'Clients', href: '/clients', icon: Users },
     { label: 'Produits', href: '/products', icon: Package },
     { label: 'Bibliothèque', href: '/library', icon: Library },
+    {
+      label: hasDashboardAccess ? 'Tableau de bord' : '🔒 Tableau de bord',
+      href: '/app/dashboard',
+      icon: LayoutDashboard,
+    },
   ];
 
   // Obtenir les initiales pour l'avatar
@@ -230,8 +245,11 @@ export function Header() {
         <nav className="hidden md:flex items-center space-x-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.href || 
-              (item.href !== '/' && pathname?.startsWith(item.href));
+            const isActive =
+              item.href === '/app'
+                ? pathname === '/app'
+                : pathname === item.href ||
+                  (item.href !== '/' && pathname?.startsWith(item.href));
             
             return (
               <Link key={item.href} href={item.href}>

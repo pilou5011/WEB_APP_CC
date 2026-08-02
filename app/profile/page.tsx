@@ -14,6 +14,12 @@ import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { formatPhoneNumber, formatSIRETNumber, formatTVANumber } from '@/lib/utils';
+import {
+  dateInputToFiscalClosingParts,
+  fiscalClosingPartsToDateInput,
+  formatFiscalClosingDate,
+  hasFiscalClosingDate,
+} from '@/lib/fiscal-closing-date';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -38,6 +44,33 @@ export default function ProfilePage() {
     phone: '',
     terms_and_conditions: '',
     stock_input_mode_preference: 'deposit' as 'deposit' | 'reassort',
+    fiscal_closing_date: '',
+  });
+
+  const mapProfileToFormData = (data: UserProfile) => ({
+    company_name: data.company_name || '',
+    company_name_short: data.company_name_short || '',
+    first_name: data.first_name || '',
+    last_name: data.last_name || '',
+    street_address: data.street_address || '',
+    postal_code: data.postal_code || '',
+    city: data.city || '',
+    latitude: data.latitude || null,
+    longitude: data.longitude || null,
+    siret: data.siret || '',
+    ape_code: data.ape_code || '',
+    tva_number: data.tva_number || '',
+    email: data.email || '',
+    phone: data.phone || '',
+    terms_and_conditions: data.terms_and_conditions || getDefaultTermsAndConditions(data.company_name),
+    stock_input_mode_preference:
+      (data.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit') as
+        | 'deposit'
+        | 'reassort',
+    fiscal_closing_date: fiscalClosingPartsToDateInput(
+      data.fiscal_year_end_month,
+      data.fiscal_year_end_day
+    ),
   });
 
   // Fonction pour générer les conditions générales par défaut avec le nom de la société
@@ -90,25 +123,7 @@ export default function ProfilePage() {
 
       if (data) {
         setProfile(data);
-        setFormData({
-          company_name: data.company_name || '',
-          company_name_short: data.company_name_short || '',
-          first_name: data.first_name || '',
-          last_name: data.last_name || '',
-          street_address: data.street_address || '',
-          postal_code: data.postal_code || '',
-          city: data.city || '',
-          latitude: data.latitude || null,
-          longitude: data.longitude || null,
-          siret: data.siret || '',
-          ape_code: data.ape_code || '',
-          tva_number: data.tva_number || '',
-          email: data.email || '',
-          phone: data.phone || '',
-          terms_and_conditions: data.terms_and_conditions || getDefaultTermsAndConditions(data.company_name),
-          stock_input_mode_preference:
-            data.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
-        });
+        setFormData(mapProfileToFormData(data));
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -161,6 +176,8 @@ export default function ProfilePage() {
         }
       }
 
+      const fiscalClosingParts = dateInputToFiscalClosingParts(formData.fiscal_closing_date);
+
       const profileData = {
         company_name: formData.company_name || null,
         company_name_short: formData.company_name_short || null,
@@ -176,6 +193,8 @@ export default function ProfilePage() {
         phone: formData.phone || null,
         terms_and_conditions: formData.terms_and_conditions || null,
         stock_input_mode_preference: formData.stock_input_mode_preference,
+        fiscal_year_end_month: fiscalClosingParts?.month ?? null,
+        fiscal_year_end_day: fiscalClosingParts?.day ?? null,
         updated_at: new Date().toISOString()
       };
 
@@ -400,6 +419,21 @@ export default function ProfilePage() {
                         {profile.stock_input_mode_preference === 'reassort' ? 'Réassort' : 'Nouveau dépôt'}
                       </p>
                     </div>
+
+                    <div>
+                      <Label className="text-slate-500 text-sm">Date de clôture comptable</Label>
+                      <p className="text-lg font-medium mt-1">
+                        {hasFiscalClosingDate(
+                          profile.fiscal_year_end_month,
+                          profile.fiscal_year_end_day
+                        )
+                          ? formatFiscalClosingDate(
+                              profile.fiscal_year_end_month,
+                              profile.fiscal_year_end_day
+                            )
+                          : 'Non définie'}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Conditions générales de vente */}
@@ -440,25 +474,7 @@ export default function ProfilePage() {
                 setIsEditing(false);
                 // Restaurer les données du profil si on annule l'édition
                 if (profile) {
-                  setFormData({
-                    company_name: profile.company_name || '',
-                    company_name_short: profile.company_name_short || '',
-                    first_name: profile.first_name || '',
-                    last_name: profile.last_name || '',
-                    street_address: profile.street_address || '',
-                    postal_code: profile.postal_code || '',
-                    city: profile.city || '',
-                    latitude: profile.latitude || null,
-                    longitude: profile.longitude || null,
-                    siret: profile.siret || '',
-                    ape_code: profile.ape_code || '',
-                    tva_number: profile.tva_number || '',
-                    email: profile.email || '',
-                    phone: profile.phone || '',
-                    terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name),
-                    stock_input_mode_preference:
-                      profile.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
-                  });
+                  setFormData(mapProfileToFormData(profile));
                 }
               }}
           >
@@ -676,6 +692,34 @@ export default function ProfilePage() {
                     </Button>
                   </div>
                 </div>
+
+                <div>
+                  <Label htmlFor="fiscal_closing_date">Date de clôture comptable</Label>
+                  <Input
+                    id="fiscal_closing_date"
+                    type="date"
+                    value={formData.fiscal_closing_date}
+                    onChange={(e) =>
+                      setFormData({ ...formData, fiscal_closing_date: e.target.value })
+                    }
+                    className="mt-1.5 max-w-xs"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Optionnel. Jour et mois de clôture de l&apos;exercice (ex. 30/06). Utilisé par le
+                    tableau de bord.
+                  </p>
+                  {formData.fiscal_closing_date && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      onClick={() => setFormData({ ...formData, fiscal_closing_date: '' })}
+                    >
+                      Effacer la date
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Conditions générales de vente */}
@@ -751,25 +795,7 @@ export default function ProfilePage() {
                     setIsEditing(false);
                     // Restaurer les données du profil si on annule l'édition
                     if (profile) {
-                      setFormData({
-                        company_name: profile.company_name || '',
-                        company_name_short: profile.company_name_short || '',
-                        first_name: profile.first_name || '',
-                        last_name: profile.last_name || '',
-                        street_address: profile.street_address || '',
-                        postal_code: profile.postal_code || '',
-                        city: profile.city || '',
-                        latitude: profile.latitude || null,
-                        longitude: profile.longitude || null,
-                        siret: profile.siret || '',
-                        ape_code: profile.ape_code || '',
-                        tva_number: profile.tva_number || '',
-                        email: profile.email || '',
-                        phone: profile.phone || '',
-                        terms_and_conditions: profile.terms_and_conditions || getDefaultTermsAndConditions(profile.company_name),
-                        stock_input_mode_preference:
-                          profile.stock_input_mode_preference === 'reassort' ? 'reassort' : 'deposit',
-                      });
+                      setFormData(mapProfileToFormData(profile));
                     }
                   }}
                   disabled={submitting}

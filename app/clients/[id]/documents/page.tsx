@@ -1072,9 +1072,11 @@ export default function ClientDetailPage() {
 
       if (hasSubProducts) {
         // For products with sub-products, validate and calculate from sub-products
+        // stockSold = Σ max(0, previous_i − counted_i) (même formule que l'insertion des stock_updates)
         let totalCountedStock = 0;
         let totalStockAdded = 0;
         let totalPreviousStock = 0;
+        let totalStockSold = 0;
         let hasAnySubProductData = false;
 
         for (const sp of productSubProducts) {
@@ -1113,11 +1115,16 @@ export default function ClientDetailPage() {
 
           if (!hasCountedStock || !hasNewDeposit) continue;
 
-          totalCountedStock += parseInt(formData.counted_stock) || 0;
-          totalStockAdded += parseInt(formData.stock_added) || 0;
+          const countedStock = parseInt(formData.counted_stock) || 0;
+          const newDeposit = parseInt(formData.stock_added) || 0;
           // Utiliser uniquement le dernier stock_update.new_stock pour previous_stock
           const lastSubProductUpdate = lastStockUpdatesBySubProduct[sp.id];
-          totalPreviousStock += lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
+          const previousStock = lastSubProductUpdate ? lastSubProductUpdate.new_stock : 0;
+
+          totalCountedStock += countedStock;
+          totalStockAdded += newDeposit;
+          totalPreviousStock += previousStock;
+          totalStockSold += Math.max(0, previousStock - countedStock);
         }
 
         if (!hasAnySubProductData) continue;
@@ -1129,7 +1136,7 @@ export default function ClientDetailPage() {
         const previousStock = totalPreviousStock;
         const countedStock = totalCountedStock;
         const newDeposit = totalStockAdded;
-        const stockSold = Math.max(0, previousStock - countedStock);
+        const stockSold = totalStockSold;
         const newStock = newDeposit;
         const stockAdded = newStock - countedStock; // Permet les valeurs négatives pour les réassorts négatifs
         const productInfo = cp.product_info || '';
