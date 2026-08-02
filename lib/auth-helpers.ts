@@ -1,4 +1,11 @@
 import { supabase } from './supabase';
+import {
+  canAccessFeature,
+  hasFeature,
+  normalizeSubscriptionPlan,
+  type Feature,
+  type SubscriptionPlan,
+} from './subscription';
 
 /**
  * Obtient l'utilisateur connecté avec ses informations (company_id, role)
@@ -106,5 +113,57 @@ export async function requireCompanyId(): Promise<string> {
     throw new Error('Non autorisé : company_id manquant');
   }
   return companyId;
+}
+
+/**
+ * Formule d'abonnement de l'utilisateur connecté.
+ */
+export async function getCurrentUserSubscriptionPlan(): Promise<SubscriptionPlan> {
+  const user = await getCurrentUser();
+  return normalizeSubscriptionPlan(user?.subscription_plan);
+}
+
+/**
+ * Vérifie si l'utilisateur connecté a accès à une fonctionnalité.
+ */
+export async function currentUserHasFeature(feature: Feature): Promise<boolean> {
+  const plan = await getCurrentUserSubscriptionPlan();
+  return hasFeature(plan, feature);
+}
+
+/**
+ * Alias de currentUserHasFeature pour cohérence sémantique.
+ */
+export async function currentUserCanAccessFeature(feature: Feature): Promise<boolean> {
+  return currentUserHasFeature(feature);
+}
+
+/**
+ * Vérifie l'accès à une fonctionnalité à partir d'un utilisateur déjà chargé.
+ */
+export function userHasFeature(
+  user: { subscription_plan?: SubscriptionPlan | string | null },
+  feature: Feature
+): boolean {
+  const plan = normalizeSubscriptionPlan(user.subscription_plan);
+  return hasFeature(plan, feature);
+}
+
+export function userCanAccessFeature(
+  user: { subscription_plan?: SubscriptionPlan | string | null },
+  feature: Feature
+): boolean {
+  return userHasFeature(user, feature);
+}
+
+/**
+ * Lance une erreur si l'utilisateur connecté n'a pas accès à la fonctionnalité.
+ */
+export async function requireFeature(feature: Feature): Promise<SubscriptionPlan> {
+  const plan = await getCurrentUserSubscriptionPlan();
+  if (!canAccessFeature(plan, feature)) {
+    throw new Error(`Fonctionnalité non disponible avec la formule ${plan}`);
+  }
+  return plan;
 }
 

@@ -1,6 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { getCurrentUserCompanyId } from './auth-helpers';
 import { setKnownAccountCookieClient } from './supabase/auth-routing';
+import type { SubscriptionPlan } from './subscription/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -109,18 +110,25 @@ const SOFT_DELETE_TABLES = [
   'sub_products',
   'draft_stock_updates',
   'draft_invoices',
-  'draft_credit_notes'
+  'draft_credit_notes',
+  'delivery_note_templates',
+  'delivery_note_template_products',
+  'delivery_notes',
+  'delivery_note_lines',
 ];
 
 /**
- * Helper pour ajouter automatiquement le filtre deleted_at IS NULL aux requêtes SELECT
- * Utilisez cette fonction pour toutes les requêtes sur les tables avec soft delete
+ * Ajoute le filtre deleted_at IS NULL sur une requête déjà chaînée (.select(), .update(), etc.).
+ * Ne pas appeler directement sur le résultat de .from() seul.
  */
 export function addSoftDeleteFilter(query: any, table: string): any {
-  if (SOFT_DELETE_TABLES.includes(table)) {
-    return query.is('deleted_at', null);
+  if (!SOFT_DELETE_TABLES.includes(table)) {
+    return query;
   }
-  return query;
+  if (typeof query?.is !== 'function') {
+    return query;
+  }
+  return query.is('deleted_at', null);
 }
 
 export type Client = {
@@ -313,6 +321,8 @@ export type UserProfile = {
   phone: string | null;
   terms_and_conditions: string | null;
   stock_input_mode_preference: 'deposit' | 'reassort';
+  fiscal_year_end_month: number | null;
+  fiscal_year_end_day: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -417,6 +427,7 @@ export type User = {
   email: string;
   company_id: string;
   role: 'super_admin' | 'admin' | 'user';
+  subscription_plan: SubscriptionPlan;
   created_at: string;
 };
 
@@ -430,4 +441,56 @@ export type UserInvitation = {
   accepted_at: string | null;
   expires_at: string;
   created_at: string;
+};
+
+export type DeliveryNoteStatus = 'draft' | 'imported';
+
+export type DeliveryNoteTemplate = {
+  id: string;
+  company_id: string;
+  name: string;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DeliveryNoteTemplateProduct = {
+  id: string;
+  template_id: string;
+  company_id: string;
+  product_id: string;
+  display_order: number;
+  deleted_at: string | null;
+  created_at: string;
+};
+
+export type DeliveryNote = {
+  id: string;
+  company_id: string;
+  client_id: string;
+  delivery_number: string;
+  status: DeliveryNoteStatus;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  imported_at: string | null;
+};
+
+export type DeliveryNoteLine = {
+  id: string;
+  delivery_note_id: string;
+  company_id: string;
+  product_id: string;
+  quantity: number;
+  display_order: number;
+  deleted_at: string | null;
+  created_at: string;
+};
+
+export type DeliveryNoteLineWithProduct = DeliveryNoteLine & {
+  product?: Product | null;
+};
+
+export type DeliveryNoteTemplateProductWithProduct = DeliveryNoteTemplateProduct & {
+  product?: Product | null;
 };
