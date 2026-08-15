@@ -17,7 +17,7 @@ import {
   Truck,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { supabase, Client, DeliveryNote, DeliveryNoteLineWithProduct, DeliveryNoteTemplate, Product, addSoftDeleteFilter } from '@/lib/supabase';
+import { supabase, Client, DeliveryNote, DeliveryNoteTemplate, Product, SubProduct, addSoftDeleteFilter } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -60,14 +60,16 @@ import {
   deleteDraftDeliveryNote,
   deleteTemplate,
   duplicateTemplate,
+  fetchActiveSubProductsByProductIds,
   fetchClientDeliveryNotes,
   fetchClientProductSalesByYear,
-  fetchDeliveryNoteLines,
+  fetchClientSubProductSalesByYear,
   fetchDeliveryNoteTemplates,
   fetchImportableProducts,
   fetchTemplateProducts,
   getSalesHistoryYears,
   renameTemplate,
+  resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
 } from '@/lib/delivery-notes';
@@ -79,30 +81,43 @@ function serializeDraftRows(rows: ProductLineRow[]): string {
       quantity:
         row.quantity === '' || row.quantity === undefined ? 0 : parseInt(row.quantity || '0', 10),
       display_order: index,
+      subRows: (row.subRows ?? []).map((sub) => ({
+        sub_product_id: sub.sub_product_id,
+        quantity: sub.quantity === '' ? 0 : parseInt(sub.quantity || '0', 10),
+      })),
     }))
   );
 }
 
-function linesToRows(lines: DeliveryNoteLineWithProduct[]): ProductLineRow[] {
+function resolvedLinesToRows(
+  lines: Awaited<ReturnType<typeof resolveDeliveryNoteLines>>
+): ProductLineRow[] {
   return lines.map((line) => ({
-    id: line.id,
+    id: line.product_id,
     product_id: line.product_id,
-    product_name: line.product?.name || '',
-    barcode: line.product?.barcode || '',
+    product_name: line.product_name,
+    barcode: line.barcode,
     quantity: String(line.quantity),
+    subRows: line.subLines.map((sub) => ({
+      id: `${line.product_id}-sub-${sub.sub_product_id}`,
+      sub_product_id: sub.sub_product_id,
+      sub_product_name: sub.sub_product_name,
+      quantity: String(sub.quantity),
+    })),
   }));
 }
 
 async function buildNoteRowsCache(
   noteIds: string[],
-  companyId: string
+  companyId: string,
+  mergeCurrentSubProducts: boolean
 ): Promise<Map<string, ProductLineRow[]>> {
   if (noteIds.length === 0) return new Map();
 
   const entries = await Promise.all(
     noteIds.map(async (noteId) => {
-      const lines = await fetchDeliveryNoteLines(noteId, companyId);
-      return [noteId, linesToRows(lines)] as const;
+      const lines = await resolveDeliveryNoteLines(noteId, companyId, { mergeCurrentSubProducts });
+      return [noteId, resolvedLinesToRows(lines)] as const;
     })
   );
 
@@ -115,6 +130,18 @@ function collectProductIdsFromRowsCache(cache: Map<string, ProductLineRow[]>): s
     rows.forEach((row) => {
       if (row.product_id) ids.add(row.product_id);
     });
+  });
+  return Array.from(ids);
+}
+
+function collectSubProductIdsFromRows(rows: ProductLineRow[]): string[] {
+  return rows.flatMap((row) => (row.subRows ?? []).map((sub) => sub.sub_product_id));
+}
+
+function collectSubProductIdsFromRowsCache(cache: Map<string, ProductLineRow[]>): string[] {
+  const ids = new Set<string>();
+  Array.from(cache.values()).forEach((rows) => {
+    collectSubProductIdsFromRows(rows).forEach((id) => ids.add(id));
   });
   return Array.from(ids);
 }
@@ -137,6 +164,12 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [draftRows, setDraftRows] = useState<ProductLineRow[]>([]);
   const [salesByProduct, setSalesByProduct] = useState<Map<string, Record<number, number>>>(new Map());
+  const [salesBySubProduct, setSalesBySubProduct] = useState<Map<string, Record<number, number>>>(
+    new Map()
+  );
+  const [subProductsByProductId, setSubProductsByProductId] = useState<Map<string, SubProduct[]>>(
+    new Map()
+  );
   const [readOnlyViewId, setReadOnlyViewId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -230,23 +263,37 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     const [draftRowsCache, importedRowsCache] = await Promise.all([
       buildNoteRowsCache(
         drafts.map((d) => d.id),
-        cid
+        cid,
+        true
       ),
       buildNoteRowsCache(
         imported.map((n) => n.id),
-        cid
+        cid,
+        false
       ),
     ]);
 
     const productIds = [
       ...collectProductIdsFromRowsCache(draftRowsCache),
       ...collectProductIdsFromRowsCache(importedRowsCache),
+      ...productsData.map((p) => p.id),
     ];
     const uniqueProductIds = Array.from(new Set(productIds));
-    const sales =
+    const subProductIds = [
+      ...collectSubProductIdsFromRowsCache(draftRowsCache),
+      ...collectSubProductIdsFromRowsCache(importedRowsCache),
+    ];
+    const uniqueSubProductIds = Array.from(new Set(subProductIds));
+
+    const [sales, subSales, subProductsMap] = await Promise.all([
       uniqueProductIds.length > 0
-        ? await fetchClientProductSalesByYear(clientId, cid, uniqueProductIds, [...salesYears])
-        : new Map<string, Record<number, number>>();
+        ? fetchClientProductSalesByYear(clientId, cid, uniqueProductIds, [...salesYears])
+        : Promise.resolve(new Map<string, Record<number, number>>()),
+      uniqueSubProductIds.length > 0
+        ? fetchClientSubProductSalesByYear(clientId, cid, uniqueSubProductIds, [...salesYears])
+        : Promise.resolve(new Map<string, Record<number, number>>()),
+      fetchActiveSubProductsByProductIds(cid, uniqueProductIds),
+    ]);
 
     setCompanyId(cid);
     setClient(clientData);
@@ -257,6 +304,8 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     setDraftRowsByNoteId(draftRowsCache);
     setImportedRowsByNoteId(importedRowsCache);
     setSalesByProduct(sales);
+    setSalesBySubProduct(subSales);
+    setSubProductsByProductId(subProductsMap);
 
     return { draftRowsCache, importedRowsCache };
   }, [clientId, salesYears]);
@@ -473,11 +522,25 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     if (!companyId || !selectedDraftId) return;
     const lines = draftRows
       .filter((r) => r.product_id)
-      .map((row, index) => ({
-        product_id: row.product_id!,
-        quantity: row.quantity === '' || row.quantity === undefined ? 0 : parseInt(row.quantity, 10),
-        display_order: index + 1,
-      }));
+      .map((row, index) => {
+        const subLines = (row.subRows ?? []).map((sub, subIndex) => ({
+          sub_product_id: sub.sub_product_id,
+          quantity: sub.quantity === '' ? 0 : parseInt(sub.quantity, 10) || 0,
+          display_order: subIndex + 1,
+        }));
+        const quantity =
+          subLines.length > 0
+            ? subLines.reduce((sum, sub) => sum + sub.quantity, 0)
+            : row.quantity === '' || row.quantity === undefined
+              ? 0
+              : parseInt(row.quantity, 10) || 0;
+        return {
+          product_id: row.product_id!,
+          quantity,
+          display_order: index + 1,
+          subLines,
+        };
+      });
 
     await saveDeliveryNoteLines(selectedDraftId, companyId, lines);
     await loadData();
@@ -490,9 +553,13 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
 
   const handleSaveDraft = async () => {
     if (!selectedDraftId) return;
-    const hasZero = draftRows.some(
-      (r) => r.product_id && (r.quantity === '' || parseInt(r.quantity || '0', 10) === 0)
-    );
+    const hasZero = draftRows.some((r) => {
+      if (!r.product_id) return false;
+      if (r.subRows && r.subRows.length > 0) {
+        return r.subRows.some((sub) => sub.quantity === '' || parseInt(sub.quantity || '0', 10) === 0);
+      }
+      return r.quantity === '' || parseInt(r.quantity || '0', 10) === 0;
+    });
     if (hasZero) {
       setZeroQtyConfirmOpen(true);
       return;
@@ -521,19 +588,34 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
 
     const productIds = rows.map((r) => r.product_id).filter(Boolean) as string[];
     const missingProductIds = productIds.filter((id) => !salesByProduct.has(id));
-    if (missingProductIds.length === 0) return;
+    const subProductIds = collectSubProductIdsFromRows(rows);
+    const missingSubProductIds = subProductIds.filter((id) => !salesBySubProduct.has(id));
 
-    const newSales = await fetchClientProductSalesByYear(
-      clientId,
-      companyId,
-      missingProductIds,
-      [...salesYears]
-    );
-    setSalesByProduct((prev) => {
-      const next = new Map(prev);
-      newSales.forEach((value, key) => next.set(key, value));
-      return next;
-    });
+    if (missingProductIds.length === 0 && missingSubProductIds.length === 0) return;
+
+    const [newSales, newSubSales] = await Promise.all([
+      missingProductIds.length > 0
+        ? fetchClientProductSalesByYear(clientId, companyId, missingProductIds, [...salesYears])
+        : Promise.resolve(new Map<string, Record<number, number>>()),
+      missingSubProductIds.length > 0
+        ? fetchClientSubProductSalesByYear(clientId, companyId, missingSubProductIds, [...salesYears])
+        : Promise.resolve(new Map<string, Record<number, number>>()),
+    ]);
+
+    if (missingProductIds.length > 0) {
+      setSalesByProduct((prev) => {
+        const next = new Map(prev);
+        newSales.forEach((value, key) => next.set(key, value));
+        return next;
+      });
+    }
+    if (missingSubProductIds.length > 0) {
+      setSalesBySubProduct((prev) => {
+        const next = new Map(prev);
+        newSubSales.forEach((value, key) => next.set(key, value));
+        return next;
+      });
+    }
   };
 
 
@@ -856,6 +938,8 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                     addButtonLabel="Ajouter un produit"
                     salesYears={[...salesYears]}
                     salesByProduct={salesByProduct}
+                    salesBySubProduct={salesBySubProduct}
+                    subProductsByProductId={subProductsByProductId}
                     allowEmpty
                     scrollable
                     compactHeader
@@ -909,6 +993,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                           readOnly
                           salesYears={[...salesYears]}
                           salesByProduct={salesByProduct}
+                          salesBySubProduct={salesBySubProduct}
                         />
                       </div>
                     </div>

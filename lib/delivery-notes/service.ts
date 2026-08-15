@@ -1,9 +1,11 @@
 import type {
   DeliveryNote,
+  DeliveryNoteLineSubProductWithSubProduct,
   DeliveryNoteLineWithProduct,
   DeliveryNoteTemplate,
   DeliveryNoteTemplateProductWithProduct,
   Product,
+  SubProduct,
 } from '@/lib/supabase';
 import { addSoftDeleteFilter, supabase } from '@/lib/supabase';
 import {
@@ -13,6 +15,7 @@ import {
   onlyActiveRows,
   softDeleteWhere,
   syncChildRowsByProduct,
+  syncDeliveryNoteSubProductLines,
   withActiveSqlFilter,
 } from './db-helpers';
 
@@ -193,9 +196,149 @@ export async function fetchDeliveryNoteLines(
 
   if (error) throw error;
 
-  return onlyActiveRows(data as DeliveryNoteLineWithProduct[] | null).filter(
-    (line) => line.product && !line.product.deleted_at
+  return onlyActiveRows(data as DeliveryNoteLineWithProduct[] | null);
+}
+
+export async function fetchDeliveryNoteSubProductLines(
+  deliveryNoteId: string,
+  companyId: string
+): Promise<DeliveryNoteLineSubProductWithSubProduct[]> {
+  const { data, error } = await deliveryNotesTable('delivery_note_line_sub_products')
+    .select('*, sub_product:sub_products(*)')
+    .eq('delivery_note_id', deliveryNoteId)
+    .eq('company_id', companyId)
+    .order('display_order', { ascending: true });
+
+  if (error) {
+    const message = error.message || '';
+    if (
+      error.code === 'PGRST205' ||
+      error.code === '42P01' ||
+      message.includes('delivery_note_line_sub_products')
+    ) {
+      return [];
+    }
+    throw error;
+  }
+  return onlyActiveRows(data as DeliveryNoteLineSubProductWithSubProduct[] | null);
+}
+
+export async function fetchActiveSubProductsByProductIds(
+  companyId: string,
+  productIds: string[]
+): Promise<Map<string, SubProduct[]>> {
+  const result = new Map<string, SubProduct[]>();
+  if (productIds.length === 0) return result;
+
+  const { data, error } = await addSoftDeleteFilter(
+    supabase
+      .from('sub_products')
+      .select('*')
+      .eq('company_id', companyId)
+      .in('product_id', productIds)
+      .order('display_order', { ascending: true }),
+    'sub_products'
   );
+
+  if (error) throw error;
+
+  for (const sub of (data || []) as SubProduct[]) {
+    const list = result.get(sub.product_id) ?? [];
+    list.push(sub);
+    result.set(sub.product_id, list);
+  }
+
+  return result;
+}
+
+export type ResolvedDeliveryNoteSubLine = {
+  sub_product_id: string;
+  sub_product_name: string;
+  quantity: number;
+};
+
+export type ResolvedDeliveryNoteLine = {
+  product_id: string;
+  product_name: string;
+  barcode: string;
+  quantity: number;
+  subLines: ResolvedDeliveryNoteSubLine[];
+  productDeleted: boolean;
+};
+
+function storedSubQuantityMap(
+  stored: DeliveryNoteLineSubProductWithSubProduct[]
+): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const row of stored) {
+    map.set(row.sub_product_id, row.quantity);
+  }
+  return map;
+}
+
+export async function resolveDeliveryNoteLines(
+  deliveryNoteId: string,
+  companyId: string,
+  options: { mergeCurrentSubProducts: boolean }
+): Promise<ResolvedDeliveryNoteLine[]> {
+  const [parentLines, storedSubs] = await Promise.all([
+    fetchDeliveryNoteLines(deliveryNoteId, companyId),
+    fetchDeliveryNoteSubProductLines(deliveryNoteId, companyId),
+  ]);
+
+  const storedByProduct = new Map<string, DeliveryNoteLineSubProductWithSubProduct[]>();
+  for (const row of storedSubs) {
+    const list = storedByProduct.get(row.product_id) ?? [];
+    list.push(row);
+    storedByProduct.set(row.product_id, list);
+  }
+
+  const productIds = parentLines.map((line) => line.product_id);
+  const catalogSubs = options.mergeCurrentSubProducts
+    ? await fetchActiveSubProductsByProductIds(companyId, productIds)
+    : new Map<string, SubProduct[]>();
+
+  return parentLines
+    .filter((line) => {
+      if (options.mergeCurrentSubProducts) {
+        return Boolean(line.product && !line.product.deleted_at);
+      }
+      return true;
+    })
+    .map((line) => {
+      const stored = storedByProduct.get(line.product_id) ?? [];
+      const qtyMap = storedSubQuantityMap(stored);
+      let subLines: ResolvedDeliveryNoteSubLine[];
+
+      if (options.mergeCurrentSubProducts) {
+        const current = catalogSubs.get(line.product_id) ?? [];
+        subLines = current.map((sp) => ({
+          sub_product_id: sp.id,
+          sub_product_name: sp.name,
+          quantity: qtyMap.get(sp.id) ?? 0,
+        }));
+      } else {
+        subLines = stored.map((row) => ({
+          sub_product_id: row.sub_product_id,
+          sub_product_name: row.sub_product?.name || 'Sous-produit',
+          quantity: row.quantity,
+        }));
+      }
+
+      const quantity =
+        subLines.length > 0
+          ? subLines.reduce((sum, sub) => sum + sub.quantity, 0)
+          : line.quantity;
+
+      return {
+        product_id: line.product_id,
+        product_name: line.product?.name || 'Produit',
+        barcode: line.product?.barcode || '',
+        quantity,
+        subLines,
+        productDeleted: Boolean(line.product?.deleted_at),
+      };
+    });
 }
 
 export async function createEmptyDeliveryNote(
@@ -247,6 +390,23 @@ export async function createDeliveryNoteFromTemplate(
         quantity: 0,
       }))
     );
+
+    const subByProduct = await fetchActiveSubProductsByProductIds(
+      companyId,
+      templateProducts.map((tp) => tp.product_id)
+    );
+    const subRows = templateProducts.flatMap((tp) => {
+      const subs = subByProduct.get(tp.product_id) ?? [];
+      return subs.map((sp, index) => ({
+        product_id: tp.product_id,
+        sub_product_id: sp.id,
+        display_order: index + 1,
+        quantity: 0,
+      }));
+    });
+    if (subRows.length > 0) {
+      await syncDeliveryNoteSubProductLines(note.id, companyId, subRows);
+    }
   }
 
   return note;
@@ -265,6 +425,9 @@ export async function deleteDraftDeliveryNote(
   if (fetchError || !note || note.deleted_at) throw fetchError || new Error('Bon introuvable');
   if (note.status !== 'draft') throw new Error('Seuls les brouillons peuvent être supprimés');
 
+  await softDeleteWhere('delivery_note_line_sub_products', companyId, {
+    delivery_note_id: deliveryNoteId,
+  });
   await softDeleteWhere('delivery_note_lines', companyId, { delivery_note_id: deliveryNoteId });
 
   const { error } = await withActiveSqlFilter(
@@ -280,7 +443,12 @@ export async function deleteDraftDeliveryNote(
 export async function saveDeliveryNoteLines(
   deliveryNoteId: string,
   companyId: string,
-  lines: Array<{ product_id: string; quantity: number; display_order: number }>
+  lines: Array<{
+    product_id: string;
+    quantity: number;
+    display_order: number;
+    subLines?: Array<{ sub_product_id: string; quantity: number; display_order: number }>;
+  }>
 ): Promise<void> {
   const { data: note, error: noteError } = await deliveryNotesTable('delivery_notes')
     .select('status, deleted_at')
@@ -308,6 +476,16 @@ export async function saveDeliveryNoteLines(
     }))
   );
 
+  const subRows = lines.flatMap((line) =>
+    (line.subLines ?? []).map((sub) => ({
+      product_id: line.product_id,
+      sub_product_id: sub.sub_product_id,
+      display_order: sub.display_order,
+      quantity: sub.quantity,
+    }))
+  );
+  await syncDeliveryNoteSubProductLines(deliveryNoteId, companyId, subRows);
+
   await ensureDeliveryNotesSoftDeleteColumn();
 
   const { error: updateError } = await withActiveSqlFilter(
@@ -327,18 +505,7 @@ export async function fetchImportableProducts(companyId: string): Promise<Produc
   ).order('name', { ascending: true });
 
   if (productsError) throw productsError;
-
-  const { data: subProducts, error: subError } = await addSoftDeleteFilter(
-    supabase.from('sub_products').select('product_id').eq('company_id', companyId),
-    'sub_products'
-  );
-
-  if (subError) throw subError;
-
-  const withSubProducts = new Set(
-    (subProducts || []).map((sp: { product_id: string }) => sp.product_id)
-  );
-  return (products || []).filter((p: Product) => !withSubProducts.has(p.id));
+  return products || [];
 }
 
 export async function fetchDraftDeliveryNotesForImport(

@@ -5,6 +5,7 @@ export const DELIVERY_NOTE_TABLES = [
   'delivery_note_template_products',
   'delivery_notes',
   'delivery_note_lines',
+  'delivery_note_line_sub_products',
 ] as const;
 
 export type DeliveryNoteTable = (typeof DELIVERY_NOTE_TABLES)[number];
@@ -176,6 +177,89 @@ export async function syncChildRowsByProduct(
       }
 
       const { error } = await deliveryNotesTable(table).insert(insertPayload);
+      if (error) throw error;
+    }
+  }
+}
+
+type SyncSubProductRow = {
+  product_id: string;
+  sub_product_id: string;
+  display_order: number;
+  quantity: number;
+};
+
+export async function syncDeliveryNoteSubProductLines(
+  deliveryNoteId: string,
+  companyId: string,
+  rows: SyncSubProductRow[]
+): Promise<void> {
+  const hasSoftDelete = await ensureDeliveryNotesSoftDeleteColumn();
+  const deletedAt = nowIso();
+
+  const { data: existingAll, error: fetchError } = await deliveryNotesTable(
+    'delivery_note_line_sub_products'
+  )
+    .select('*')
+    .eq('delivery_note_id', deliveryNoteId)
+    .eq('company_id', companyId);
+
+  if (fetchError) {
+    const message = fetchError.message || '';
+    if (
+      rows.length === 0 &&
+      (fetchError.code === 'PGRST205' ||
+        fetchError.code === '42P01' ||
+        message.includes('delivery_note_line_sub_products'))
+    ) {
+      return;
+    }
+    throw fetchError;
+  }
+
+  const existing = existingAll || [];
+  const desiredIds = new Set(rows.map((r) => r.sub_product_id));
+
+  const toRemove = existing.filter((r) => r.deleted_at == null && !desiredIds.has(r.sub_product_id));
+  if (toRemove.length > 0) {
+    if (!hasSoftDelete) {
+      throw new Error('La migration soft delete des bons de livraison doit être appliquée');
+    }
+    const { error } = await withActiveSqlFilter(
+      deliveryNotesTable('delivery_note_line_sub_products')
+        .update({ deleted_at: deletedAt })
+        .in(
+          'id',
+          toRemove.map((r) => r.id)
+        )
+        .eq('company_id', companyId)
+    );
+    if (error) throw error;
+  }
+
+  for (const row of rows) {
+    const match = existing.find((r) => r.sub_product_id === row.sub_product_id);
+    if (match) {
+      const { error } = await deliveryNotesTable('delivery_note_line_sub_products')
+        .update({
+          product_id: row.product_id,
+          display_order: row.display_order,
+          quantity: row.quantity,
+          deleted_at: hasSoftDelete ? null : undefined,
+        })
+        .eq('id', match.id)
+        .eq('company_id', companyId);
+
+      if (error) throw error;
+    } else {
+      const { error } = await deliveryNotesTable('delivery_note_line_sub_products').insert({
+        delivery_note_id: deliveryNoteId,
+        company_id: companyId,
+        product_id: row.product_id,
+        sub_product_id: row.sub_product_id,
+        display_order: row.display_order,
+        quantity: row.quantity,
+      });
       if (error) throw error;
     }
   }

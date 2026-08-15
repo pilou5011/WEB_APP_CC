@@ -4,10 +4,12 @@ export {
   getLastAncienDepotByProduct,
   type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
+  type DeliveryNoteImportSubLinePreview,
 } from './import-service';
 
 export {
   fetchClientProductSalesByYear,
+  fetchClientSubProductSalesByYear,
   getSalesHistoryYears,
   type ProductSalesByYear,
 } from './sales-history';
@@ -19,6 +21,7 @@ export {
   deleteDraftDeliveryNote,
   deleteTemplate,
   duplicateTemplate,
+  fetchActiveSubProductsByProductIds,
   fetchClientDeliveryNotes,
   fetchDeliveryNoteLines,
   fetchDeliveryNoteTemplates,
@@ -27,6 +30,8 @@ export {
   fetchTemplateProducts,
   generateDeliveryNoteNumber,
   renameTemplate,
+  resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
+  type ResolvedDeliveryNoteLine,
 } from './service';
