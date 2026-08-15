@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,7 +27,7 @@ import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import {
   buildDeliveryNoteImportPreview,
   executeDeliveryNoteImport,
-  fetchDeliveryNoteLines,
+  type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
 } from '@/lib/delivery-notes';
 
@@ -67,13 +67,11 @@ export function ImportDeliveryNoteSection({
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) throw new Error('Non autorisé');
 
-      const lines = await fetchDeliveryNoteLines(selectedNoteId, companyId);
-      if (lines.length === 0) {
+      const previewData = await buildDeliveryNoteImportPreview(clientId, companyId, selectedNoteId);
+      if (previewData.lines.length === 0) {
         toast.error('Ce bon de livraison ne contient aucun produit');
         return;
       }
-
-      const previewData = await buildDeliveryNoteImportPreview(clientId, companyId, lines);
       setPreview(previewData);
       setConfirmOpen(true);
     } catch (error: unknown) {
@@ -103,7 +101,7 @@ export function ImportDeliveryNoteSection({
     }
   };
 
-  const renderPreviewTable = (rows: DeliveryNoteImportPreview['lines']) => (
+  const renderPreviewTable = (rows: DeliveryNoteImportLinePreview[]) => (
     <Table>
       <TableHeader>
         <TableRow>
@@ -115,12 +113,24 @@ export function ImportDeliveryNoteSection({
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={row.productId}>
-            <TableCell>{row.productName}</TableCell>
-            <TableCell className="text-center">{formatPreviousDepot(row.previousDepot)}</TableCell>
-            <TableCell className="text-center">{row.quantity}</TableCell>
-            <TableCell className="text-center font-medium">{row.newDepot}</TableCell>
-          </TableRow>
+          <React.Fragment key={row.productId}>
+            <TableRow className={row.subLines.length > 0 ? 'bg-slate-50' : undefined}>
+              <TableCell className={row.subLines.length > 0 ? 'font-semibold' : undefined}>
+                {row.productName}
+              </TableCell>
+              <TableCell className="text-center">{formatPreviousDepot(row.previousDepot)}</TableCell>
+              <TableCell className="text-center">{row.quantity}</TableCell>
+              <TableCell className="text-center font-medium">{row.newDepot}</TableCell>
+            </TableRow>
+            {row.subLines.map((sub) => (
+              <TableRow key={sub.subProductId}>
+                <TableCell className="pl-6 text-slate-700">└ {sub.subProductName}</TableCell>
+                <TableCell className="text-center">{formatPreviousDepot(sub.previousDepot)}</TableCell>
+                <TableCell className="text-center">{sub.quantity}</TableCell>
+                <TableCell className="text-center font-medium">{sub.newDepot}</TableCell>
+              </TableRow>
+            ))}
+          </React.Fragment>
         ))}
       </TableBody>
     </Table>

@@ -115,6 +115,7 @@ const SOFT_DELETE_TABLES = [
   'delivery_note_template_products',
   'delivery_notes',
   'delivery_note_lines',
+  'delivery_note_line_sub_products',
 ];
 
 /**
@@ -489,6 +490,22 @@ export type DeliveryNoteLine = {
 
 export type DeliveryNoteLineWithProduct = DeliveryNoteLine & {
   product?: Product | null;
+};
+
+export type DeliveryNoteLineSubProduct = {
+  id: string;
+  delivery_note_id: string;
+  company_id: string;
+  product_id: string;
+  sub_product_id: string;
+  quantity: number;
+  display_order: number;
+  deleted_at: string | null;
+  created_at: string;
+};
+
+export type DeliveryNoteLineSubProductWithSubProduct = DeliveryNoteLineSubProduct & {
+  sub_product?: SubProduct | null;
 };
 
 export type DeliveryNoteTemplateProductWithProduct = DeliveryNoteTemplateProduct & {

@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { Check, ChevronsUpDown, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Product } from '@/lib/supabase';
+import type { Product, SubProduct } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -28,12 +28,20 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 
+export type ProductLineSubRow = {
+  id: string;
+  sub_product_id: string;
+  sub_product_name: string;
+  quantity: string;
+};
+
 export type ProductLineRow = {
   id: string;
   product_id: string | null;
   product_name: string;
   barcode?: string;
   quantity?: string;
+  subRows?: ProductLineSubRow[];
 };
 
 type ProductLinesEditorProps = {
@@ -46,12 +54,39 @@ type ProductLinesEditorProps = {
   readOnly?: boolean;
   salesYears?: number[];
   salesByProduct?: Map<string, Record<number, number>>;
+  salesBySubProduct?: Map<string, Record<number, number>>;
+  subProductsByProductId?: Map<string, SubProduct[]>;
   allowEmpty?: boolean;
   /** Scroll interne avec en-têtes fixes (comme Facturer dépôt) */
   scrollable?: boolean;
   /** En-têtes de colonnes plus compacts */
   compactHeader?: boolean;
 };
+
+function parentQuantityFromSubs(subRows: ProductLineSubRow[] | undefined): string {
+  if (!subRows || subRows.length === 0) return '0';
+  const total = subRows.reduce((sum, sub) => {
+    const parsed = parseInt(sub.quantity || '0', 10);
+    return sum + (Number.isFinite(parsed) ? parsed : 0);
+  }, 0);
+  return String(total);
+}
+
+function salesForYear(
+  row: ProductLineRow,
+  year: number,
+  salesByProduct?: Map<string, Record<number, number>>,
+  salesBySubProduct?: Map<string, Record<number, number>>
+): number | string {
+  if (!row.product_id) return '-';
+  if (row.subRows && row.subRows.length > 0) {
+    return row.subRows.reduce(
+      (sum, sub) => sum + (salesBySubProduct?.get(sub.sub_product_id)?.[year] ?? 0),
+      0
+    );
+  }
+  return salesByProduct?.get(row.product_id)?.[year] ?? 0;
+}
 
 const SALES_CELL_CLASS =
   'w-[18px] min-w-[18px] max-w-[18px] px-0 text-center text-xs tabular-nums text-slate-600';
@@ -71,6 +106,7 @@ function SortableEditorRow({
   onDelete,
   salesYears,
   salesByProduct,
+  salesBySubProduct,
 }: {
   row: ProductLineRow;
   mode: 'template' | 'delivery-note';
@@ -84,6 +120,7 @@ function SortableEditorRow({
   onDelete: (rowId: string) => void;
   salesYears?: number[];
   salesByProduct?: Map<string, Record<number, number>>;
+  salesBySubProduct?: Map<string, Record<number, number>>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.id,
@@ -99,9 +136,11 @@ function SortableEditorRow({
   const availableProducts = allProducts.filter(
     (p) => p.id === row.product_id || !usedProductIds.has(p.id)
   );
+  const hasSubRows = mode === 'delivery-note' && (row.subRows?.length ?? 0) > 0;
+  const parentQuantity = hasSubRows ? parentQuantityFromSubs(row.subRows) : (row.quantity ?? '');
 
   return (
-    <TableRow ref={setNodeRef} style={style}>
+    <TableRow ref={setNodeRef} style={style} className={hasSubRows ? 'bg-slate-50' : undefined}>
       <TableCell className="w-10">
         {!readOnly && (
           <button type="button" className="cursor-grab text-slate-400" {...attributes} {...listeners}>
@@ -112,12 +151,12 @@ function SortableEditorRow({
       {mode === 'delivery-note' &&
         salesYears?.map((year) => (
           <TableCell key={year} className={SALES_CELL_CLASS}>
-            {row.product_id ? salesByProduct?.get(row.product_id)?.[year] ?? 0 : '-'}
+            {salesForYear(row, year, salesByProduct, salesBySubProduct)}
           </TableCell>
         ))}
       <TableCell>
         {readOnly ? (
-          <span className="text-sm">{row.product_name || '-'}</span>
+          <span className={cn('text-sm', hasSubRows && 'font-semibold')}>{row.product_name || '-'}</span>
         ) : (
           <Popover
             modal
@@ -125,7 +164,12 @@ function SortableEditorRow({
             onOpenChange={(open) => setOpenPopovers((prev) => ({ ...prev, [row.id]: open }))}
           >
             <PopoverTrigger asChild>
-              <Button variant="outline" role="combobox" className="w-full justify-between" type="button">
+              <Button
+                variant="outline"
+                role="combobox"
+                className={cn('w-full justify-between', hasSubRows && 'font-semibold')}
+                type="button"
+              >
                 {row.product_name || 'Sélectionner un produit...'}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
@@ -162,8 +206,15 @@ function SortableEditorRow({
       </TableCell>
       {mode === 'delivery-note' && (
         <TableCell>
-          {readOnly ? (
-            <span className="text-sm">{row.quantity ?? '0'}</span>
+          {readOnly || hasSubRows ? (
+            <span
+              className={cn(
+                'flex h-9 w-full items-center rounded-md border border-slate-200 bg-slate-100 px-3 text-sm text-slate-700',
+                hasSubRows && 'font-medium'
+              )}
+            >
+              {parentQuantity || '0'}
+            </span>
           ) : (
             <Input
               type="text"
@@ -202,6 +253,59 @@ function SortableEditorRow({
   );
 }
 
+function SubProductEditorRow({
+  parentRowId,
+  subRow,
+  readOnly,
+  salesYears,
+  salesBySubProduct,
+  actionColumn,
+  onQuantityChange,
+}: {
+  parentRowId: string;
+  subRow: ProductLineSubRow;
+  readOnly?: boolean;
+  salesYears?: number[];
+  salesBySubProduct?: Map<string, Record<number, number>>;
+  actionColumn: boolean;
+  onQuantityChange: (parentRowId: string, subProductId: string, value: string) => void;
+}) {
+  return (
+    <TableRow className="bg-white">
+      <TableCell className="w-10" />
+      {salesYears?.map((year) => (
+        <TableCell key={year} className={SALES_CELL_CLASS}>
+          {salesBySubProduct?.get(subRow.sub_product_id)?.[year] ?? 0}
+        </TableCell>
+      ))}
+      <TableCell>
+        <span className="pl-6 text-sm text-slate-700">└ {subRow.sub_product_name}</span>
+      </TableCell>
+      <TableCell>
+        {readOnly ? (
+          <span className="text-sm">{subRow.quantity || '0'}</span>
+        ) : (
+          <Input
+            type="text"
+            inputMode="numeric"
+            value={subRow.quantity}
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '' || /^\d+$/.test(value)) {
+                onQuantityChange(parentRowId, subRow.sub_product_id, value);
+              }
+            }}
+            onWheel={(e) => e.currentTarget.blur()}
+            placeholder="0"
+            className="w-full [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+        )}
+      </TableCell>
+      {actionColumn && <TableCell />}
+    </TableRow>
+  );
+}
+
 export function ProductLinesEditor({
   rows,
   onChange,
@@ -211,6 +315,8 @@ export function ProductLinesEditor({
   readOnly = false,
   salesYears,
   salesByProduct,
+  salesBySubProduct,
+  subProductsByProductId,
   allowEmpty = false,
   scrollable = false,
   compactHeader = false,
@@ -260,22 +366,46 @@ export function ProductLinesEditor({
     }
 
     onChange(
-      rows.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              product_id: productId,
-              product_name: product.name,
-              barcode: product.barcode || '',
-            }
-          : row
-      )
+      rows.map((row) => {
+        if (row.id !== rowId) return row;
+        const catalogSubs = mode === 'delivery-note' ? (subProductsByProductId?.get(productId) ?? []) : [];
+        const subRows: ProductLineSubRow[] = catalogSubs.map((sp) => ({
+          id: `${rowId}-sub-${sp.id}`,
+          sub_product_id: sp.id,
+          sub_product_name: sp.name,
+          quantity: '0',
+        }));
+        return {
+          ...row,
+          product_id: productId,
+          product_name: product.name,
+          barcode: product.barcode || '',
+          subRows,
+          quantity: subRows.length > 0 ? parentQuantityFromSubs(subRows) : row.quantity ?? '0',
+        };
+      })
     );
     setOpenPopovers((prev) => ({ ...prev, [rowId]: false }));
   };
 
   const handleQuantityChange = (rowId: string, value: string) => {
     onChange(rows.map((row) => (row.id === rowId ? { ...row, quantity: value } : row)));
+  };
+
+  const handleSubQuantityChange = (parentRowId: string, subProductId: string, value: string) => {
+    onChange(
+      rows.map((row) => {
+        if (row.id !== parentRowId || !row.subRows) return row;
+        const subRows = row.subRows.map((sub) =>
+          sub.sub_product_id === subProductId ? { ...sub, quantity: value } : sub
+        );
+        return {
+          ...row,
+          subRows,
+          quantity: parentQuantityFromSubs(subRows),
+        };
+      })
+    );
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -400,21 +530,36 @@ export function ProductLinesEditor({
           <TableBody>
             <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
               {rows.map((row) => (
-                <SortableEditorRow
-                  key={row.id}
-                  row={row}
-                  mode={mode}
-                  readOnly={readOnly}
-                  allProducts={allProducts}
-                  usedProductIds={usedProductIds}
-                  openPopovers={openPopovers}
-                  setOpenPopovers={setOpenPopovers}
-                  onSelectProduct={handleSelectProduct}
-                  onQuantityChange={handleQuantityChange}
-                  onDelete={handleDeleteRow}
-                  salesYears={salesYears}
-                  salesByProduct={salesByProduct}
-                />
+                <React.Fragment key={row.id}>
+                  <SortableEditorRow
+                    row={row}
+                    mode={mode}
+                    readOnly={readOnly}
+                    allProducts={allProducts}
+                    usedProductIds={usedProductIds}
+                    openPopovers={openPopovers}
+                    setOpenPopovers={setOpenPopovers}
+                    onSelectProduct={handleSelectProduct}
+                    onQuantityChange={handleQuantityChange}
+                    onDelete={handleDeleteRow}
+                    salesYears={salesYears}
+                    salesByProduct={salesByProduct}
+                    salesBySubProduct={salesBySubProduct}
+                  />
+                  {mode === 'delivery-note' &&
+                    row.subRows?.map((subRow) => (
+                      <SubProductEditorRow
+                        key={subRow.id}
+                        parentRowId={row.id}
+                        subRow={subRow}
+                        readOnly={readOnly}
+                        salesYears={salesYears}
+                        salesBySubProduct={salesBySubProduct}
+                        actionColumn={!readOnly}
+                        onQuantityChange={handleSubQuantityChange}
+                      />
+                    ))}
+                </React.Fragment>
               ))}
             </SortableContext>
             {!readOnly && (
