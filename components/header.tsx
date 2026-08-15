@@ -173,6 +173,8 @@ export function Header() {
   if (
     pathname?.startsWith('/auth') ||
     pathname === '/' ||
+    pathname === '/logiciel-depot-vente' ||
+    pathname === '/gestion-stock-grossiste-depot-vente' ||
     pathname === '/mentions-legales' ||
     pathname === '/politique-confidentialite' ||
     pathname === '/conditions-generales-utilisation'

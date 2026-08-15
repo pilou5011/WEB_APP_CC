@@ -10,9 +10,11 @@ import HomeRouteGate from './landing/home-route-gate';
 const homeDescription =
   'Dépôts, relevés, commissions : gestion dépôt-vente et facturation conforme. Anticipez la facturation électronique. Gagnez du temps — devis sur mesure avec Gaston Stock.';
 
+const homeTitle = 'Gaston Stock | Gestion & facturation dépôt-vente';
+
 export const metadata: Metadata = {
   title: {
-    absolute: 'Logiciel dépôt-vente | Gestion & facturation | Gaston Stock',
+    absolute: homeTitle,
   },
   description: homeDescription,
   alternates: {
@@ -20,7 +22,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     url: SITE_URL,
-    title: 'Logiciel dépôt-vente | Gestion & facturation | Gaston Stock',
+    title: homeTitle,
     description: homeDescription,
     images: [absoluteUrl('/og-gaston-stock.jpg')],
   },
