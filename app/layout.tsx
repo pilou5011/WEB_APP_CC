@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Logiciel dépôt-vente | Gestion & facturation | Gaston Stock',
+    title: 'Gaston Stock | Logiciel de dépôt-vente',
     description:
       'Gestion dépôt-vente, facturation conforme et facturation électronique. Devis personnalisé — Gaston Stock.',
     images: [absoluteUrl('/og-gaston-stock.jpg')],

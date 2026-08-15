@@ -11,6 +11,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: number;
   }> = [
     { path: '', changeFrequency: 'weekly', priority: 1 },
+    { path: '/logiciel-depot-vente', changeFrequency: 'monthly', priority: 0.9 },
+    { path: '/gestion-stock-grossiste-depot-vente', changeFrequency: 'monthly', priority: 0.9 },
     { path: '/mentions-legales', changeFrequency: 'yearly', priority: 0.4 },
     { path: '/politique-confidentialite', changeFrequency: 'yearly', priority: 0.4 },
     { path: '/conditions-generales-utilisation', changeFrequency: 'yearly', priority: 0.4 },

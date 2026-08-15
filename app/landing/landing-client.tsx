@@ -334,6 +334,17 @@ export default function LandingClient() {
           <strong>facturation dépôt-vente</strong>, Gaston Stock centralise dépôts, relevés et commissions. La
           plateforme vous prépare aussi à la <strong>facturation électronique dépôt-vente</strong> sur des bases fiables.
         </p>
+        <p className="mt-4 max-w-4xl text-slate-600">
+          Pour aller plus loin :{' '}
+          <Link href="/logiciel-depot-vente" className="font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700">
+            comment fonctionne un logiciel de dépôt-vente
+          </Link>
+          , ou{' '}
+          <Link href="/gestion-stock-grossiste-depot-vente" className="font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700">
+            comment centraliser le stock chez plusieurs revendeurs
+          </Link>
+          .
+        </p>
       </section>
 
       <section id="facturation-electronique" className="bg-slate-50 py-16">
@@ -515,7 +526,18 @@ export default function LandingClient() {
             </p>
           </div>
           <div>
-            <p className="font-semibold text-[#0B1F33]">Informations légales</p>
+            <p className="font-semibold text-[#0B1F33]">Ressources</p>
+            <p className="mt-2 text-sm">
+              <Link href="/logiciel-depot-vente" className="text-slate-600 hover:text-blue-600 hover:underline">
+                Logiciel dépôt-vente
+              </Link>
+            </p>
+            <p className="text-sm">
+              <Link href="/gestion-stock-grossiste-depot-vente" className="text-slate-600 hover:text-blue-600 hover:underline">
+                Gestion stock chez les revendeurs
+              </Link>
+            </p>
+            <p className="mt-3 text-sm font-semibold text-[#0B1F33]">Informations légales</p>
             <p className="mt-2 text-sm">
               <Link href="/mentions-legales" className="text-slate-600 hover:text-blue-600 hover:underline">
                 Mentions légales
