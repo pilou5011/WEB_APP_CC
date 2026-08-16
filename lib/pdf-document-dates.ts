@@ -45,6 +45,29 @@ export function appendDepositSlipDateFields(
   return yPosition + 5;
 }
 
+export function appendDeliveryNoteDateFields(
+  doc: { text: (text: string, x: number, y: number) => void; setFont: (font: string, style: string) => void; setFontSize: (size: number) => void },
+  x: number,
+  yPosition: number,
+  deliveryNoteDate: string,
+  responsableName?: string | null
+): number {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(
+    `Date bon de livraison : ${new Date(deliveryNoteDate).toLocaleDateString('fr-FR')}`,
+    x,
+    yPosition
+  );
+
+  const trimmedResponsable = responsableName?.trim();
+  if (trimmedResponsable) {
+    doc.text(`Nom du responsable : ${trimmedResponsable}`, x, yPosition + 5);
+    return yPosition + 12;
+  }
+  return yPosition + 5;
+}
+
 export function appendInvoiceDepositDateFields(
   doc: { text: (text: string, x: number, y: number) => void; setFont: (font: string, style: string) => void; setFontSize: (size: number) => void },
   x: number,

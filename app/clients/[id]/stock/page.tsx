@@ -53,7 +53,7 @@ import { MarketDaysSchedule, getDefaultMarketDaysSchedule } from '@/components/m
 import { VacationPeriod, VacationPeriodsEditor } from '@/components/vacation-periods-editor';
 import { ImportDeliveryNoteSection } from '@/components/delivery-notes/import-delivery-note-section';
 import { SegmentedTwoOptionToggle } from '@/components/ui/segmented-two-option-toggle';
-import { fetchDraftDeliveryNotesForImport } from '@/lib/delivery-notes';
+import { fetchValidatedDeliveryNotesForImport } from '@/lib/delivery-notes';
 import { currentUserCanAccessFeature } from '@/lib/auth-helpers';
 import { FEATURES } from '@/lib/subscription';
 
@@ -1019,7 +1019,7 @@ export default function ClientDetailPage() {
       const deliveryNotesAccess = await currentUserCanAccessFeature(FEATURES.DELIVERY_NOTES);
       setHasDeliveryNotesAccess(deliveryNotesAccess);
       if (deliveryNotesAccess) {
-        const draftNotes = await fetchDraftDeliveryNotesForImport(clientId, companyId);
+        const draftNotes = await fetchValidatedDeliveryNotesForImport(clientId, companyId);
         setDraftDeliveryNotes(draftNotes);
       } else {
         setDraftDeliveryNotes([]);
@@ -3743,13 +3743,25 @@ export default function ClientDetailPage() {
                     ) : (
                       <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
                     )}
-                    <CardTitle className="text-lg">Importer un bon de livraison</CardTitle>
+                    <CardTitle className="text-lg">
+                      Importer un bon de livraison
+                      {draftDeliveryNotes.length > 0 && (
+                        <span className="font-normal text-slate-600">
+                          {' '}
+                          — {draftDeliveryNotes.length}{' '}
+                          {draftDeliveryNotes.length === 1
+                            ? 'bon de livraison en attente'
+                            : 'bons de livraison en attente'}
+                        </span>
+                      )}
+                    </CardTitle>
                   </button>
                 </CardHeader>
                 <div className={cn(!importDeliveryNoteSectionOpen && 'hidden')}>
                   <CardContent className="pt-0">
                     <CardDescription className="mb-4">
-                      Importez un bon de livraison brouillon dans les stocks du client (Ancien dépôt).
+                      Importez un bon de livraison dans les stocks du client. Uniquement les bons de
+                      livraison validés peuvent être importés.
                     </CardDescription>
                     <ImportDeliveryNoteSection
                       clientId={clientId}

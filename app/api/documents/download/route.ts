@@ -13,7 +13,7 @@ interface DocInfo {
 }
 
 function parseDocumentId(id: string): {
-  type: 'invoice' | 'credit_note';
+  type: 'invoice' | 'credit_note' | 'delivery_note';
   recordId: string;
   subType?: 'invoice' | 'stock' | 'deposit';
 } | null {
@@ -28,6 +28,10 @@ function parseDocumentId(id: string): {
   const cnMatch = id.match(/^credit_note-([a-f0-9-]+)$/i);
   if (cnMatch) {
     return { type: 'credit_note', recordId: cnMatch[1] };
+  }
+  const dnMatch = id.match(/^delivery_note-([a-f0-9-]+)$/i);
+  if (dnMatch) {
+    return { type: 'delivery_note', recordId: dnMatch[1] };
   }
   return null;
 }
@@ -103,7 +107,7 @@ export async function POST(request: NextRequest) {
           name: `${suffix}_${invNum}_${dateStr}.pdf`,
           storagePath,
         });
-      } else {
+      } else if (parsed.type === 'credit_note') {
         const { data: cn, error } = await userSupabase
           .from('credit_notes')
           .select('id, credit_note_number, credit_note_date, created_at, credit_note_pdf_path')
@@ -119,6 +123,25 @@ export async function POST(request: NextRequest) {
           id: docId,
           name: `Avoir_${cnNum}_${dateStr}.pdf`,
           storagePath: cn.credit_note_pdf_path,
+        });
+      } else if (parsed.type === 'delivery_note') {
+        const { data: dn, error } = await userSupabase
+          .from('delivery_notes')
+          .select('id, delivery_number, validated_at, created_at, pdf_path, status, deleted_at')
+          .eq('id', parsed.recordId)
+          .is('deleted_at', null)
+          .in('status', ['validated', 'imported'])
+          .single();
+
+        if (error || !dn || !dn.pdf_path) continue;
+
+        const dnNum = dn.delivery_number || dn.id?.slice(0, 8);
+        const dateStr = (dn.validated_at || dn.created_at)?.slice(0, 10);
+
+        docsToDownload.push({
+          id: docId,
+          name: `Bon_livraison_${dnNum}_${dateStr}.pdf`,
+          storagePath: dn.pdf_path,
         });
       }
     }

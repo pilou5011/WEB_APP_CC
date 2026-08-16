@@ -9,7 +9,8 @@ export type DocumentTypeParam =
   | 'invoice'
   | 'stock_report'
   | 'deposit_slip'
-  | 'credit_note';
+  | 'credit_note'
+  | 'delivery_note';
 
 export async function GET(request: NextRequest) {
   try {
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
     const documentTypesParam = searchParams.get('documentTypes');
     const documentTypes: DocumentTypeParam[] = documentTypesParam
       ? (documentTypesParam.split(',') as DocumentTypeParam[])
-      : ['invoice', 'stock_report', 'deposit_slip', 'credit_note'];
+      : ['invoice', 'stock_report', 'deposit_slip', 'credit_note', 'delivery_note'];
 
     const allDocs: Array<{
       id: string;
@@ -161,6 +162,44 @@ export async function GET(request: NextRequest) {
           clientName,
           createdAt: cn.created_at,
           storagePath: cn.credit_note_pdf_path,
+        });
+      });
+    }
+
+    if (documentTypes.includes('delivery_note')) {
+      let query = supabase
+        .from('delivery_notes')
+        .select(
+          'id, client_id, delivery_number, validated_at, created_at, pdf_path, status, deleted_at, clients!inner(name)'
+        )
+        .in('status', ['validated', 'imported'])
+        .is('deleted_at', null)
+        .not('pdf_path', 'is', null);
+
+      if (clientId) query = query.eq('client_id', clientId);
+      if (startDate) query = query.gte('created_at', `${startDate}T00:00:00`);
+      if (endDate) query = query.lte('created_at', `${endDate}T23:59:59.999`);
+
+      const { data: deliveryNotes, error: dnError } = await query.order('created_at', {
+        ascending: false,
+      });
+
+      if (dnError) throw dnError;
+
+      (deliveryNotes || []).forEach((dn: any) => {
+        const c = Array.isArray(dn.clients) ? dn.clients[0] : dn.clients;
+        const clientName = c?.name || 'Client inconnu';
+        const dnNum = dn.delivery_number || dn.id.slice(0, 8);
+        const dateStr = (dn.validated_at || dn.created_at)?.slice(0, 10);
+
+        allDocs.push({
+          id: `delivery_note-${dn.id}`,
+          type: 'delivery_note',
+          name: `Bon_livraison_${dnNum}_${dateStr}.pdf`,
+          clientId: dn.client_id,
+          clientName,
+          createdAt: dn.validated_at || dn.created_at,
+          storagePath: dn.pdf_path,
         });
       });
     }

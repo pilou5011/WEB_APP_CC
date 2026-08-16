@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronsUpDown,
   Copy,
+  FilePenLine,
   History,
   Loader2,
   Pencil,
@@ -53,7 +55,9 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { ProductLineRow, ProductLinesEditor } from '@/components/product-lines-editor';
+import { DeliveryNoteDialog } from '@/components/delivery-notes/delivery-note-dialog';
 import {
+  cancelValidatedDeliveryNote,
   createDeliveryNoteFromTemplate,
   createEmptyDeliveryNote,
   createTemplate,
@@ -72,6 +76,7 @@ import {
   resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
+  validateDeliveryNote,
 } from '@/lib/delivery-notes';
 
 function serializeDraftRows(rows: ProductLineRow[]): string {
@@ -156,12 +161,17 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   const [templates, setTemplates] = useState<DeliveryNoteTemplate[]>([]);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [draftNotes, setDraftNotes] = useState<DeliveryNote[]>([]);
+  const [validatedNotes, setValidatedNotes] = useState<DeliveryNote[]>([]);
   const [importedNotes, setImportedNotes] = useState<DeliveryNote[]>([]);
   const [draftRowsByNoteId, setDraftRowsByNoteId] = useState<Map<string, ProductLineRow[]>>(new Map());
+  const [validatedRowsByNoteId, setValidatedRowsByNoteId] = useState<Map<string, ProductLineRow[]>>(
+    new Map()
+  );
   const [importedRowsByNoteId, setImportedRowsByNoteId] = useState<Map<string, ProductLineRow[]>>(
     new Map()
   );
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [selectedValidatedId, setSelectedValidatedId] = useState<string | null>(null);
   const [draftRows, setDraftRows] = useState<ProductLineRow[]>([]);
   const [salesByProduct, setSalesByProduct] = useState<Map<string, Record<number, number>>>(new Map());
   const [salesBySubProduct, setSalesBySubProduct] = useState<Map<string, Record<number, number>>>(
@@ -172,6 +182,10 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   );
   const [readOnlyViewId, setReadOnlyViewId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validateConfirmOpen, setValidateConfirmOpen] = useState(false);
+  const [cancelStep, setCancelStep] = useState<0 | 1 | 2>(0);
+  const [pdfDialogNote, setPdfDialogNote] = useState<DeliveryNote | null>(null);
 
   const [templateEditorMode, setTemplateEditorMode] = useState<'create' | 'edit' | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<DeliveryNoteTemplate | null>(null);
@@ -211,30 +225,21 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     setSavedDraftSnapshot(null);
   }, []);
 
-  const navigateAway = useCallback(
-    (href: string) => {
-      pendingNavigationRef.current = null;
-      setLeaveConfirmOpen(false);
-      router.push(href);
-    },
-    [router]
-  );
-
-  const requestNavigation = useCallback(
-    (href: string) => {
-      if (hasUnsavedDraftChanges) {
-        pendingNavigationRef.current = href;
-        setLeaveConfirmOpen(true);
-        return;
-      }
-      router.push(href);
-    },
-    [hasUnsavedDraftChanges, router]
-  );
-
   const selectedDraft = useMemo(
     () => draftNotes.find((n) => n.id === selectedDraftId) || null,
     [draftNotes, selectedDraftId]
+  );
+
+  const selectedValidated = useMemo(
+    () => validatedNotes.find((n) => n.id === selectedValidatedId) || null,
+    [validatedNotes, selectedValidatedId]
+  );
+
+  const activeNotes = useMemo(
+    () => [...draftNotes, ...validatedNotes].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ),
+    [draftNotes, validatedNotes]
   );
 
   const loadData = useCallback(async () => {
@@ -253,18 +258,24 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     if (clientError) throw clientError;
     if (!clientData) throw new Error('Client introuvable');
 
-    const [templatesData, productsData, drafts, imported] = await Promise.all([
+    const [templatesData, productsData, drafts, validated, imported] = await Promise.all([
       fetchDeliveryNoteTemplates(cid),
       fetchImportableProducts(cid),
       fetchClientDeliveryNotes(clientId, cid, 'draft'),
+      fetchClientDeliveryNotes(clientId, cid, 'validated'),
       fetchClientDeliveryNotes(clientId, cid, 'imported'),
     ]);
 
-    const [draftRowsCache, importedRowsCache] = await Promise.all([
+    const [draftRowsCache, validatedRowsCache, importedRowsCache] = await Promise.all([
       buildNoteRowsCache(
         drafts.map((d) => d.id),
         cid,
         true
+      ),
+      buildNoteRowsCache(
+        validated.map((n) => n.id),
+        cid,
+        false
       ),
       buildNoteRowsCache(
         imported.map((n) => n.id),
@@ -275,12 +286,14 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
 
     const productIds = [
       ...collectProductIdsFromRowsCache(draftRowsCache),
+      ...collectProductIdsFromRowsCache(validatedRowsCache),
       ...collectProductIdsFromRowsCache(importedRowsCache),
       ...productsData.map((p) => p.id),
     ];
     const uniqueProductIds = Array.from(new Set(productIds));
     const subProductIds = [
       ...collectSubProductIdsFromRowsCache(draftRowsCache),
+      ...collectSubProductIdsFromRowsCache(validatedRowsCache),
       ...collectSubProductIdsFromRowsCache(importedRowsCache),
     ];
     const uniqueSubProductIds = Array.from(new Set(subProductIds));
@@ -300,14 +313,16 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     setTemplates(templatesData);
     setAllProducts(productsData);
     setDraftNotes(drafts);
+    setValidatedNotes(validated);
     setImportedNotes(imported);
     setDraftRowsByNoteId(draftRowsCache);
+    setValidatedRowsByNoteId(validatedRowsCache);
     setImportedRowsByNoteId(importedRowsCache);
     setSalesByProduct(sales);
     setSalesBySubProduct(subSales);
     setSubProductsByProductId(subProductsMap);
 
-    return { draftRowsCache, importedRowsCache };
+    return { draftRowsCache, validatedRowsCache, importedRowsCache };
   }, [clientId, salesYears]);
 
   useEffect(() => {
@@ -371,6 +386,27 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     return () => document.removeEventListener('click', handleDocumentClick, true);
   }, [hasUnsavedDraftChanges]);
 
+  const navigateAway = useCallback(
+    (href: string) => {
+      pendingNavigationRef.current = null;
+      setLeaveConfirmOpen(false);
+      router.push(href);
+    },
+    [router]
+  );
+
+  const requestNavigation = useCallback(
+    (href: string) => {
+      if (hasUnsavedDraftChanges) {
+        pendingNavigationRef.current = href;
+        setLeaveConfirmOpen(true);
+        return;
+      }
+      router.push(href);
+    },
+    [hasUnsavedDraftChanges, router]
+  );
+
   const handleSelectDraft = (note: DeliveryNote) => {
     if (selectedDraftId === note.id) {
       if (hasUnsavedDraftChanges) {
@@ -381,11 +417,62 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
       return;
     }
 
+    setSelectedValidatedId(null);
     const rows = draftRowsByNoteId.get(note.id) ?? [];
     setSelectedDraftId(note.id);
     setReadOnlyViewId(null);
     setDraftRows(rows);
     syncSavedSnapshot(note.id, rows);
+  };
+
+  const handleSelectValidated = (note: DeliveryNote) => {
+    if (selectedValidatedId === note.id) {
+      setSelectedValidatedId(null);
+      return;
+    }
+    if (hasUnsavedDraftChanges) {
+      setCloseDraftConfirmOpen(true);
+      return;
+    }
+    closeDraftEditor();
+    setReadOnlyViewId(null);
+    setSelectedValidatedId(note.id);
+  };
+
+  const handleValidateDeliveryNote = async () => {
+    if (!selectedDraftId || !companyId || !client) return;
+    setValidating(true);
+    try {
+      if (hasUnsavedDraftChanges) {
+        await persistDraft();
+      }
+      const validated = await validateDeliveryNote(selectedDraftId, companyId, client);
+      setValidateConfirmOpen(false);
+      closeDraftEditor();
+      await loadData();
+      setSelectedValidatedId(validated.id);
+      setPdfDialogNote(validated);
+      toast.success('Bon de livraison validé — PDF généré');
+    } catch (error: unknown) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : 'Erreur lors de la validation');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleConfirmCancelValidated = async () => {
+    if (!selectedValidatedId || !companyId) return;
+    try {
+      await cancelValidatedDeliveryNote(selectedValidatedId, companyId);
+      setCancelStep(0);
+      setSelectedValidatedId(null);
+      await loadData();
+      toast.success('Bon de livraison annulé');
+    } catch (error: unknown) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : "Erreur lors de l'annulation");
+    }
   };
 
   const closeCreateNoteMenu = useCallback(() => {
@@ -403,6 +490,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
 
     setReadOnlyViewId(note.id);
     setSelectedDraftId(null);
+    setSelectedValidatedId(null);
     setSavedDraftSnapshot(null);
   };
 
@@ -412,6 +500,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
       const note = await createEmptyDeliveryNote(clientId, companyId);
       const { draftRowsCache } = await loadData();
       const rows = draftRowsCache.get(note.id) ?? [];
+      setSelectedValidatedId(null);
       setSelectedDraftId(note.id);
       setReadOnlyViewId(null);
       setDraftRows(rows);
@@ -772,7 +861,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
             <CardHeader>
               <CardTitle>Bons de livraison</CardTitle>
               <CardDescription>
-                Créez un bon puis importez-le depuis Facturer (dépôt).
+                Brouillons modifiables, puis validation définitive avant import dans Facturer (dépôt).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -881,15 +970,29 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                 )}
               </div>
 
-              {draftNotes.length > 0 && (
+              {activeNotes.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {draftNotes.map((note) => (
+                  {activeNotes.map((note) => (
                     <Button
                       key={note.id}
-                      variant={selectedDraftId === note.id ? 'default' : 'outline'}
+                      variant={
+                        selectedDraftId === note.id || selectedValidatedId === note.id
+                          ? 'default'
+                          : 'outline'
+                      }
                       size="sm"
-                      onClick={() => handleSelectDraft(note)}
+                      onClick={() =>
+                        note.status === 'validated'
+                          ? handleSelectValidated(note)
+                          : handleSelectDraft(note)
+                      }
+                      className="gap-1.5"
                     >
+                      {note.status === 'validated' ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-label="Validé" />
+                      ) : (
+                        <FilePenLine className="h-3.5 w-3.5 text-slate-500" aria-label="Brouillon" />
+                      )}
                       {note.delivery_number}
                     </Button>
                   ))}
@@ -908,14 +1011,24 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                       <div>
                         <p className="font-semibold">{selectedDraft.delivery_number}</p>
                         <p className="text-xs text-slate-500">
-                          Créé le {new Date(selectedDraft.created_at).toLocaleDateString('fr-FR')}
+                          Brouillon · Créé le{' '}
+                          {new Date(selectedDraft.created_at).toLocaleDateString('fr-FR')}
                           {' · '}
                           Modifié le {new Date(selectedDraft.updated_at).toLocaleDateString('fr-FR')}
                         </p>
                       </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" onClick={handleSaveDraft} disabled={saving}>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={handleSaveDraft} disabled={saving || validating}>
                           {saving ? 'Enregistrement...' : 'Enregistrer'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => setValidateConfirmOpen(true)}
+                          disabled={saving || validating}
+                        >
+                          Valider le bon de livraison
                         </Button>
                         <Button
                           variant="outline"
@@ -946,6 +1059,49 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                   />
                 </div>
               )}
+
+              {selectedValidated && (
+                <div className="space-y-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        {selectedValidated.delivery_number}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Validé
+                        {selectedValidated.validated_at &&
+                          ` le ${new Date(selectedValidated.validated_at).toLocaleDateString('fr-FR')}`}
+                        {' · '}
+                        Non modifiable — importable dans Facturer (dépôt)
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => setPdfDialogNote(selectedValidated)}>
+                        Voir le PDF
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600"
+                        onClick={() => setCancelStep(1)}
+                      >
+                        Annuler le bon de livraison
+                      </Button>
+                    </div>
+                  </div>
+                  <ProductLinesEditor
+                    rows={validatedRowsByNoteId.get(selectedValidated.id) ?? []}
+                    onChange={() => {}}
+                    allProducts={allProducts}
+                    mode="delivery-note"
+                    readOnly
+                    salesYears={[...salesYears]}
+                    salesByProduct={salesByProduct}
+                    salesBySubProduct={salesBySubProduct}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -972,7 +1128,13 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                           readOnlyViewId === note.id ? 'border-blue-400 bg-blue-50' : 'border-slate-200'
                         )}
                       >
-                        <p className="font-medium">{note.delivery_number}</p>
+                        <p className="font-medium flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                          {note.delivery_number}
+                          <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                            Importé
+                          </span>
+                        </p>
                         <p className="text-xs text-slate-500">
                           Créé le {new Date(note.created_at).toLocaleDateString('fr-FR')}
                           {note.imported_at &&
@@ -985,6 +1147,13 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                           readOnlyViewId !== note.id && 'hidden'
                         )}
                       >
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {note.pdf_path && (
+                            <Button size="sm" variant="outline" onClick={() => setPdfDialogNote(note)}>
+                              Voir le PDF
+                            </Button>
+                          )}
+                        </div>
                         <ProductLinesEditor
                           rows={importedRowsByNoteId.get(note.id) ?? []}
                           onChange={() => {}}
@@ -1061,8 +1230,8 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Quantités à zéro</AlertDialogTitle>
             <AlertDialogDescription>
-              Attention, certains produits ont une quantité égale à 0. Êtes-vous sûr de vouloir valider ce bon de
-              livraison ?
+              Attention, certains produits ont une quantité égale à 0. Êtes-vous sûr de vouloir
+              enregistrer ce bon de livraison ?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1197,6 +1366,94 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={validateConfirmOpen} onOpenChange={setValidateConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Valider le bon de livraison ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Attention : la validation du bon de livraison est définitive. Une fois validé, le bon de
+              livraison ne pourra plus être modifié. Vous certifiez qu&apos;il s&apos;agit de la dernière
+              version du bon avant son import chez le client.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={validating}>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={validating}
+              className="bg-emerald-600 hover:bg-emerald-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleValidateDeliveryNote();
+              }}
+            >
+              {validating ? 'Validation...' : 'Valider le bon de livraison'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={cancelStep === 1}
+        onOpenChange={(open) => {
+          if (!open) setCancelStep(0);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Annuler ce bon de livraison ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Attention : vous êtes sur le point d&apos;annuler ce bon de livraison. Cette action est
+              définitive. Le bon ne sera plus accessible dans l&apos;application et ne pourra plus être
+              importé.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={() => setCancelStep(2)}>Continuer</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={cancelStep === 2}
+        onOpenChange={(open) => {
+          if (!open) setCancelStep(0);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmation définitive</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirmez-vous définitivement l&apos;annulation de ce bon de livraison ?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setCancelStep(1)}>Retour</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConfirmCancelValidated();
+              }}
+            >
+              Confirmer l&apos;annulation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {client && pdfDialogNote && (
+        <DeliveryNoteDialog
+          open={!!pdfDialogNote}
+          onOpenChange={(open) => {
+            if (!open) setPdfDialogNote(null);
+          }}
+          client={client}
+          deliveryNote={pdfDialogNote}
+          onEmailSent={() => void loadData()}
+        />
+      )}
     </div>
   );
 }
