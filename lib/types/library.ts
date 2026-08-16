@@ -6,13 +6,15 @@ export type LibraryDocumentType =
   | 'invoice'
   | 'stock_report'
   | 'deposit_slip'
-  | 'credit_note';
+  | 'credit_note'
+  | 'delivery_note';
 
 export const DOCUMENT_TYPE_LABELS: Record<LibraryDocumentType, string> = {
   invoice: 'Facture',
   stock_report: 'Relevé de stock',
   deposit_slip: 'Bon de dépôt',
   credit_note: 'Avoir',
+  delivery_note: 'Bon de livraison',
 };
 
 export interface LibraryDocument {

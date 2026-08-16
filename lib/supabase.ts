@@ -444,7 +444,7 @@ export type UserInvitation = {
   created_at: string;
 };
 
-export type DeliveryNoteStatus = 'draft' | 'imported';
+export type DeliveryNoteStatus = 'draft' | 'validated' | 'imported' | 'cancelled';
 
 export type DeliveryNoteTemplate = {
   id: string;
@@ -475,6 +475,9 @@ export type DeliveryNote = {
   created_at: string;
   updated_at: string;
   imported_at: string | null;
+  validated_at: string | null;
+  pdf_path: string | null;
+  email_sent_at: string | null;
 };
 
 export type DeliveryNoteLine = {

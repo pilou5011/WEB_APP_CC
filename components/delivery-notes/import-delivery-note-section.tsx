@@ -139,7 +139,7 @@ export function ImportDeliveryNoteSection({
   if (draftNotes.length === 0) {
     return (
       <p className="text-sm text-slate-600">
-        Aucun bon de livraison en brouillon disponible pour ce client.
+        Aucun bon de livraison validé disponible pour ce client.
       </p>
     );
   }

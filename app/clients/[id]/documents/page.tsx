@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
-import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
+import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote, DeliveryNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { fetchDocumentDeliveryNotes } from '@/lib/delivery-notes';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed } from 'lucide-react';
+import { ArrowLeft, MapPin, Package, TrendingDown, TrendingUp, Euro, FileText, Trash2, Edit2, Info, Plus, Download, Check, ChevronsUpDown, Calendar, Clock, XCircle, Phone, Hash, GripVertical, ClipboardList, Eye, Pencil, X, Mail, DoorClosed, Truck } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -37,6 +38,7 @@ import { DepositSlipDialog } from '@/components/deposit-slip-dialog';
 import { StockReportDialog } from '@/components/stock-report-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
 import { CreditNoteDialog } from '@/components/credit-note-dialog';
+import { DeliveryNoteDialog } from '@/components/delivery-notes/delivery-note-dialog';
 import { formatWeekSchedule, formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -462,6 +464,9 @@ export default function ClientDetailPage() {
   const [invoicePopoverOpen, setInvoicePopoverOpen] = useState(false);
   const [selectedCreditNote, setSelectedCreditNote] = useState<CreditNote | null>(null);
   const [creditNotePreviewDialogOpen, setCreditNotePreviewDialogOpen] = useState(false);
+  const [deliveryNotes, setDeliveryNotes] = useState<DeliveryNote[]>([]);
+  const [selectedDeliveryNote, setSelectedDeliveryNote] = useState<DeliveryNote | null>(null);
+  const [deliveryNotePreviewOpen, setDeliveryNotePreviewOpen] = useState(false);
 
   // Form per product: { [clientProductId]: { counted_stock, stock_added, reassort } }
   const [perProductForm, setPerProductForm] = useState<Record<string, { counted_stock: string; stock_added: string; reassort: string }>>({});
@@ -1003,6 +1008,9 @@ export default function ClientDetailPage() {
 
       if (creditNotesError) throw creditNotesError;
       setCreditNotes(creditNotesData || []);
+
+      const deliveryNotesData = await fetchDocumentDeliveryNotes(clientId, companyId);
+      setDeliveryNotes(deliveryNotesData);
       
       // Calculate last visit date (date of last invoice)
       if (invoicesData && invoicesData.length > 0) {
@@ -1046,6 +1054,13 @@ export default function ClientDetailPage() {
 
       if (!creditNotesError) {
         setCreditNotes(creditNotesData || []);
+      }
+
+      try {
+        const deliveryNotesData = await fetchDocumentDeliveryNotes(clientId, companyId);
+        setDeliveryNotes(deliveryNotesData);
+      } catch (dnError) {
+        console.error('Error reloading delivery notes:', dnError);
       }
     } catch (error) {
       console.error('Error reloading documents:', error);
@@ -3348,12 +3363,12 @@ export default function ClientDetailPage() {
             </AlertDialogContent>
           </AlertDialog>
 
-          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0) && (
+          {(globalInvoices.length > 0 || stockUpdatesWithoutInvoice.length > 0 || creditNotes.length > 0 || deliveryNotes.length > 0) && (
             <Card className="border-slate-200 shadow-md">
               <CardHeader>
                 <CardTitle>Historique des documents</CardTitle>
                 <CardDescription>
-                  {globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length) > 1 ? 's' : ''}
+                  {globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length + deliveryNotes.length} document{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length + deliveryNotes.length) > 1 ? 's' : ''} enregistré{(globalInvoices.length + stockUpdatesWithoutInvoice.length + creditNotes.length + deliveryNotes.length) > 1 ? 's' : ''}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -3361,7 +3376,8 @@ export default function ClientDetailPage() {
                   {/* Combine invoices, stock updates without invoice, and credit notes, sorted by date */}
                   {[...globalInvoices.map(inv => ({ type: 'invoice' as const, data: inv, created_at: inv.created_at })),
                     ...stockUpdatesWithoutInvoice.map(su => ({ type: 'stock_update' as const, data: su, created_at: su.created_at })),
-                    ...creditNotes.map(cn => ({ type: 'credit_note' as const, data: cn, created_at: cn.created_at }))]
+                    ...creditNotes.map(cn => ({ type: 'credit_note' as const, data: cn, created_at: cn.created_at })),
+                    ...deliveryNotes.map(dn => ({ type: 'delivery_note' as const, data: dn, created_at: dn.validated_at || dn.created_at }))]
                     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                     .map((item) => {
                       if (item.type === 'invoice') {
@@ -3609,6 +3625,58 @@ export default function ClientDetailPage() {
                               <span>Quantité: {creditNote.quantity}</span>
                               <span>•</span>
                               <span>{creditNote.total_amount.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        );
+                      } else if (item.type === 'delivery_note') {
+                        const deliveryNote = item.data as DeliveryNote;
+                        return (
+                          <div
+                            key={deliveryNote.id}
+                            className="border border-slate-200 rounded-lg p-4 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <span className="text-sm text-slate-500">
+                                  {new Date(deliveryNote.validated_at || deliveryNote.created_at).toLocaleDateString(
+                                    'fr-FR',
+                                    {
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    }
+                                  )}
+                                </span>
+                                <p className="text-xs text-slate-600 mt-1">{deliveryNote.delivery_number}</p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedDeliveryNote(deliveryNote);
+                                    setDeliveryNotePreviewOpen(true);
+                                  }}
+                                  className="relative"
+                                >
+                                  <Truck className="mr-2 h-4 w-4" />
+                                  Bon de livraison
+                                  {deliveryNote.pdf_path && (
+                                    <span
+                                      className={`ml-2 h-2.5 w-2.5 rounded-full border-2 border-white shadow-sm ${
+                                        deliveryNote.email_sent_at ? 'bg-green-500' : 'bg-red-500'
+                                      }`}
+                                      title={
+                                        deliveryNote.email_sent_at
+                                          ? `Envoyé le ${new Date(deliveryNote.email_sent_at).toLocaleDateString('fr-FR')}`
+                                          : 'Non envoyé par email - Cliquez pour envoyer'
+                                      }
+                                    />
+                                  )}
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -4077,6 +4145,19 @@ export default function ClientDetailPage() {
             />
           );
         })()}
+
+        {client && selectedDeliveryNote && (
+          <DeliveryNoteDialog
+            open={deliveryNotePreviewOpen}
+            onOpenChange={(open) => {
+              setDeliveryNotePreviewOpen(open);
+              if (!open) setSelectedDeliveryNote(null);
+            }}
+            client={client}
+            deliveryNote={selectedDeliveryNote}
+            onEmailSent={reloadDocuments}
+          />
+        )}
 
         {/* Vacation Period Dialog */}
         <Dialog open={vacationPeriodDialogOpen} onOpenChange={(open) => {

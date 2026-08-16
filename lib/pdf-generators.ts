@@ -5,13 +5,14 @@
  * These functions are called automatically when stock is updated, and the dialogs only load existing PDFs.
  */
 
-import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, EstablishmentType, PaymentMethod, supabase } from '@/lib/supabase';
+import { Client, Invoice, StockUpdate, Product, ClientProduct, UserProfile, InvoiceAdjustment, SubProduct, ClientSubProduct, CreditNote, StockDirectSold, EstablishmentType, PaymentMethod, DeliveryNote, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
 import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
 import { formatDepartment } from '@/lib/postal-code-utils';
-import { appendDepositSlipDateFields, appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { appendDepositSlipDateFields, appendDeliveryNoteDateFields, appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import type { ResolvedDeliveryNoteLine } from '@/lib/delivery-notes/service';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -2859,4 +2860,364 @@ export async function generateClientInfoPDF(
     console.error('Error generating client info PDF:', error);
     throw error;
   }
+}
+/**
+ * Generate and save delivery note PDF (same visual architecture as deposit slip).
+ * Parent products only; quantity = BL qty (sum of sub-products when present).
+ */
+export type GenerateDeliveryNotePDFParams = {
+  deliveryNote: DeliveryNote;
+  client: Client;
+  lines: ResolvedDeliveryNoteLine[];
+  userProfile?: UserProfile | null;
+};
+
+export async function generateAndSaveDeliveryNotePDF(
+  params: GenerateDeliveryNotePDFParams
+): Promise<string> {
+  const { deliveryNote, client, lines } = params;
+
+  if (deliveryNote.pdf_path) {
+    return deliveryNote.pdf_path;
+  }
+
+  const companyId = await getCurrentUserCompanyId();
+  if (!companyId) {
+    throw new Error('Non autorisé');
+  }
+
+  const { data: userProfile } = await supabase
+    .from('user_profile')
+    .select('*')
+    .eq('company_id', companyId)
+    .limit(1)
+    .maybeSingle();
+
+  const productIds = lines.map((l) => l.product_id);
+  const { data: clientProductsData } = await supabase
+    .from('client_products')
+    .select('product_id, product_info, custom_price, custom_recommended_sale_price, deleted_at')
+    .eq('client_id', client.id)
+    .eq('company_id', companyId)
+    .in('product_id', productIds.length > 0 ? productIds : ['00000000-0000-0000-0000-000000000000']);
+
+  const { data: productsData } = await supabase
+    .from('products')
+    .select('id, name, barcode, price, recommended_sale_price, deleted_at')
+    .eq('company_id', companyId)
+    .in('id', productIds.length > 0 ? productIds : ['00000000-0000-0000-0000-000000000000'])
+    .is('deleted_at', null);
+
+  const productsById = new Map((productsData || []).map((p: any) => [p.id, p]));
+  const clientProductById = new Map(
+    (clientProductsData || [])
+      .filter((cp: any) => !cp.deleted_at)
+      .map((cp: any) => [cp.product_id, cp])
+  );
+
+  const jsPDF = (await import('jspdf')).default;
+  const autoTable = (await import('jspdf-autotable')).default;
+
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let yPosition = 20;
+
+  const leftBoxX = 15;
+  const leftBoxY = yPosition;
+  const leftBoxWidth = 85;
+
+  doc.setFillColor(71, 85, 105);
+  doc.rect(leftBoxX, leftBoxY, leftBoxWidth, 7, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DISTRIBUTEUR', leftBoxX + leftBoxWidth / 2, yPosition + 5, { align: 'center' });
+  yPosition += 7;
+
+  doc.setTextColor(0, 0, 0);
+  yPosition += 4;
+
+  if (userProfile?.company_name) {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text(userProfile.company_name, leftBoxX + 2, yPosition);
+    yPosition += 5;
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  if (userProfile) {
+    if (userProfile.first_name || userProfile.last_name) {
+      doc.text(
+        `${userProfile.first_name || ''} ${userProfile.last_name || ''}`.trim(),
+        leftBoxX + 2,
+        yPosition
+      );
+      yPosition += 4;
+    }
+    yPosition += 2;
+    if (userProfile.street_address) {
+      doc.text(userProfile.street_address, leftBoxX + 2, yPosition);
+      yPosition += 4;
+    }
+    if (userProfile.postal_code || userProfile.city) {
+      doc.text(
+        `${userProfile.postal_code || ''} ${userProfile.city || ''}`.trim(),
+        leftBoxX + 2,
+        yPosition
+      );
+      yPosition += 4;
+    }
+    if (userProfile.email) {
+      doc.text(`Email: ${userProfile.email}`, leftBoxX + 2, yPosition);
+      yPosition += 4;
+    }
+    if (userProfile.email && userProfile.siret) yPosition += 2;
+    if (userProfile.siret) {
+      doc.text(`SIRET: ${formatSIRETNumber(userProfile.siret)}`, leftBoxX + 2, yPosition);
+      yPosition += 4;
+    }
+    if (userProfile.tva_number) {
+      doc.text(`TVA: ${formatTVANumber(userProfile.tva_number)}`, leftBoxX + 2, yPosition);
+      yPosition += 4;
+    }
+    if (userProfile.tva_number && userProfile.phone) yPosition += 2;
+    if (userProfile.phone) {
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Tél: ${formatPhoneNumber(userProfile.phone)}`, leftBoxX + 2, yPosition);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      yPosition += 3;
+    }
+  } else {
+    doc.text('Informations non renseignées', leftBoxX + 2, yPosition);
+    yPosition += 4;
+  }
+
+  const leftBoxHeight = yPosition - leftBoxY + 1;
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(leftBoxX, leftBoxY, leftBoxWidth, leftBoxHeight);
+
+  const rightBoxX = pageWidth - 95;
+  const rightBoxY = 20;
+  const rightBoxWidth = 80;
+  let clientYPosition = rightBoxY;
+
+  doc.setFillColor(71, 85, 105);
+  doc.rect(rightBoxX, clientYPosition, rightBoxWidth, 7, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('DÉTAILLANT', rightBoxX + rightBoxWidth / 2, clientYPosition + 5, { align: 'center' });
+  clientYPosition += 7;
+
+  doc.setTextColor(0, 0, 0);
+  clientYPosition += 4;
+
+  const clientLegalName = client.company_name || client.name;
+  const clientCommercialName = client.name;
+  if (clientLegalName) {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text(clientLegalName, rightBoxX + 2, clientYPosition);
+    clientYPosition += 5;
+  }
+  if (clientCommercialName && clientCommercialName !== clientLegalName) {
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text(clientCommercialName, rightBoxX + 2, clientYPosition);
+    clientYPosition += 5;
+  }
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  if (client.street_address) {
+    doc.text(client.street_address, rightBoxX + 2, clientYPosition);
+    clientYPosition += 4;
+  }
+  if (client.postal_code || client.city) {
+    doc.text(
+      `${client.postal_code || ''} ${client.city || ''}`.trim(),
+      rightBoxX + 2,
+      clientYPosition
+    );
+    clientYPosition += 4;
+  }
+  if (client.siret_number) {
+    doc.text(`SIRET: ${formatSIRETNumber(client.siret_number)}`, rightBoxX + 2, clientYPosition);
+    clientYPosition += 4;
+  }
+  if (client.tva_number) {
+    doc.text(`TVA: ${formatTVANumber(client.tva_number)}`, rightBoxX + 2, clientYPosition);
+    clientYPosition += 3;
+  }
+
+  const rightBoxHeight = clientYPosition - rightBoxY + 1;
+  doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
+
+  clientYPosition += 6;
+  const infoBoxY = clientYPosition;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  clientYPosition += 4;
+  if (client.client_number) {
+    doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
+    clientYPosition += 3;
+  }
+  const infoBoxHeight = clientYPosition - infoBoxY + 1;
+  doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+
+  yPosition = Math.max(yPosition, clientYPosition) + 10;
+
+  const documentDate = deliveryNote.validated_at || deliveryNote.created_at;
+  yPosition = appendDeliveryNoteDateFields(
+    doc,
+    15,
+    yPosition,
+    documentDate,
+    client.responsable_name
+  );
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(
+    `Bon de livraison N° ${deliveryNote.delivery_number}`,
+    pageWidth / 2,
+    yPosition,
+    { align: 'center' }
+  );
+  yPosition += 10;
+
+  const tableData = lines.map((line) => {
+    const prod = productsById.get(line.product_id);
+    const cp = clientProductById.get(line.product_id);
+    const barcode = prod?.barcode || line.barcode || '';
+    const effectivePrice =
+      (cp as { custom_price?: number | null } | undefined)?.custom_price ?? prod?.price ?? 0;
+    const effectiveRecommendedSalePrice =
+      (cp as { custom_recommended_sale_price?: number | null } | undefined)
+        ?.custom_recommended_sale_price ?? prod?.recommended_sale_price ?? null;
+
+    return [
+      line.product_name || prod?.name || 'Produit',
+      String(line.quantity),
+      barcode,
+      `${Number(effectivePrice).toFixed(2)} €`,
+      effectiveRecommendedSalePrice !== null
+        ? `${Number(effectiveRecommendedSalePrice).toFixed(2)} €`
+        : '-',
+    ];
+  });
+
+  const marginLeft = 15;
+  const marginRight = 15;
+  const tableWidth = pageWidth - marginLeft - marginRight;
+  // Sans colonne Infos : redistribuer l'espace (proche du bon de dépôt)
+  const columnWidths = [
+    tableWidth * 0.32, // Produit
+    tableWidth * 0.12, // Qté remise
+    tableWidth * 0.22, // Code-barres
+    tableWidth * 0.17, // Prix cession HT
+    tableWidth * 0.17, // Prix conseillé TTC
+  ];
+
+  const leftMargin = 15;
+  const rightMargin = 15;
+  const availableWidth = pageWidth - leftMargin - rightMargin;
+  const getDefaultConditions = (companyName: string | null): string => {
+    const company = companyName || 'Votre Société';
+    return `Conditions de Dépôt-Vente : La marchandise et les présentoirs mis en dépôt restent la propriété de ${company}. Le dépositaire s'engage à régler comptant les produits vendus à la date d'émission de la facture. Le dépositaire s'engage à assurer la marchandise et les présentoirs contre tous les risques (vol, incendie, dégâts des eaux,…). En cas d'une saisie, le client s'engage à informer l'huissier de la réserve de propriété de ${company}. Tout retard de paiement entraîne une indemnité forfaitaire de 40 € + pénalités de retard de 3 fois le taux d'intérêt légal.`;
+  };
+  const conditionsText =
+    userProfile?.terms_and_conditions || getDefaultConditions(userProfile?.company_name || null);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  const conditionsLines = doc.splitTextToSize(conditionsText, availableWidth);
+  const conditionsHeight = Math.max(conditionsLines.length * 3.5, 7);
+  const reservedBottomForConditions = conditionsHeight + 12;
+
+  autoTable(doc, {
+    startY: yPosition,
+    head: [
+      [
+        'Produit',
+        { content: 'Qté remise', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Code-barres', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        { content: 'Prix cession HT', styles: { halign: 'center', valign: 'middle', fontSize: 7 } },
+        {
+          content: 'Prix conseillé TTC',
+          styles: { halign: 'center', valign: 'middle', fontSize: 7 },
+        },
+      ],
+    ],
+    body: tableData,
+    theme: 'grid',
+    margin: { left: marginLeft, right: marginRight, bottom: reservedBottomForConditions },
+    headStyles: {
+      fillColor: [71, 85, 105],
+      textColor: 255,
+      fontSize: 7,
+      fontStyle: 'bold',
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: 2,
+      overflow: 'linebreak',
+    },
+    bodyStyles: {
+      fontSize: 8,
+      cellPadding: 2,
+      overflow: 'linebreak',
+      textColor: [0, 0, 0],
+    },
+    columnStyles: {
+      0: { halign: 'left', fontSize: 8, cellWidth: columnWidths[0] },
+      1: { halign: 'center', fontSize: 8, cellWidth: columnWidths[1] },
+      2: { halign: 'center', fontSize: 8, cellWidth: columnWidths[2] },
+      3: { halign: 'center', fontSize: 8, cellWidth: columnWidths[3] },
+      4: { halign: 'center', fontSize: 8, cellWidth: columnWidths[4] },
+    },
+  });
+
+  const totalPages = doc.getNumberOfPages();
+  doc.setPage(totalPages);
+  doc.setTextColor(0, 0, 0);
+  const conditionsStartY = pageHeight - 8 - conditionsHeight;
+  conditionsLines.forEach((line: string, index: number) => {
+    doc.text(line, leftMargin, conditionsStartY + index * 3.5, { maxWidth: availableWidth });
+  });
+
+  addPageNumbers(doc);
+
+  const pdfBlobData = doc.output('blob');
+  const folder = `delivery_notes/${deliveryNote.id}`;
+  const baseDate = new Date(documentDate).toISOString().split('T')[0];
+  const baseName = `delivery_note_${baseDate}`;
+
+  const isDuplicateUploadError = (msg?: string) =>
+    !!msg && (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('409'));
+
+  let finalFilePath: string | null = null;
+  for (let i = 0; i < 50; i++) {
+    const suffix = i === 0 ? '' : `_${i + 1}`;
+    const candidate = `${folder}/${baseName}${suffix}.pdf`;
+    const { error: uploadError } = await supabase.storage.from('documents').upload(candidate, pdfBlobData, {
+      contentType: 'application/pdf',
+      upsert: false,
+    });
+    if (uploadError) {
+      if (isDuplicateUploadError(uploadError.message)) continue;
+      throw uploadError;
+    }
+    finalFilePath = candidate;
+    break;
+  }
+
+  if (!finalFilePath) {
+    throw new Error('Impossible de générer un nom de fichier unique pour le bon de livraison');
+  }
+
+  return finalFilePath;
 }
