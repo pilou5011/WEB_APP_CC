@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     const isCreditNote = documentType === 'credit_note' || documentType === 'avoir';
     const isDepositSlip = documentType === 'deposit_slip' || documentType === 'bon_depot';
     const isStockReport = documentType === 'stock_report' || documentType === 'releve_stock';
+    const isDeliveryNote = documentType === 'delivery_note' || documentType === 'bon_livraison';
     
     // Construire le sujet et le message selon le type de document
     let subject: string;
@@ -43,6 +44,9 @@ export async function POST(request: NextRequest) {
       const stockReportDate = invoiceDate || creditNoteDate;
       subject = `Relevé de stock - ${senderCompanyName || 'Dépôt-vente'} du ${stockReportDate || '___/___/____'}`;
       messageBody = `Vous trouverez ci-joint votre relevé de stock du ${stockReportDate || '___/___/____'}.`;
+    } else if (isDeliveryNote) {
+      subject = `Bon de livraison ${invoiceNumber || ''} - ${senderCompanyName || 'Dépôt-vente'} du ${invoiceDate || '___/___/____'}`.replace(/\s+/g, ' ').trim();
+      messageBody = `Vous trouverez ci-joint votre bon de livraison${invoiceNumber ? ` n° ${invoiceNumber}` : ''} du ${invoiceDate || '___/___/____'}.`;
     } else {
       subject = `Facture - ${senderCompanyName || 'Dépôt-vente'} du ${invoiceDate || '___/___/____'}`;
       messageBody = `Vous trouverez ci-joint votre facture du ${invoiceDate || '___/___/____'}.`;

@@ -35,11 +35,6 @@ export default function ClientLayout({
       icon: Package,
     },
     {
-      title: deliveryNotesTitle,
-      href: `/clients/${clientId}/delivery-notes`,
-      icon: Truck,
-    },
-    {
       title: 'Facturer (compte ferme)',
       href: `/clients/${clientId}/invoice`,
       icon: Calculator,
@@ -48,6 +43,11 @@ export default function ClientLayout({
       title: 'Créer un avoir',
       href: `/clients/${clientId}/credit-note`,
       icon: Receipt,
+    },
+    {
+      title: deliveryNotesTitle,
+      href: `/clients/${clientId}/delivery-notes`,
+      icon: Truck,
     },
     {
       title: 'Documents',

@@ -2,6 +2,7 @@ import type {
   DeliveryNote,
   DeliveryNoteLineSubProductWithSubProduct,
   DeliveryNoteLineWithProduct,
+  DeliveryNoteStatus,
   DeliveryNoteTemplate,
   DeliveryNoteTemplateProductWithProduct,
   Product,
@@ -169,7 +170,7 @@ export async function setTemplateProducts(
 export async function fetchClientDeliveryNotes(
   clientId: string,
   companyId: string,
-  status?: 'draft' | 'imported'
+  status?: DeliveryNoteStatus | DeliveryNoteStatus[]
 ): Promise<DeliveryNote[]> {
   let query = deliveryNotesTable('delivery_notes')
     .select('*')
@@ -177,7 +178,11 @@ export async function fetchClientDeliveryNotes(
     .eq('company_id', companyId)
     .order('created_at', { ascending: false });
 
-  if (status) query = query.eq('status', status);
+  if (Array.isArray(status)) {
+    query = query.in('status', status);
+  } else if (status) {
+    query = query.eq('status', status);
+  }
 
   const { data, error } = await query;
   if (error) throw error;
@@ -508,9 +513,17 @@ export async function fetchImportableProducts(companyId: string): Promise<Produc
   return products || [];
 }
 
+export async function fetchValidatedDeliveryNotesForImport(
+  clientId: string,
+  companyId: string
+): Promise<DeliveryNote[]> {
+  return fetchClientDeliveryNotes(clientId, companyId, 'validated');
+}
+
+/** @deprecated Use fetchValidatedDeliveryNotesForImport — seuls les BL validés sont importables. */
 export async function fetchDraftDeliveryNotesForImport(
   clientId: string,
   companyId: string
 ): Promise<DeliveryNote[]> {
-  return fetchClientDeliveryNotes(clientId, companyId, 'draft');
+  return fetchValidatedDeliveryNotesForImport(clientId, companyId);
 }

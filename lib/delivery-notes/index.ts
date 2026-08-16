@@ -28,6 +28,7 @@ export {
   fetchDraftDeliveryNotesForImport,
   fetchImportableProducts,
   fetchTemplateProducts,
+  fetchValidatedDeliveryNotesForImport,
   generateDeliveryNoteNumber,
   renameTemplate,
   resolveDeliveryNoteLines,
@@ -35,3 +36,11 @@ export {
   setTemplateProducts,
   type ResolvedDeliveryNoteLine,
 } from './service';
+
+export {
+  cancelValidatedDeliveryNote,
+  fetchDocumentDeliveryNotes,
+  markDeliveryNoteEmailSent,
+  pruneSoftDeletedProductsFromDraft,
+  validateDeliveryNote,
+} from './validation-service';
