@@ -1,14 +1,97 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { supabase, DraftStockUpdateData } from '@/lib/supabase';
+import { supabase, DraftStockUpdate, DraftStockUpdateData } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes in milliseconds
 const LOCAL_STORAGE_PREFIX = 'stock_update_draft_';
+/** How many recent active drafts to scan when recovering (newest first). */
+const DRAFT_RECOVERY_SCAN_LIMIT = 50;
 
 export interface DraftInfo {
   clientId: string;
   createdAt: string;
   source: 'local' | 'server';
+}
+
+/** True when draft has stock counts / reassort / adjustments (not only product_info). */
+function draftDataIsMeaningful(data: DraftStockUpdateData | null | undefined): boolean {
+  if (!data) return false;
+
+  const hasStockData = Object.values(data.perProductForm || {}).some(
+    (form) =>
+      form.counted_stock !== '' ||
+      form.stock_added !== '' ||
+      (form.reassort_saisie && form.reassort_saisie !== '')
+  );
+
+  const hasSubProductStockData = data.perSubProductForm
+    ? Object.values(data.perSubProductForm).some(
+        (form) =>
+          form.counted_stock !== '' ||
+          form.stock_added !== '' ||
+          (form.reassort_saisie && form.reassort_saisie !== '')
+      )
+    : false;
+
+  const hasAdjustments = (data.pendingAdjustments || []).length > 0;
+
+  return hasStockData || hasSubProductStockData || hasAdjustments;
+}
+
+/** Recent drafts for a client+company (newest first). Optionally only active rows. */
+async function fetchRecentDrafts(
+  clientId: string,
+  companyId: string,
+  options: { activeOnly?: boolean; limit?: number } = {}
+): Promise<DraftStockUpdate[]> {
+  const {
+    activeOnly = true,
+    limit = DRAFT_RECOVERY_SCAN_LIMIT,
+  } = options;
+
+  let query = supabase
+    .from('draft_stock_updates')
+    .select('*')
+    .eq('client_id', clientId)
+    .eq('company_id', companyId)
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (activeOnly) {
+    query = query.is('deleted_at', null);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as DraftStockUpdate[];
+}
+
+/**
+ * Prefer newest active meaningful draft; if none, fall back to a soft-deleted
+ * snapshot that still has stocks (previous save was soft-deleted when a new row was added).
+ */
+async function fetchBestMeaningfulDraft(clientId: string, companyId: string) {
+  const activeRows = await fetchRecentDrafts(clientId, companyId, { activeOnly: true });
+  for (const row of activeRows) {
+    if (draftDataIsMeaningful(row.draft_data as DraftStockUpdateData)) {
+      return row;
+    }
+  }
+
+  // Active row empty / missing stocks → recover from soft-deleted history
+  const historyRows = await fetchRecentDrafts(clientId, companyId, {
+    activeOnly: false,
+    limit: DRAFT_RECOVERY_SCAN_LIMIT,
+  });
+  for (const row of historyRows) {
+    if (row.deleted_at == null) continue; // already checked active above
+    if (draftDataIsMeaningful(row.draft_data as DraftStockUpdateData)) {
+      return row;
+    }
+  }
+
+  return null;
 }
 
 export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = true) {
@@ -36,9 +119,11 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     }
   }, [clientId, getLocalStorageKey]);
 
-  // Save to server (upsert)
+  /**
+   * Insert a new draft row, then soft-delete all previous active drafts
+   * for this client+company (only the newest stays active).
+   */
   const saveDraftToServer = useCallback(async (data: DraftStockUpdateData) => {
-    // Only save if we're on the active tab
     if (!isActiveTab) {
       console.log('[Draft] Not saving: not on active tab');
       return;
@@ -51,54 +136,44 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       }
 
       const dataString = JSON.stringify(data);
-      
-      // Skip if data hasn't changed
+
       if (dataString === lastSyncDataRef.current) {
         console.log('[Draft] No changes detected, skipping server sync');
         return;
       }
 
-      // Check if a draft already exists for this client
-      const { data: existing, error: fetchError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('draft_stock_updates')
+        .insert([
+          {
+            client_id: clientId,
+            company_id: companyId,
+            draft_data: data,
+          },
+        ])
         .select('id')
+        .maybeSingle();
+
+      if (insertError) throw insertError;
+      if (!inserted?.id) {
+        throw new Error('Insert draft failed: no id returned');
+      }
+
+      // Soft-delete previous active drafts; keep the new row as the only active one
+      const { error: softDeleteError } = await supabase
+        .from('draft_stock_updates')
+        .update({ deleted_at: new Date().toISOString() })
         .eq('client_id', clientId)
         .eq('company_id', companyId)
         .is('deleted_at', null)
-        .maybeSingle();
+        .neq('id', inserted.id);
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        throw fetchError;
-      }
-
-      if (existing) {
-        // Update existing draft
-        const { error: updateError } = await supabase
-          .from('draft_stock_updates')
-          .update({
-            draft_data: data,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id)
-          .eq('company_id', companyId);
-
-        if (updateError) throw updateError;
-        console.log('[Draft] Updated server draft for client:', clientId);
-      } else {
-        // Insert new draft
-        const { error: insertError } = await supabase
-          .from('draft_stock_updates')
-          .insert([{
-            client_id: clientId,
-            company_id: companyId,
-            draft_data: data
-          }]);
-
-        if (insertError) throw insertError;
-        console.log('[Draft] Created server draft for client:', clientId);
+      if (softDeleteError) {
+        console.warn('[Draft] Could not soft-delete previous drafts:', softDeleteError);
       }
 
       lastSyncDataRef.current = dataString;
+      console.log('[Draft] Inserted new draft and soft-deleted previous for client:', clientId);
     } catch (error) {
       console.error('[Draft] Error saving to server:', error);
     }
@@ -120,7 +195,7 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     }
   }, [clientId, getLocalStorageKey]);
 
-  // Load draft from server
+  // Load best meaningful draft from server (skip empty newest snapshots)
   const loadDraftFromServer = useCallback(async (): Promise<DraftStockUpdateData | null> => {
     try {
       const companyId = await getCurrentUserCompanyId();
@@ -128,37 +203,32 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
         throw new Error('Non autorisé');
       }
 
-      const { data, error } = await supabase
-        .from('draft_stock_updates')
-        .select('*')
-        .eq('client_id', clientId)
-        .eq('company_id', companyId)
-        .is('deleted_at', null)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+      const row = await fetchBestMeaningfulDraft(clientId, companyId);
+      if (!row) {
+        console.log('[Draft] No meaningful server draft for client:', clientId);
+        return null;
       }
 
-      if (!data) return null;
-
-      console.log('[Draft] Loaded server draft for client:', clientId);
-      return data.draft_data as DraftStockUpdateData;
+      console.log('[Draft] Loaded meaningful server draft for client:', clientId, 'id:', row.id);
+      return row.draft_data as DraftStockUpdateData;
     } catch (error) {
       console.error('[Draft] Error loading from server:', error);
       return null;
     }
   }, [clientId]);
 
-  // Get draft info (for showing prompt to user)
+  // Prefer meaningful local; else newest meaningful server snapshot
   const getDraftInfo = useCallback(async (): Promise<DraftInfo | null> => {
-    // Check local first
+    let localInfo: DraftInfo | null = null;
+    let localData: DraftStockUpdateData | null = null;
+
     try {
       const key = getLocalStorageKey();
       const stored = localStorage.getItem(key);
       if (stored) {
         const parsed = JSON.parse(stored);
-        return {
+        localData = parsed.data as DraftStockUpdateData;
+        localInfo = {
           clientId: parsed.clientId,
           createdAt: parsed.createdAt,
           source: 'local'
@@ -168,29 +238,21 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       console.error('[Draft] Error checking local draft info:', error);
     }
 
-    // Check server
+    if (localInfo && draftDataIsMeaningful(localData)) {
+      return localInfo;
+    }
+
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
-        return null;
+        return localInfo;
       }
 
-      const { data, error } = await supabase
-        .from('draft_stock_updates')
-        .select('client_id, created_at')
-        .eq('client_id', clientId)
-        .eq('company_id', companyId)
-        .is('deleted_at', null)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-
-      if (data) {
+      const row = await fetchBestMeaningfulDraft(clientId, companyId);
+      if (row) {
         return {
-          clientId: data.client_id,
-          createdAt: data.created_at,
+          clientId: row.client_id,
+          createdAt: row.created_at,
           source: 'server'
         };
       }
@@ -198,10 +260,10 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       console.error('[Draft] Error checking server draft info:', error);
     }
 
-    return null;
+    return localInfo;
   }, [clientId, getLocalStorageKey]);
 
-  // Delete drafts (both local and server)
+  // Soft-delete ALL active drafts for this client (discard / after invoice)
   const deleteDraft = useCallback(async () => {
     try {
       const companyId = await getCurrentUserCompanyId();
@@ -210,153 +272,108 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       }
 
       console.log('[Draft] Starting deletion for client:', clientId);
-      
-      // Delete from localStorage FIRST
+
       const key = getLocalStorageKey();
       localStorage.removeItem(key);
       console.log('[Draft] Deleted local draft for client:', clientId);
 
-      // Delete from server (soft delete) - use .select() to get confirmation
       const { error, data } = await supabase
         .from('draft_stock_updates')
         .update({ deleted_at: new Date().toISOString() })
         .eq('client_id', clientId)
         .eq('company_id', companyId)
-        .is('deleted_at', null) // Only update non-deleted drafts
+        .is('deleted_at', null)
         .select();
 
       if (error) {
         console.error('[Draft] Server deletion error:', error);
         throw error;
       }
-      
-      console.log('[Draft] Deleted server draft for client:', clientId, 'Rows deleted:', data?.length || 0);
 
-      // Clear last sync data
+      console.log('[Draft] Deleted server drafts for client:', clientId, 'Rows deleted:', data?.length || 0);
+
       lastSyncDataRef.current = '';
-      
-      // Verify deletion by checking directly (not using getDraftInfo to avoid circular dependency)
-      const { data: verifyData } = await supabase
-        .from('draft_stock_updates')
-        .select('id')
-        .eq('client_id', clientId)
-        .eq('company_id', companyId)
-        .is('deleted_at', null) // Only check non-deleted drafts
-        .maybeSingle();
-      
-      if (verifyData) {
+
+      const remaining = await fetchRecentDrafts(clientId, companyId, {
+        activeOnly: true,
+        limit: 1,
+      });
+
+      if (remaining.length > 0) {
         console.warn('[Draft] WARNING: Draft still exists after deletion attempt! Retrying...');
-        // Try one more time to delete from server (soft delete)
         const { error: retryError } = await supabase
           .from('draft_stock_updates')
           .update({ deleted_at: new Date().toISOString() })
           .eq('client_id', clientId)
           .eq('company_id', companyId)
-          .is('deleted_at', null); // Only update non-deleted drafts
-        
+          .is('deleted_at', null);
+
         if (retryError) {
           console.error('[Draft] Retry deletion also failed:', retryError);
           throw retryError;
-        } else {
-          console.log('[Draft] Successfully deleted draft on retry');
         }
+        console.log('[Draft] Successfully deleted drafts on retry');
       } else {
         console.log('[Draft] Deletion verified: no draft remains in database');
       }
-      
-      // Double-check localStorage is cleared
+
       if (localStorage.getItem(key)) {
         console.warn('[Draft] WARNING: LocalStorage still contains draft data, removing...');
         localStorage.removeItem(key);
       }
     } catch (error) {
       console.error('[Draft] Error deleting draft:', error);
-      // Re-throw error so caller knows deletion failed
       throw error;
     }
   }, [clientId, getLocalStorageKey]);
 
-  // Check if data is empty (no need to save)
   const isDraftEmpty = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any product form has data
-    const hasProductData = Object.values(data.perProductForm).some(
-      form =>
+    const hasProductData = Object.values(data.perProductForm || {}).some(
+      (form) =>
         form.counted_stock !== '' ||
         form.stock_added !== '' ||
         form.product_info !== '' ||
         (form.reassort_saisie && form.reassort_saisie !== '')
     );
 
-    // Check if any sub-product form has data
     const hasSubProductData = data.perSubProductForm
       ? Object.values(data.perSubProductForm).some(
-          form =>
+          (form) =>
             form.counted_stock !== '' ||
             form.stock_added !== '' ||
             (form.reassort_saisie && form.reassort_saisie !== '')
         )
       : false;
 
-    // Check if any adjustments exist
-    const hasAdjustments = data.pendingAdjustments.length > 0;
+    const hasAdjustments = (data.pendingAdjustments || []).length > 0;
 
     return !hasProductData && !hasSubProductData && !hasAdjustments;
   }, []);
 
-  // Check if draft has meaningful data that warrants showing recovery dialog
-  // Only check counted_stock and stock_added (stock update fields), ignore product_info
   const hasMeaningfulDraft = useCallback((data: DraftStockUpdateData): boolean => {
-    // Check if any product form has stock data (not just product_info)
-    const hasStockData = Object.values(data.perProductForm).some(
-      form =>
-        form.counted_stock !== '' ||
-        form.stock_added !== '' ||
-        (form.reassort_saisie && form.reassort_saisie !== '')
-    );
-
-    // Check if any sub-product form has stock data
-    const hasSubProductStockData = data.perSubProductForm
-      ? Object.values(data.perSubProductForm).some(
-          form =>
-            form.counted_stock !== '' ||
-            form.stock_added !== '' ||
-            (form.reassort_saisie && form.reassort_saisie !== '')
-        )
-      : false;
-
-    // Adjustments also count as meaningful data
-    const hasAdjustments = data.pendingAdjustments.length > 0;
-
-    return hasStockData || hasSubProductStockData || hasAdjustments;
+    return draftDataIsMeaningful(data);
   }, []);
 
-  // Auto-save function (saves to local immediately, syncs to server periodically)
   const autoSave = useCallback((data: DraftStockUpdateData) => {
-    // Only save if we're on the active tab
     if (!isActiveTab) {
       console.log('[Draft] AutoSave: Not saving - not on active tab');
       return;
     }
 
-    // Don't save if data is empty
     if (isDraftEmpty(data)) {
       console.log('[Draft] AutoSave: Data is empty, not saving');
       return;
     }
 
     console.log('[Draft] AutoSave: Saving draft data', data);
-    // Save to localStorage immediately
     saveDraftLocally(data);
-    // Also save to server immediately (not just periodically)
-    saveDraftToServer(data).catch(err => 
+    saveDraftToServer(data).catch((err) =>
       console.error('[Draft] Error in immediate server save:', err)
     );
   }, [saveDraftLocally, isDraftEmpty, isActiveTab, saveDraftToServer]);
 
-  // Setup periodic sync to server (only if active tab)
   useEffect(() => {
     if (!isActiveTab) {
-      // Clear any existing timer if we're not on the active tab
       if (syncTimerRef.current) {
         clearInterval(syncTimerRef.current);
         syncTimerRef.current = null;
@@ -364,7 +381,6 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       return;
     }
 
-    // Function to perform sync
     const syncToServer = async () => {
       try {
         const key = getLocalStorageKey();
@@ -374,7 +390,6 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
         const parsed = JSON.parse(stored);
         const data = parsed.data as DraftStockUpdateData;
 
-        // Don't sync if data is empty
         if (isDraftEmpty(data)) {
           return;
         }
@@ -385,10 +400,7 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       }
     };
 
-    // Initial sync after a short delay
-    const initialSyncTimer = setTimeout(syncToServer, 5000); // 5 seconds after mount
-
-    // Setup periodic sync
+    const initialSyncTimer = setTimeout(syncToServer, 5000);
     syncTimerRef.current = setInterval(syncToServer, SYNC_INTERVAL);
 
     return () => {
@@ -399,7 +411,6 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     };
   }, [clientId, getLocalStorageKey, saveDraftToServer, isDraftEmpty, isActiveTab]);
 
-  // Cleanup on unmount - perform final sync (only if active tab)
   useEffect(() => {
     return () => {
       if (!isActiveTab) {
@@ -412,8 +423,7 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
           const parsed = JSON.parse(stored);
           const data = parsed.data as DraftStockUpdateData;
           if (!isDraftEmpty(data)) {
-            // Perform final sync (fire and forget)
-            saveDraftToServer(data).catch(err => 
+            saveDraftToServer(data).catch((err) =>
               console.error('[Draft] Error in final sync on unmount:', err)
             );
           }
@@ -434,5 +444,3 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     hasMeaningfulDraft
   };
 }
-
-
