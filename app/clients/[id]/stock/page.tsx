@@ -758,10 +758,12 @@ export default function ClientDetailPage() {
       
       if (draftInfo) {
         console.log('[Draft] Found draft info before loading client data');
-        // Load the draft data to check if it contains meaningful stock update data
+        // Prefer meaningful local draft; otherwise load latest from server
+        // (stale local with only product_info must not hide a good server draft)
         let draftData = draft.loadDraftLocally();
-        if (!draftData) {
-          draftData = await draft.loadDraftFromServer();
+        if (!draftData || !draft.hasMeaningfulDraft(draftData)) {
+          const serverDraft = await draft.loadDraftFromServer();
+          if (serverDraft) draftData = serverDraft;
         }
         
         if (draftData && draft.hasMeaningfulDraft(draftData)) {
@@ -778,8 +780,9 @@ export default function ClientDetailPage() {
         const draftInfo = await draft.getDraftInfo();
         if (draftInfo) {
           let draftData = draft.loadDraftLocally();
-          if (!draftData) {
-            draftData = await draft.loadDraftFromServer();
+          if (!draftData || !draft.hasMeaningfulDraft(draftData)) {
+            const serverDraft = await draft.loadDraftFromServer();
+            if (serverDraft) draftData = serverDraft;
           }
           
           if (draftData && draft.hasMeaningfulDraft(draftData)) {
