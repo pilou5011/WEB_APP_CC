@@ -75,9 +75,12 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     }
   }, [clientId, getLocalStorageKey]);
 
-  // Save to server (upsert latest row + clean duplicates)
+  /**
+   * Persist draft to server for this client+company.
+   * Rule: never create a 2nd active draft — always UPDATE the latest one.
+   * Prefer atomic RPC; fall back to select-then-update/insert with race handling.
+   */
   const saveDraftToServer = useCallback(async (data: DraftStockUpdateData) => {
-    // Only save if we're on the active tab
     if (!isActiveTab) {
       console.log('[Draft] Not saving: not on active tab');
       return;
@@ -90,12 +93,30 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       }
 
       const dataString = JSON.stringify(data);
-      
-      // Skip if data hasn't changed
+
       if (dataString === lastSyncDataRef.current) {
         console.log('[Draft] No changes detected, skipping server sync');
         return;
       }
+
+      // Preferred path: one DB round-trip, never two active rows
+      const { data: rpcId, error: rpcError } = await supabase.rpc(
+        'upsert_draft_stock_update',
+        {
+          p_client_id: clientId,
+          p_company_id: companyId,
+          p_draft_data: data,
+        }
+      );
+
+      if (!rpcError) {
+        lastSyncDataRef.current = dataString;
+        console.log('[Draft] Upserted server draft for client:', clientId, 'id:', rpcId);
+        return;
+      }
+
+      // RPC missing (migration not applied yet) or failed — safe client-side upsert
+      console.warn('[Draft] RPC upsert unavailable, using fallback:', rpcError.message);
 
       const existing = await fetchLatestActiveDraft(clientId, companyId, 'id');
 
@@ -104,25 +125,54 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
           .from('draft_stock_updates')
           .update({
             draft_data: data,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq('id', existing.id)
           .eq('company_id', companyId);
 
         if (updateError) throw updateError;
         await softDeleteOlderDuplicates(clientId, companyId, existing.id);
-        console.log('[Draft] Updated server draft for client:', clientId);
+        console.log('[Draft] Updated existing server draft for client:', clientId);
       } else {
-        const { error: insertError } = await supabase
+        const { data: inserted, error: insertError } = await supabase
           .from('draft_stock_updates')
-          .insert([{
-            client_id: clientId,
-            company_id: companyId,
-            draft_data: data
-          }]);
+          .insert([
+            {
+              client_id: clientId,
+              company_id: companyId,
+              draft_data: data,
+            },
+          ])
+          .select('id')
+          .maybeSingle();
 
-        if (insertError) throw insertError;
-        console.log('[Draft] Created server draft for client:', clientId);
+        // Unique violation / concurrent insert → update the row that won
+        if (insertError) {
+          const isUniqueConflict =
+            insertError.code === '23505' ||
+            /duplicate|unique/i.test(insertError.message || '');
+
+          if (!isUniqueConflict) throw insertError;
+
+          const winner = await fetchLatestActiveDraft(clientId, companyId, 'id');
+          if (!winner) throw insertError;
+
+          const { error: raceUpdateError } = await supabase
+            .from('draft_stock_updates')
+            .update({
+              draft_data: data,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', winner.id)
+            .eq('company_id', companyId);
+
+          if (raceUpdateError) throw raceUpdateError;
+          await softDeleteOlderDuplicates(clientId, companyId, winner.id);
+          console.log('[Draft] Race resolved: updated winning draft for client:', clientId);
+        } else if (inserted?.id) {
+          await softDeleteOlderDuplicates(clientId, companyId, inserted.id);
+          console.log('[Draft] Created first server draft for client:', clientId);
+        }
       }
 
       lastSyncDataRef.current = dataString;
