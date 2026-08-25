@@ -4,8 +4,6 @@ import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes in milliseconds
 const LOCAL_STORAGE_PREFIX = 'stock_update_draft_';
-/** How many recent active drafts to scan when recovering (newest first). */
-const DRAFT_RECOVERY_SCAN_LIMIT = 50;
 
 export interface DraftInfo {
   clientId: string;
@@ -38,60 +36,23 @@ function draftDataIsMeaningful(data: DraftStockUpdateData | null | undefined): b
   return hasStockData || hasSubProductStockData || hasAdjustments;
 }
 
-/** Recent drafts for a client+company (newest first). Optionally only active rows. */
-async function fetchRecentDrafts(
+/** Latest draft that is not soft-deleted (deleted_at IS NULL). Soft-deleted history is never offered. */
+async function fetchLatestActiveDraft(
   clientId: string,
-  companyId: string,
-  options: { activeOnly?: boolean; limit?: number } = {}
-): Promise<DraftStockUpdate[]> {
-  const {
-    activeOnly = true,
-    limit = DRAFT_RECOVERY_SCAN_LIMIT,
-  } = options;
-
-  let query = supabase
+  companyId: string
+): Promise<DraftStockUpdate | null> {
+  const { data, error } = await supabase
     .from('draft_stock_updates')
     .select('*')
     .eq('client_id', clientId)
     .eq('company_id', companyId)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(1);
 
-  if (activeOnly) {
-    query = query.is('deleted_at', null);
-  }
-
-  const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as DraftStockUpdate[];
-}
-
-/**
- * Prefer newest active meaningful draft; if none, fall back to a soft-deleted
- * snapshot that still has stocks (previous save was soft-deleted when a new row was added).
- */
-async function fetchBestMeaningfulDraft(clientId: string, companyId: string) {
-  const activeRows = await fetchRecentDrafts(clientId, companyId, { activeOnly: true });
-  for (const row of activeRows) {
-    if (draftDataIsMeaningful(row.draft_data as DraftStockUpdateData)) {
-      return row;
-    }
-  }
-
-  // Active row empty / missing stocks → recover from soft-deleted history
-  const historyRows = await fetchRecentDrafts(clientId, companyId, {
-    activeOnly: false,
-    limit: DRAFT_RECOVERY_SCAN_LIMIT,
-  });
-  for (const row of historyRows) {
-    if (row.deleted_at == null) continue; // already checked active above
-    if (draftDataIsMeaningful(row.draft_data as DraftStockUpdateData)) {
-      return row;
-    }
-  }
-
-  return null;
+  return ((data ?? [])[0] as DraftStockUpdate | undefined) ?? null;
 }
 
 export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = true) {
@@ -195,7 +156,7 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     }
   }, [clientId, getLocalStorageKey]);
 
-  // Load best meaningful draft from server (skip empty newest snapshots)
+  // Load latest non-soft-deleted draft only (never recover soft-deleted rows)
   const loadDraftFromServer = useCallback(async (): Promise<DraftStockUpdateData | null> => {
     try {
       const companyId = await getCurrentUserCompanyId();
@@ -203,13 +164,13 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
         throw new Error('Non autorisé');
       }
 
-      const row = await fetchBestMeaningfulDraft(clientId, companyId);
+      const row = await fetchLatestActiveDraft(clientId, companyId);
       if (!row) {
-        console.log('[Draft] No meaningful server draft for client:', clientId);
+        console.log('[Draft] No active server draft for client:', clientId);
         return null;
       }
 
-      console.log('[Draft] Loaded meaningful server draft for client:', clientId, 'id:', row.id);
+      console.log('[Draft] Loaded active server draft for client:', clientId, 'id:', row.id);
       return row.draft_data as DraftStockUpdateData;
     } catch (error) {
       console.error('[Draft] Error loading from server:', error);
@@ -217,7 +178,7 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     }
   }, [clientId]);
 
-  // Prefer meaningful local; else newest meaningful server snapshot
+  // Prefer meaningful local; else latest active server draft only (no soft-deleted)
   const getDraftInfo = useCallback(async (): Promise<DraftInfo | null> => {
     let localInfo: DraftInfo | null = null;
     let localData: DraftStockUpdateData | null = null;
@@ -245,10 +206,10 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
-        return localInfo;
+        return null;
       }
 
-      const row = await fetchBestMeaningfulDraft(clientId, companyId);
+      const row = await fetchLatestActiveDraft(clientId, companyId);
       if (row) {
         return {
           clientId: row.client_id,
@@ -260,7 +221,8 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
       console.error('[Draft] Error checking server draft info:', error);
     }
 
-    return localInfo;
+    // No active (non soft-deleted) draft → do not propose recovery
+    return null;
   }, [clientId, getLocalStorageKey]);
 
   // Soft-delete ALL active drafts for this client (discard / after invoice)
@@ -294,12 +256,9 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
 
       lastSyncDataRef.current = '';
 
-      const remaining = await fetchRecentDrafts(clientId, companyId, {
-        activeOnly: true,
-        limit: 1,
-      });
+      const remaining = await fetchLatestActiveDraft(clientId, companyId);
 
-      if (remaining.length > 0) {
+      if (remaining) {
         console.warn('[Draft] WARNING: Draft still exists after deletion attempt! Retrying...');
         const { error: retryError } = await supabase
           .from('draft_stock_updates')
