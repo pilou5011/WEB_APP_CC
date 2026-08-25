@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { supabase, DraftStockUpdateData } from '@/lib/supabase';
+import { supabase, DraftStockUpdate, DraftStockUpdateData } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 
 const SYNC_INTERVAL = 2 * 60 * 1000; // 2 minutes in milliseconds
@@ -42,17 +42,16 @@ function draftDataIsMeaningful(data: DraftStockUpdateData | null | undefined): b
 async function fetchRecentDrafts(
   clientId: string,
   companyId: string,
-  options: { activeOnly?: boolean; columns?: string; limit?: number } = {}
-) {
+  options: { activeOnly?: boolean; limit?: number } = {}
+): Promise<DraftStockUpdate[]> {
   const {
     activeOnly = true,
-    columns = '*',
     limit = DRAFT_RECOVERY_SCAN_LIMIT,
   } = options;
 
   let query = supabase
     .from('draft_stock_updates')
-    .select(columns)
+    .select('*')
     .eq('client_id', clientId)
     .eq('company_id', companyId)
     .order('updated_at', { ascending: false })
@@ -65,7 +64,7 @@ async function fetchRecentDrafts(
 
   const { data, error } = await query;
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as DraftStockUpdate[];
 }
 
 /**
@@ -297,7 +296,6 @@ export function useStockUpdateDraft(clientId: string, isActiveTab: boolean = tru
 
       const remaining = await fetchRecentDrafts(clientId, companyId, {
         activeOnly: true,
-        columns: 'id',
         limit: 1,
       });
 
