@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library, LayoutDashboard } from 'lucide-react';
+import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library, LayoutDashboard, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { getCurrentUser, isCurrentUserSuperAdmin, currentUserCanAccessFeature } from '@/lib/auth-helpers';
@@ -30,13 +30,18 @@ export function Header() {
   const [impersonationAdminEmail, setImpersonationAdminEmail] = useState('');
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
   const [hasDashboardAccess, setHasDashboardAccess] = useState(true);
+  const [hasInventoryAccess, setHasInventoryAccess] = useState(true);
 
   useEffect(() => {
-    const loadDashboardAccess = async () => {
-      const access = await currentUserCanAccessFeature(FEATURES.DASHBOARD);
-      setHasDashboardAccess(access);
+    const loadGoldAccess = async () => {
+      const [dashboardAccess, inventoryAccess] = await Promise.all([
+        currentUserCanAccessFeature(FEATURES.DASHBOARD),
+        currentUserCanAccessFeature(FEATURES.INVENTORY),
+      ]);
+      setHasDashboardAccess(dashboardAccess);
+      setHasInventoryAccess(inventoryAccess);
     };
-    void loadDashboardAccess();
+    void loadGoldAccess();
   }, [userEmail]);
 
   useEffect(() => {
@@ -191,6 +196,11 @@ export function Header() {
       label: hasDashboardAccess ? 'Tableau de bord' : '🔒 Tableau de bord',
       href: '/app/dashboard',
       icon: LayoutDashboard,
+    },
+    {
+      label: hasInventoryAccess ? 'Inventaire' : '🔒 Inventaire',
+      href: '/app/inventaire',
+      icon: ClipboardList,
     },
   ];
 

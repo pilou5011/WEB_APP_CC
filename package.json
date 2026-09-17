@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:inventaire": "npx tsx lib/inventaire/calc.selftest.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -58,6 +59,7 @@
     "embla-carousel-react": "^8.3.0",
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
+    "exceljs": "^4.4.0",
     "input-otp": "^1.2.4",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.2",
