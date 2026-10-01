@@ -4,6 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote, DeliveryNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import {
+  buildLatestStockUpdateMapsForClient,
+  filterEffectiveStockUpdates,
+} from '@/lib/stock/effective-stock';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1147,37 +1151,18 @@ export default function ClientDetailPage() {
         completedInvoiceIds = new Set((completedInvoices || []).map((i) => i.id));
       }
 
-      const effectiveUpdatesData = (updatesData || []).filter(
-        (u) => !u.invoice_id || completedInvoiceIds.has(u.invoice_id)
+      const effectiveUpdatesData = filterEffectiveStockUpdates(
+        updatesData || [],
+        completedInvoiceIds
       );
 
       setStockUpdates(effectiveUpdatesData);
 
-      // Créer un map optimisé pour récupérer rapidement le dernier stock_update par product_id et sub_product_id
-      // Structure: { 'product_id': lastStockUpdate, 'sub_product_id': lastStockUpdate }
-      // Inclure seulement les stock_updates effectifs:
-      // - invoice_id = null
-      // - ou liés à une facture completed
-      const lastStockUpdatesByProductMap: Record<string, StockUpdate> = {};
-      const lastStockUpdatesBySubProductMap: Record<string, StockUpdate> = {};
-      
-      effectiveUpdatesData.forEach((update: StockUpdate) => {
-        if (update.product_id && !update.sub_product_id) {
-          // Produit sans sous-produit
-          const key = update.product_id;
-          if (!lastStockUpdatesByProductMap[key] || 
-              new Date(update.created_at) > new Date(lastStockUpdatesByProductMap[key].created_at)) {
-            lastStockUpdatesByProductMap[key] = update;
-          }
-        } else if (update.sub_product_id) {
-          // Sous-produit
-          const key = update.sub_product_id;
-          if (!lastStockUpdatesBySubProductMap[key] || 
-              new Date(update.created_at) > new Date(lastStockUpdatesBySubProductMap[key].created_at)) {
-            lastStockUpdatesBySubProductMap[key] = update;
-          }
-        }
-      });
+      // Maps dernier stock_update — logique partagée avec Inventaire (lib/stock/effective-stock)
+      const {
+        byProductId: lastStockUpdatesByProductMap,
+        bySubProductId: lastStockUpdatesBySubProductMap,
+      } = buildLatestStockUpdateMapsForClient(effectiveUpdatesData);
       
       // Stocker ces maps dans le state
       setLastStockUpdatesByProduct(lastStockUpdatesByProductMap);

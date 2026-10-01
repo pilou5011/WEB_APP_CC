@@ -16,5 +16,12 @@ export {
   type InventoryProductRow,
 } from '@/lib/inventaire/types';
 
+export {
+  filterEffectiveStockUpdates,
+  buildLatestStockUpdateMapsForClient,
+  getDisplayedProductStock,
+  isEffectiveStockUpdate,
+} from '@/lib/stock/effective-stock';
+
 export { loadInventoryMatrixForDate } from '@/lib/inventaire/data-access';
 export { buildInventoryWorkbook, downloadInventoryXlsx } from '@/lib/inventaire/excel';
