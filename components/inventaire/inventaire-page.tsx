@@ -53,7 +53,7 @@ export function InventaireClientPage() {
 
       const buffer = await buildInventoryWorkbook(matrix, dateYmd);
       downloadInventoryXlsx(buffer, dateYmd);
-      toast.success('Inventaire Excel téléchargé');
+      toast.success('Inventaire Excel téléchargé — voir la console (F12) pour le détail Fonds de Rayon / 414129');
     } catch (error) {
       console.error('[Inventaire] Export error:', error);
       const message =

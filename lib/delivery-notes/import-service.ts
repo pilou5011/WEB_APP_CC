@@ -1,5 +1,6 @@
 import type { Product, StockUpdate } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
+import { isEffectiveStockUpdate } from '@/lib/stock/effective-stock';
 import {
   resolveDeliveryNoteLines,
   type ResolvedDeliveryNoteLine,
@@ -49,7 +50,7 @@ async function getLastAncienDepotByIds(params: {
     .eq('status', 'completed');
 
   const completedIds = new Set((completedInvoices || []).map((i) => i.id));
-  const isEffective = (invoiceId: string | null) => !invoiceId || completedIds.has(invoiceId);
+  const isEffective = (invoiceId: string | null) => isEffectiveStockUpdate(invoiceId, completedIds);
 
   if (productIds.length > 0) {
     const { data: updates, error } = await supabase
