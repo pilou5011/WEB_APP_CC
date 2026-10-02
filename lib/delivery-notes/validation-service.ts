@@ -78,14 +78,22 @@ export async function validateDeliveryNote(
     throw new Error('Ajoutez au moins un produit avant de valider');
   }
 
+  // Horodatage de validation AVANT la génération PDF : le PDF doit afficher
+  // validated_at (jamais created_at). Même timestamp persisté ensuite en base.
+  const validatedAt = nowIso();
+  const noteForPdf: DeliveryNote = {
+    ...(note as DeliveryNote),
+    status: 'validated',
+    validated_at: validatedAt,
+  };
+
   const { generateAndSaveDeliveryNotePDF } = await import('@/lib/pdf-generators');
   const pdfPath = await generateAndSaveDeliveryNotePDF({
-    deliveryNote: note as DeliveryNote,
+    deliveryNote: noteForPdf,
     client,
     lines,
   });
 
-  const validatedAt = nowIso();
   const updateQuery = withActiveSqlFilter(
     deliveryNotesTable('delivery_notes')
       .update({

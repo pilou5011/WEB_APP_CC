@@ -5,6 +5,19 @@ import {
   resolveDeliveryNoteLines,
   type ResolvedDeliveryNoteLine,
 } from './service';
+import {
+  deliveryNotesTable,
+  ensureDeliveryNotesSoftDeleteColumn,
+  nowIso,
+  withActiveSqlFilter,
+} from './db-helpers';
+import {
+  convertResolvedLinesToCashInvoiceLines,
+  type CashInvoiceImportLine,
+} from './cash-invoice-convert';
+
+export type { CashInvoiceImportLine };
+export { convertResolvedLinesToCashInvoiceLines };
 
 export type DeliveryNoteImportSubLinePreview = {
   subProductId: string;
@@ -30,6 +43,12 @@ export type DeliveryNoteImportPreview = {
   lines: DeliveryNoteImportLinePreview[];
   added: DeliveryNoteImportLinePreview[];
   updated: DeliveryNoteImportLinePreview[];
+};
+
+export type CashInvoiceImportPreview = {
+  deliveryNoteId: string;
+  deliveryNumber: string;
+  lines: CashInvoiceImportLine[];
 };
 
 async function getLastAncienDepotByIds(params: {
@@ -82,7 +101,7 @@ async function getLastAncienDepotByIds(params: {
 
     if (error) throw error;
 
-    const effective = (updates || []).filter((u) => isEffective(u.invoice_id));
+    const effective = (updates || []).filter((u) => isEffective(u.invoice_id)) as StockUpdate[];
     for (const subProductId of subProductIds) {
       const latest = effective.find((u) => u.sub_product_id === subProductId);
       bySubProduct.set(subProductId, latest?.new_stock ?? 0);
@@ -105,6 +124,118 @@ export async function getLastAncienDepotByProduct(
     subProductIds: [],
   });
   return byProduct;
+}
+
+/** Vérifie qu'un BL est encore importable (validated, non deleted). */
+export async function assertDeliveryNoteImportable(
+  companyId: string,
+  deliveryNoteId: string
+): Promise<{ id: string; delivery_number: string; client_id: string }> {
+  await ensureDeliveryNotesSoftDeleteColumn();
+
+  const { data: note, error } = await deliveryNotesTable('delivery_notes')
+    .select('id, delivery_number, client_id, status, deleted_at')
+    .eq('id', deliveryNoteId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!note || note.deleted_at) {
+    throw new Error('Bon de livraison introuvable');
+  }
+  if (note.status === 'imported') {
+    throw new Error(
+      "Ce bon de livraison n'est plus disponible car il a déjà été utilisé."
+    );
+  }
+  if (note.status !== 'validated') {
+    throw new Error('Seuls les bons de livraison validés peuvent être importés');
+  }
+
+  return {
+    id: note.id,
+    delivery_number: note.delivery_number,
+    client_id: note.client_id,
+  };
+}
+
+/**
+ * Prépare l'import d'un BL dans Facturer (compte ferme) :
+ * vérifie le statut + convertit parent/sous-produits → lignes agrégées.
+ * Ne marque PAS le BL comme imported.
+ */
+export async function buildCashInvoiceImportPreview(
+  companyId: string,
+  deliveryNoteId: string
+): Promise<CashInvoiceImportPreview> {
+  const note = await assertDeliveryNoteImportable(companyId, deliveryNoteId);
+
+  // mergeCurrentSubProducts: false → quantités historiques du BL (somme des sous stockés)
+  const resolved = await resolveDeliveryNoteLines(deliveryNoteId, companyId, {
+    mergeCurrentSubProducts: false,
+  });
+  const lines = convertResolvedLinesToCashInvoiceLines(resolved);
+
+  if (lines.length === 0) {
+    throw new Error('Ce bon de livraison ne contient aucun produit importable');
+  }
+
+  return {
+    deliveryNoteId: note.id,
+    deliveryNumber: note.delivery_number,
+    lines,
+  };
+}
+
+/**
+ * Passe un BL validated → imported de façon conditionnelle (anti double-emploi).
+ * @returns true si le BL a bien été marqué, false s'il n'était plus disponible.
+ */
+export async function markDeliveryNoteAsImported(
+  companyId: string,
+  deliveryNoteId: string
+): Promise<boolean> {
+  await ensureDeliveryNotesSoftDeleteColumn();
+  const importedAt = nowIso();
+  const { data, error } = await withActiveSqlFilter(
+    deliveryNotesTable('delivery_notes')
+      .update({
+        status: 'imported',
+        imported_at: importedAt,
+        updated_at: importedAt,
+      })
+      .eq('id', deliveryNoteId)
+      .eq('company_id', companyId)
+      .eq('status', 'validated')
+  )
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+
+/**
+ * Remet un BL imported → validated (rollback si la génération facture échoue après claim).
+ */
+export async function revertDeliveryNoteToValidated(
+  companyId: string,
+  deliveryNoteId: string
+): Promise<void> {
+  await ensureDeliveryNotesSoftDeleteColumn();
+  const updatedAt = nowIso();
+  const { error } = await withActiveSqlFilter(
+    deliveryNotesTable('delivery_notes')
+      .update({
+        status: 'validated',
+        imported_at: null,
+        updated_at: updatedAt,
+      })
+      .eq('id', deliveryNoteId)
+      .eq('company_id', companyId)
+      .eq('status', 'imported')
+  );
+  if (error) throw error;
 }
 
 export async function buildDeliveryNoteImportPreview(

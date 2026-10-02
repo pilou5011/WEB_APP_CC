@@ -236,6 +236,8 @@ export type Invoice = {
   deposit_slip_email_sent_at: string | null; // Date d'envoi du bon de dépôt par email
   status: 'processing' | 'completed' | 'failed'; // Statut du document
   invoice_date: string; // Date comptable de la facture (modifiable par l'utilisateur)
+  /** Texte libre PDF (max 3 lignes) — facture + bon de dépôt associé */
+  free_text: string | null;
   created_at: string; // Date technique de création (jamais modifiée)
 };
 
@@ -360,6 +362,10 @@ export type DraftInvoiceRow = {
 export type DraftInvoiceData = {
   rows: DraftInvoiceRow[];
   discountPercentage: number | null;
+  free_text?: string;
+  /** BL importé dans le brouillon — marqué `imported` uniquement après génération réussie. */
+  imported_delivery_note_id?: string | null;
+  imported_delivery_number?: string | null;
 };
 
 export type DraftInvoice = {
@@ -377,6 +383,7 @@ export type DraftCreditNoteData = {
   operation_name: string;
   quantity: string;
   unit_price: string;
+  free_text?: string;
 };
 
 export type DraftCreditNote = {
@@ -402,6 +409,8 @@ export type CreditNote = {
   email_sent_at: string | null; // Date d'envoi de l'avoir par email
   status: 'processing' | 'completed' | 'failed'; // Statut du document
   credit_note_date: string; // Date comptable de l'avoir (modifiable par l'utilisateur)
+  /** Texte libre PDF (max 3 lignes) */
+  free_text: string | null;
   created_at: string; // Date technique de création (jamais modifiée)
 };
 
@@ -478,6 +487,8 @@ export type DeliveryNote = {
   validated_at: string | null;
   pdf_path: string | null;
   email_sent_at: string | null;
+  /** Texte libre PDF (max 3 lignes) */
+  free_text: string | null;
 };
 
 export type DeliveryNoteLine = {
