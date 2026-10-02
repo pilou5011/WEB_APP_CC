@@ -76,8 +76,11 @@ import {
   resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
+  updateDeliveryNoteFreeText,
   validateDeliveryNote,
 } from '@/lib/delivery-notes';
+import { DocumentFreeTextField } from '@/components/document-free-text-field';
+import { normalizeDocumentFreeText } from '@/lib/document-free-text';
 
 function serializeDraftRows(rows: ProductLineRow[]): string {
   return JSON.stringify(
@@ -172,6 +175,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   );
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [selectedValidatedId, setSelectedValidatedId] = useState<string | null>(null);
+  const [draftFreeText, setDraftFreeText] = useState('');
   const [draftRows, setDraftRows] = useState<ProductLineRow[]>([]);
   const [salesByProduct, setSalesByProduct] = useState<Map<string, Record<number, number>>>(new Map());
   const [salesBySubProduct, setSalesBySubProduct] = useState<Map<string, Record<number, number>>>(
@@ -210,12 +214,6 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   const [closeDraftConfirmOpen, setCloseDraftConfirmOpen] = useState(false);
   const pendingNavigationRef = useRef<string | null>(null);
 
-  const hasUnsavedDraftChanges = useMemo(() => {
-    if (!selectedDraftId || !savedDraftSnapshot) return false;
-    if (savedDraftSnapshot.noteId !== selectedDraftId) return true;
-    return serializeDraftRows(draftRows) !== savedDraftSnapshot.serialized;
-  }, [selectedDraftId, savedDraftSnapshot, draftRows]);
-
   const syncSavedSnapshot = useCallback((noteId: string, rows: ProductLineRow[]) => {
     setSavedDraftSnapshot({ noteId, serialized: serializeDraftRows(rows) });
   }, []);
@@ -223,12 +221,23 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   const closeDraftEditor = useCallback(() => {
     setSelectedDraftId(null);
     setSavedDraftSnapshot(null);
+    setDraftFreeText('');
   }, []);
 
   const selectedDraft = useMemo(
     () => draftNotes.find((n) => n.id === selectedDraftId) || null,
     [draftNotes, selectedDraftId]
   );
+
+  const hasUnsavedDraftChanges = useMemo(() => {
+    if (!selectedDraftId || !savedDraftSnapshot) return false;
+    if (savedDraftSnapshot.noteId !== selectedDraftId) return true;
+    const rowsChanged = serializeDraftRows(draftRows) !== savedDraftSnapshot.serialized;
+    const freeTextChanged =
+      normalizeDocumentFreeText(draftFreeText) !==
+      normalizeDocumentFreeText(selectedDraft?.free_text ?? '');
+    return rowsChanged || freeTextChanged;
+  }, [selectedDraftId, savedDraftSnapshot, draftRows, draftFreeText, selectedDraft?.free_text]);
 
   const selectedValidated = useMemo(
     () => validatedNotes.find((n) => n.id === selectedValidatedId) || null,
@@ -422,6 +431,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     setSelectedDraftId(note.id);
     setReadOnlyViewId(null);
     setDraftRows(rows);
+    setDraftFreeText(note.free_text ?? '');
     syncSavedSnapshot(note.id, rows);
   };
 
@@ -632,6 +642,11 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
       });
 
     await saveDeliveryNoteLines(selectedDraftId, companyId, lines);
+    await updateDeliveryNoteFreeText(
+      selectedDraftId,
+      companyId,
+      normalizeDocumentFreeText(draftFreeText) || null
+    );
     await loadData();
   };
 
@@ -1056,6 +1071,13 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                     allowEmpty
                     scrollable
                     compactHeader
+                  />
+
+                  <DocumentFreeTextField
+                    id="delivery-note-free-text"
+                    value={draftFreeText}
+                    onChange={setDraftFreeText}
+                    disabled={saving || validating}
                   />
                 </div>
               )}

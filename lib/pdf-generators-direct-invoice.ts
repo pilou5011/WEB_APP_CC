@@ -8,6 +8,12 @@
 
 import { Client, Invoice, Product, StockDirectSold, UserProfile, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { drawPdfClientInfoFreeText } from '@/lib/document-free-text';
+import {
+  drawPdfDueDateLine,
+  formatPdfDocumentDateFr,
+  getSimpleDateBlockDueDateY,
+} from '@/lib/pdf-document-dates';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -300,6 +306,7 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
     // Encart numéro de client et numéro de facture (en dessous du DÉTAILLANT)
+    // Bordure retirée — position / largeur / hauteur logique inchangées (curseur layout figé).
     clientYPosition += 6;
     const infoBoxY = clientYPosition;
     doc.setFont('helvetica', 'bold');
@@ -314,16 +321,28 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     // Utiliser le numéro de facture stocké dans la base de données
     const invoiceNumber = invoice.invoice_number || 'N/A';
     doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
+    const lastInfoBaselineY = clientYPosition;
     clientYPosition += 3;
     
     const infoBoxHeight = clientYPosition - infoBoxY + 1;
-    doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+    void infoBoxHeight; // zone logique conservée (plus de doc.rect)
+    drawPdfClientInfoFreeText({
+      doc,
+      freeText: invoice.free_text,
+      textX: rightBoxX + 2,
+      lastInfoBaselineY,
+    });
 
     // Date de la facture
     yPosition = Math.max(yPosition, clientYPosition) + 10;
+    const dateBlockStartY = yPosition;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(invoice.invoice_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(
+      `Date: ${formatPdfDocumentDateFr(invoice.invoice_date)}`,
+      globalLeftMargin,
+      yPosition
+    );
     const responsableName = client.responsable_name?.trim();
     if (responsableName) {
       doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
@@ -331,6 +350,13 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
     } else {
       yPosition += 10;
     }
+    // Échéance en coordonnées fixes — n'avance pas le curseur (titre/tableau inchangés)
+    drawPdfDueDateLine(
+      doc,
+      globalLeftMargin,
+      getSimpleDateBlockDueDateY(dateBlockStartY, Boolean(responsableName)),
+      invoice.invoice_date
+    );
 
     // Titre "Facture N°[numero_facture]" en gras
     doc.setFont('helvetica', 'bold');

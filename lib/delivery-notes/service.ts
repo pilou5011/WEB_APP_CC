@@ -503,6 +503,34 @@ export async function saveDeliveryNoteLines(
   if (updateError) throw updateError;
 }
 
+/** Met à jour le texte libre PDF d'un bon de livraison (brouillon). */
+export async function updateDeliveryNoteFreeText(
+  deliveryNoteId: string,
+  companyId: string,
+  freeText: string | null
+): Promise<void> {
+  const { data: note, error: fetchError } = await deliveryNotesTable('delivery_notes')
+    .select('status, deleted_at')
+    .eq('id', deliveryNoteId)
+    .eq('company_id', companyId)
+    .single();
+
+  if (fetchError) throw fetchError;
+  if (!note || note.deleted_at || note.status !== 'draft') {
+    throw new Error('Seul un brouillon de bon de livraison peut être modifié');
+  }
+
+  const { error } = await deliveryNotesTable('delivery_notes')
+    .update({
+      free_text: freeText,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', deliveryNoteId)
+    .eq('company_id', companyId);
+
+  if (error) throw error;
+}
+
 export async function fetchImportableProducts(companyId: string): Promise<Product[]> {
   const { data: products, error: productsError } = await addSoftDeleteFilter(
     supabase.from('products').select('*').eq('company_id', companyId),

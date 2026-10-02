@@ -1,7 +1,14 @@
 export {
+  assertDeliveryNoteImportable,
+  buildCashInvoiceImportPreview,
   buildDeliveryNoteImportPreview,
+  convertResolvedLinesToCashInvoiceLines,
   executeDeliveryNoteImport,
   getLastAncienDepotByProduct,
+  markDeliveryNoteAsImported,
+  revertDeliveryNoteToValidated,
+  type CashInvoiceImportLine,
+  type CashInvoiceImportPreview,
   type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
   type DeliveryNoteImportSubLinePreview,
@@ -34,6 +41,7 @@ export {
   resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
+  updateDeliveryNoteFreeText,
   type ResolvedDeliveryNoteLine,
 } from './service';
 

@@ -1601,9 +1601,10 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number, invoiceDateParam?: string) => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number, invoiceDateParam?: string, freeTextParam?: string) => {
     // Use the date from the dialog if provided, otherwise use the state
     const finalInvoiceDate = invoiceDateParam || invoiceDate;
+    const freeTextToSave = freeTextParam?.trim() ? freeTextParam.trim() : null;
     if (!client) return;
 
     setSubmitting(true);
@@ -1666,7 +1667,8 @@ export default function ClientDetailPage() {
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
             status: 'processing',
-            invoice_date: finalInvoiceDate // Date comptable
+            invoice_date: finalInvoiceDate, // Date comptable
+            free_text: freeTextToSave,
           }])
           .select()
           .single();
@@ -2189,6 +2191,7 @@ export default function ClientDetailPage() {
           invoice_email_sent_at: null,
           deposit_slip_email_sent_at: null,
           status: 'processing', // Statut par défaut pour les dialogs
+          free_text: freeTextToSave,
           created_at: new Date().toISOString()
         } as Invoice;
         
