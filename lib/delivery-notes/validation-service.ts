@@ -19,6 +19,36 @@ import {
   resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
 } from '@/lib/delivery-notes/service';
+import {
+  resolveEffectiveDeliveryNotePrices,
+  type ClientProductPriceOverride,
+} from '@/lib/delivery-notes/pricing';
+
+export async function fetchClientProductPriceOverrides(
+  clientId: string,
+  companyId: string,
+  productIds: string[]
+): Promise<Map<string, ClientProductPriceOverride>> {
+  const map = new Map<string, ClientProductPriceOverride>();
+  if (productIds.length === 0) return map;
+
+  const { data, error } = await supabase
+    .from('client_products')
+    .select('product_id, custom_price, custom_recommended_sale_price')
+    .eq('client_id', clientId)
+    .eq('company_id', companyId)
+    .is('deleted_at', null)
+    .in('product_id', productIds);
+
+  if (error) throw error;
+  for (const row of data || []) {
+    map.set(row.product_id, {
+      custom_price: row.custom_price,
+      custom_recommended_sale_price: row.custom_recommended_sale_price,
+    });
+  }
+  return map;
+}
 
 export async function pruneSoftDeletedProductsFromDraft(
   deliveryNoteId: string,
@@ -29,7 +59,6 @@ export async function pruneSoftDeletedProductsFromDraft(
   });
 
   const kept = lines.filter((line) => {
-    // resolve already skips soft-deleted products; keep only active ones with qty structure
     return Boolean(line.product_id);
   });
 
@@ -40,6 +69,10 @@ export async function pruneSoftDeletedProductsFromDraft(
       product_id: line.product_id,
       quantity: line.quantity,
       display_order: index,
+      unit_price_ht: line.unit_price_ht,
+      recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+      unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+      recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
       subLines: line.subLines.map((sub, subIndex) => ({
         sub_product_id: sub.sub_product_id,
         quantity: sub.quantity,
@@ -47,6 +80,54 @@ export async function pruneSoftDeletedProductsFromDraft(
       })),
     }))
   );
+}
+
+/** Fige les prix effectifs sur chaque ligne avant le passage en validated. */
+async function freezeDeliveryNoteLinePrices(
+  deliveryNoteId: string,
+  companyId: string,
+  clientId: string
+): Promise<void> {
+  const lines = await resolveDeliveryNoteLines(deliveryNoteId, companyId, {
+    mergeCurrentSubProducts: true,
+  });
+  const overrides = await fetchClientProductPriceOverrides(
+    clientId,
+    companyId,
+    lines.map((l) => l.product_id)
+  );
+
+  for (const line of lines) {
+    const effective = resolveEffectiveDeliveryNotePrices({
+      line: {
+        unit_price_ht: line.unit_price_ht,
+        recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+        unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+        recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
+      },
+      product: {
+        price: line.product_price ?? 0,
+        recommended_sale_price: line.product_recommended_sale_price,
+      },
+      clientOverride: overrides.get(line.product_id) ?? null,
+      isDraft: true,
+    });
+
+    const { error } = await withActiveSqlFilter(
+      deliveryNotesTable('delivery_note_lines')
+        .update({
+          unit_price_ht: effective.cessionHt,
+          recommended_sale_price_ttc: effective.recommendedTtc,
+          // conserver les indicateurs de personnalisation
+          unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+          recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
+        })
+        .eq('delivery_note_id', deliveryNoteId)
+        .eq('company_id', companyId)
+        .eq('product_id', line.product_id)
+    );
+    if (error) throw error;
+  }
 }
 
 export async function validateDeliveryNote(
@@ -70,6 +151,9 @@ export async function validateDeliveryNote(
   }
 
   await pruneSoftDeletedProductsFromDraft(deliveryNoteId, companyId);
+
+  // Figer les prix effectifs avant PDF + passage validated
+  await freezeDeliveryNoteLinePrices(deliveryNoteId, companyId, client.id);
 
   const lines = await resolveDeliveryNoteLines(deliveryNoteId, companyId, {
     mergeCurrentSubProducts: true,

@@ -30,6 +30,7 @@ import {
   type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
 } from '@/lib/delivery-notes';
+import { formatPriceHt, type PriceConflict } from '@/lib/delivery-notes/pricing';
 
 type ImportDeliveryNoteSectionProps = {
   clientId: string;
@@ -50,7 +51,9 @@ export function ImportDeliveryNoteSection({
   const [importing, setImporting] = useState(false);
   const [selectedNoteId, setSelectedNoteId] = useState<string>('');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const [preview, setPreview] = useState<DeliveryNoteImportPreview | null>(null);
+  const [conflicts, setConflicts] = useState<PriceConflict[]>([]);
 
   useEffect(() => {
     setSelectedNoteId((prev) => (draftNotes.some((n) => n.id === prev) ? prev : ''));
@@ -72,7 +75,15 @@ export function ImportDeliveryNoteSection({
         toast.error('Ce bon de livraison ne contient aucun produit');
         return;
       }
+
       setPreview(previewData);
+
+      if (previewData.priceConflicts.length > 0) {
+        setConflicts(previewData.priceConflicts);
+        setConflictOpen(true);
+        return;
+      }
+
       setConfirmOpen(true);
     } catch (error: unknown) {
       console.error(error);
@@ -87,6 +98,18 @@ export function ImportDeliveryNoteSection({
 
     setImporting(true);
     try {
+      // Re-vérification des conflits au moment réel de l'import
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) throw new Error('Non autorisé');
+
+      const fresh = await buildDeliveryNoteImportPreview(clientId, companyId, selectedNoteId);
+      if (fresh.priceConflicts.length > 0) {
+        setConflicts(fresh.priceConflicts);
+        setConfirmOpen(false);
+        setConflictOpen(true);
+        return;
+      }
+
       await executeDeliveryNoteImport({ deliveryNoteId: selectedNoteId });
       toast.success('Bon de livraison importé — les stocks ont été mis à jour');
       setConfirmOpen(false);
@@ -213,6 +236,46 @@ export function ImportDeliveryNoteSection({
             <AlertDialogAction onClick={handleConfirmImport} disabled={importing}>
               {importing ? 'Import en cours...' : 'Importer le bon de livraison'}
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={conflictOpen} onOpenChange={setConflictOpen}>
+        <AlertDialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Import impossible — conflits de prix</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-4 text-left text-slate-700">
+                <p className="text-sm">
+                  L&apos;import de ce bon de livraison est impossible car certains produits
+                  possèdent un prix de cession différent de celui défini dans Facturer (dépôt).
+                  Corrigez les écarts avant de réessayer.
+                </p>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Produit</TableHead>
+                      <TableHead className="text-center">Prix BL (HT)</TableHead>
+                      <TableHead className="text-center">Prix dépôt (HT)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {conflicts.map((c) => (
+                      <TableRow key={c.productId}>
+                        <TableCell>{c.productName}</TableCell>
+                        <TableCell className="text-center">{formatPriceHt(c.blPriceHt)}</TableCell>
+                        <TableCell className="text-center">
+                          {formatPriceHt(c.depositPriceHt)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setConflictOpen(false)}>Fermer</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -14,6 +14,7 @@ import { formatDepartment } from '@/lib/postal-code-utils';
 import { appendDepositSlipDateFields, appendDeliveryNoteDateFields, appendInvoiceDepositDateFields, formatPdfDocumentDateFr, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
 import { drawPdfClientInfoFreeText } from '@/lib/document-free-text';
 import type { ResolvedDeliveryNoteLine } from '@/lib/delivery-notes/service';
+import { resolveDeliveryNotePdfPrices } from '@/lib/delivery-notes/pricing';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -2771,6 +2772,10 @@ export async function generateClientInfoPDF(
         value: client.email || '',
         column: 'right',
       },
+      {
+        label: 'Téléphone 1',
+        value: client.phone_1_info || '',
+      },
       { 
         label: 'Téléphone 2', 
         value: [
@@ -3141,21 +3146,41 @@ export async function generateAndSaveDeliveryNotePDF(
 
   const tableData = lines.map((line) => {
     const prod = productsById.get(line.product_id);
-    const cp = clientProductById.get(line.product_id);
+    const cp = clientProductById.get(line.product_id) as
+      | {
+          custom_price?: number | null;
+          custom_recommended_sale_price?: number | null;
+        }
+      | undefined;
     const barcode = prod?.barcode || line.barcode || '';
-    const effectivePrice =
-      (cp as { custom_price?: number | null } | undefined)?.custom_price ?? prod?.price ?? 0;
-    const effectiveRecommendedSalePrice =
-      (cp as { custom_recommended_sale_price?: number | null } | undefined)
-        ?.custom_recommended_sale_price ?? prod?.recommended_sale_price ?? null;
+    // Source de vérité = prix effectifs du BL (figés à la validation), pas le catalogue live.
+    const effective = resolveDeliveryNotePdfPrices({
+      line: {
+        unit_price_ht: line.unit_price_ht,
+        recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+        unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+        recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
+      },
+      product: {
+        price: line.product_price ?? prod?.price ?? 0,
+        recommended_sale_price:
+          line.product_recommended_sale_price ?? prod?.recommended_sale_price ?? null,
+      },
+      clientOverride: cp
+        ? {
+            custom_price: cp.custom_price ?? null,
+            custom_recommended_sale_price: cp.custom_recommended_sale_price ?? null,
+          }
+        : null,
+    });
 
     return [
       line.product_name || prod?.name || 'Produit',
       String(line.quantity),
       barcode,
-      `${Number(effectivePrice).toFixed(2)} €`,
-      effectiveRecommendedSalePrice !== null
-        ? `${Number(effectiveRecommendedSalePrice).toFixed(2)} €`
+      `${Number(effective.cessionHt).toFixed(2)} €`,
+      effective.recommendedTtc !== null
+        ? `${Number(effective.recommendedTtc).toFixed(2)} €`
         : '-',
     ];
   });

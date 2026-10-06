@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -79,8 +79,14 @@ import {
   updateDeliveryNoteFreeText,
   validateDeliveryNote,
 } from '@/lib/delivery-notes';
+import { fetchClientProductPriceOverrides } from '@/lib/delivery-notes/validation-service';
+import type { ClientProductPriceOverride } from '@/lib/delivery-notes/pricing';
 import { DocumentFreeTextField } from '@/components/document-free-text-field';
 import { normalizeDocumentFreeText } from '@/lib/document-free-text';
+import {
+  DeliveryNotePriceEditDialog,
+  type DeliveryNotePriceEditValues,
+} from '@/components/delivery-notes/delivery-note-price-edit-dialog';
 
 function serializeDraftRows(rows: ProductLineRow[]): string {
   return JSON.stringify(
@@ -89,6 +95,10 @@ function serializeDraftRows(rows: ProductLineRow[]): string {
       quantity:
         row.quantity === '' || row.quantity === undefined ? 0 : parseInt(row.quantity || '0', 10),
       display_order: index,
+      unit_price_ht: row.unit_price_ht ?? null,
+      recommended_sale_price_ttc: row.recommended_sale_price_ttc ?? null,
+      unit_price_ht_is_custom: Boolean(row.unit_price_ht_is_custom),
+      recommended_sale_price_ttc_is_custom: Boolean(row.recommended_sale_price_ttc_is_custom),
       subRows: (row.subRows ?? []).map((sub) => ({
         sub_product_id: sub.sub_product_id,
         quantity: sub.quantity === '' ? 0 : parseInt(sub.quantity || '0', 10),
@@ -106,6 +116,10 @@ function resolvedLinesToRows(
     product_name: line.product_name,
     barcode: line.barcode,
     quantity: String(line.quantity),
+    unit_price_ht: line.unit_price_ht,
+    recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+    unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+    recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
     subRows: line.subLines.map((sub) => ({
       id: `${line.product_id}-sub-${sub.sub_product_id}`,
       sub_product_id: sub.sub_product_id,
@@ -184,6 +198,12 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
   const [subProductsByProductId, setSubProductsByProductId] = useState<Map<string, SubProduct[]>>(
     new Map()
   );
+  const [clientPriceOverrides, setClientPriceOverrides] = useState<
+    Map<string, ClientProductPriceOverride>
+  >(new Map());
+  const [priceOverrideKnownIds, setPriceOverrideKnownIds] = useState<Set<string>>(new Set());
+  const [priceEditRow, setPriceEditRow] = useState<ProductLineRow | null>(null);
+  const [priceEditOpen, setPriceEditOpen] = useState(false);
   const [readOnlyViewId, setReadOnlyViewId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -307,7 +327,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     ];
     const uniqueSubProductIds = Array.from(new Set(subProductIds));
 
-    const [sales, subSales, subProductsMap] = await Promise.all([
+    const [sales, subSales, subProductsMap, priceOverrides] = await Promise.all([
       uniqueProductIds.length > 0
         ? fetchClientProductSalesByYear(clientId, cid, uniqueProductIds, [...salesYears])
         : Promise.resolve(new Map<string, Record<number, number>>()),
@@ -315,6 +335,7 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
         ? fetchClientSubProductSalesByYear(clientId, cid, uniqueSubProductIds, [...salesYears])
         : Promise.resolve(new Map<string, Record<number, number>>()),
       fetchActiveSubProductsByProductIds(cid, uniqueProductIds),
+      fetchClientProductPriceOverrides(clientId, cid, uniqueProductIds),
     ]);
 
     setCompanyId(cid);
@@ -327,6 +348,8 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
     setDraftRowsByNoteId(draftRowsCache);
     setValidatedRowsByNoteId(validatedRowsCache);
     setImportedRowsByNoteId(importedRowsCache);
+    setClientPriceOverrides(priceOverrides);
+    setPriceOverrideKnownIds(new Set(uniqueProductIds));
     setSalesByProduct(sales);
     setSalesBySubProduct(subSales);
     setSubProductsByProductId(subProductsMap);
@@ -637,6 +660,10 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
           product_id: row.product_id!,
           quantity,
           display_order: index + 1,
+          unit_price_ht: row.unit_price_ht ?? null,
+          recommended_sale_price_ttc: row.recommended_sale_price_ttc ?? null,
+          unit_price_ht_is_custom: Boolean(row.unit_price_ht_is_custom),
+          recommended_sale_price_ttc_is_custom: Boolean(row.recommended_sale_price_ttc_is_custom),
           subLines,
         };
       });
@@ -692,18 +719,28 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
 
     const productIds = rows.map((r) => r.product_id).filter(Boolean) as string[];
     const missingProductIds = productIds.filter((id) => !salesByProduct.has(id));
+    const missingOverrideIds = productIds.filter((id) => !priceOverrideKnownIds.has(id));
     const subProductIds = collectSubProductIdsFromRows(rows);
     const missingSubProductIds = subProductIds.filter((id) => !salesBySubProduct.has(id));
 
-    if (missingProductIds.length === 0 && missingSubProductIds.length === 0) return;
+    if (
+      missingProductIds.length === 0 &&
+      missingSubProductIds.length === 0 &&
+      missingOverrideIds.length === 0
+    ) {
+      return;
+    }
 
-    const [newSales, newSubSales] = await Promise.all([
+    const [newSales, newSubSales, newOverrides] = await Promise.all([
       missingProductIds.length > 0
         ? fetchClientProductSalesByYear(clientId, companyId, missingProductIds, [...salesYears])
         : Promise.resolve(new Map<string, Record<number, number>>()),
       missingSubProductIds.length > 0
         ? fetchClientSubProductSalesByYear(clientId, companyId, missingSubProductIds, [...salesYears])
         : Promise.resolve(new Map<string, Record<number, number>>()),
+      missingOverrideIds.length > 0
+        ? fetchClientProductPriceOverrides(clientId, companyId, missingOverrideIds)
+        : Promise.resolve(new Map<string, ClientProductPriceOverride>()),
     ]);
 
     if (missingProductIds.length > 0) {
@@ -719,6 +756,20 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
         newSubSales.forEach((value, key) => next.set(key, value));
         return next;
       });
+    }
+    if (missingOverrideIds.length > 0) {
+      setPriceOverrideKnownIds((prev) => {
+        const next = new Set(prev);
+        missingOverrideIds.forEach((id) => next.add(id));
+        return next;
+      });
+      if (newOverrides.size > 0) {
+        setClientPriceOverrides((prev) => {
+          const next = new Map(prev);
+          newOverrides.forEach((value, key) => next.set(key, value));
+          return next;
+        });
+      }
     }
   };
 
@@ -1071,6 +1122,19 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                     allowEmpty
                     scrollable
                     compactHeader
+                    showPrices
+                    pricesAreDraft
+                    clientPriceOverrides={clientPriceOverrides}
+                    onEditPrice={(row) => {
+                      if (row.product_id && clientPriceOverrides.has(row.product_id)) {
+                        toast.error(
+                          'Le prix de ce produit est déjà défini dans Facturer (dépôt). Il ne peut pas être modifié depuis le bon de livraison.'
+                        );
+                        return;
+                      }
+                      setPriceEditRow(row);
+                      setPriceEditOpen(true);
+                    }}
                   />
 
                   <DocumentFreeTextField
@@ -1121,6 +1185,9 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                     salesYears={[...salesYears]}
                     salesByProduct={salesByProduct}
                     salesBySubProduct={salesBySubProduct}
+                    showPrices
+                    pricesAreDraft={false}
+                    clientPriceOverrides={clientPriceOverrides}
                   />
                 </div>
               )}
@@ -1185,6 +1252,9 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
                           salesYears={[...salesYears]}
                           salesByProduct={salesByProduct}
                           salesBySubProduct={salesBySubProduct}
+                          showPrices
+                          pricesAreDraft={false}
+                          clientPriceOverrides={clientPriceOverrides}
                         />
                       </div>
                     </div>
@@ -1195,6 +1265,70 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
           </Card>
         </div>
       </div>
+
+      <DeliveryNotePriceEditDialog
+        open={priceEditOpen}
+        onOpenChange={(open) => {
+          setPriceEditOpen(open);
+          if (!open) setPriceEditRow(null);
+        }}
+        productName={priceEditRow?.product_name || ''}
+        defaultPriceHt={
+          priceEditRow?.product_id
+            ? allProducts.find((p) => p.id === priceEditRow.product_id)?.price ?? 0
+            : 0
+        }
+        defaultRecommendedTtc={
+          priceEditRow?.product_id
+            ? allProducts.find((p) => p.id === priceEditRow.product_id)
+                ?.recommended_sale_price ?? null
+            : null
+        }
+        initial={{
+          price_type: priceEditRow?.unit_price_ht_is_custom ? 'custom' : 'default',
+          custom_price:
+            priceEditRow?.unit_price_ht != null ? String(priceEditRow.unit_price_ht) : '',
+          recommended_sale_price_type: priceEditRow?.recommended_sale_price_ttc_is_custom
+            ? 'custom'
+            : 'default',
+          custom_recommended_sale_price:
+            priceEditRow?.recommended_sale_price_ttc != null
+              ? String(priceEditRow.recommended_sale_price_ttc)
+              : '',
+        }}
+        onSave={(values: DeliveryNotePriceEditValues) => {
+          if (!priceEditRow) return;
+          if (priceEditRow.product_id && clientPriceOverrides.has(priceEditRow.product_id)) {
+            toast.error(
+              'Le prix de ce produit est déjà défini dans Facturer (dépôt). Il ne peut pas être modifié depuis le bon de livraison.'
+            );
+            return;
+          }
+
+          const htCustom = values.price_type === 'custom';
+          const ttcCustom = values.recommended_sale_price_type === 'custom';
+          const htValue = htCustom
+            ? parseFloat(values.custom_price.replace(',', '.'))
+            : null;
+          const ttcValue = ttcCustom
+            ? parseFloat(values.custom_recommended_sale_price.replace(',', '.'))
+            : null;
+
+          void handleDraftRowsChange(
+            draftRows.map((row) =>
+              row.id === priceEditRow.id
+                ? {
+                    ...row,
+                    unit_price_ht_is_custom: htCustom,
+                    recommended_sale_price_ttc_is_custom: ttcCustom,
+                    unit_price_ht: htCustom ? htValue : null,
+                    recommended_sale_price_ttc: ttcCustom ? ttcValue : null,
+                  }
+                : row
+            )
+          );
+        }}
+      />
 
       <Dialog open={!!renameTemplateDialog} onOpenChange={(o) => !o && setRenameTemplateDialog(null)}>
         <DialogContent>
@@ -1418,7 +1552,10 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
       <AlertDialog
         open={cancelStep === 1}
         onOpenChange={(open) => {
-          if (!open) setCancelStep(0);
+          // Ne pas écraser le passage volontaire vers l'étape 2
+          if (!open) {
+            setCancelStep((step) => (step === 1 ? 0 : step));
+          }
         }}
       >
         <AlertDialogContent>
@@ -1432,7 +1569,14 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction onClick={() => setCancelStep(2)}>Continuer</AlertDialogAction>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                setCancelStep(2);
+              }}
+            >
+              Continuer
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1440,7 +1584,9 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
       <AlertDialog
         open={cancelStep === 2}
         onOpenChange={(open) => {
-          if (!open) setCancelStep(0);
+          if (!open) {
+            setCancelStep((step) => (step === 2 ? 0 : step));
+          }
         }}
       >
         <AlertDialogContent>
@@ -1451,7 +1597,14 @@ export function DeliveryNotesClientPage({ clientId }: { clientId: string }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setCancelStep(1)}>Retour</AlertDialogCancel>
+            <AlertDialogCancel
+              onClick={(e) => {
+                e.preventDefault();
+                setCancelStep(1);
+              }}
+            >
+              Retour
+            </AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
               onClick={(e) => {

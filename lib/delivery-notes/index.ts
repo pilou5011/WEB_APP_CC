@@ -12,7 +12,24 @@ export {
   type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
   type DeliveryNoteImportSubLinePreview,
+  type PriceConflict,
 } from './import-service';
+
+export {
+  findCessionPriceConflicts,
+  formatPriceHt,
+  formatPriceTtc,
+  moneyEquals,
+  resolveDeliveryNotePdfPrices,
+  resolveDepositCustomPriceUpdatesFromBl,
+  resolveEffectiveDeliveryNotePrices,
+  resolveReferencePrices,
+  type ClientProductPriceOverride,
+  type DeliveryNoteLinePriceState,
+  type EffectiveDeliveryNotePrices,
+} from './pricing';
+
+export { fetchClientProductPriceOverrides } from './validation-service';
 
 export {
   fetchClientProductSalesByYear,

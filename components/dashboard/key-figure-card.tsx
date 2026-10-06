@@ -43,6 +43,8 @@ type KeyFigureCardProps = {
   showComparison?: boolean;
   sharePercent?: number | null;
   shareLabel?: string;
+  /** Ligne secondaire sous la valeur, sans mise en forme de pourcentage. */
+  detail?: string;
   accent?: KeyFigureAccent;
 };
 
@@ -91,6 +93,7 @@ export function KeyFigureCard({
   showComparison = true,
   sharePercent,
   shareLabel,
+  detail,
   accent,
 }: KeyFigureCardProps) {
   const styles = accent ? accentStyles[accent] : null;
@@ -142,6 +145,8 @@ export function KeyFigureCard({
             : `— ${shareLabel}`}
         </p>
       )}
+
+      {detail && <p className="mt-1.5 text-xs text-slate-500">{detail}</p>}
     </div>
   );
 }
