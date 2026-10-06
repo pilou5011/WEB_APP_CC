@@ -14,10 +14,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library, LayoutDashboard, ClipboardList } from 'lucide-react';
+import { User, Users, Package, Home, LogOut, CreditCard, FileText, HelpCircle, Settings, Library, LayoutDashboard, ClipboardList, ChevronDown, Briefcase } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { getCurrentUser, isCurrentUserSuperAdmin, currentUserCanAccessFeature } from '@/lib/auth-helpers';
+import { getCurrentUser, isCurrentUserSuperAdmin, currentUserCanAccessFeature, getCurrentUserCompanyId, getCurrentUserSubscriptionPlan } from '@/lib/auth-helpers';
 import { FEATURES } from '@/lib/subscription';
 
 export function Header() {
@@ -31,15 +31,22 @@ export function Header() {
   const [isSuperAdminUser, setIsSuperAdminUser] = useState(false);
   const [hasDashboardAccess, setHasDashboardAccess] = useState(true);
   const [hasInventoryAccess, setHasInventoryAccess] = useState(true);
+  const [hasPaymentsAccess, setHasPaymentsAccess] = useState(true);
+  const [isGoldPlan, setIsGoldPlan] = useState<boolean | null>(null);
+  const [companyLabel, setCompanyLabel] = useState<string | null>(null);
 
   useEffect(() => {
     const loadGoldAccess = async () => {
-      const [dashboardAccess, inventoryAccess] = await Promise.all([
+      const [dashboardAccess, inventoryAccess, paymentsAccess, plan] = await Promise.all([
         currentUserCanAccessFeature(FEATURES.DASHBOARD),
         currentUserCanAccessFeature(FEATURES.INVENTORY),
+        currentUserCanAccessFeature(FEATURES.PAYMENTS),
+        getCurrentUserSubscriptionPlan(),
       ]);
       setHasDashboardAccess(dashboardAccess);
       setHasInventoryAccess(inventoryAccess);
+      setHasPaymentsAccess(paymentsAccess);
+      setIsGoldPlan(plan === 'gold');
     };
     void loadGoldAccess();
   }, [userEmail]);
@@ -67,6 +74,36 @@ export function Header() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCompanyName = async () => {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId) {
+        if (!cancelled) setCompanyLabel('');
+        return;
+      }
+      const { data, error } = await supabase
+        .from('user_profile')
+        .select('company_name, company_name_short')
+        .eq('company_id', companyId)
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.error(error);
+        setCompanyLabel('');
+        return;
+      }
+      const name =
+        (data?.company_name || '').trim() || (data?.company_name_short || '').trim();
+      setCompanyLabel(name);
+    };
+    void loadCompanyName();
+    return () => {
+      cancelled = true;
+    };
+  }, [userEmail]);
 
   useEffect(() => {
     const loadRole = async () => {
@@ -192,10 +229,18 @@ export function Header() {
     { label: 'Clients', href: '/clients', icon: Users },
     { label: 'Produits', href: '/products', icon: Package },
     { label: 'Bibliothèque', href: '/library', icon: Library },
+  ];
+
+  const gestionItems = [
     {
       label: hasDashboardAccess ? 'Tableau de bord' : '🔒 Tableau de bord',
       href: '/app/dashboard',
       icon: LayoutDashboard,
+    },
+    {
+      label: hasPaymentsAccess ? 'Paiements' : '🔒 Paiements',
+      href: '/app/paiements',
+      icon: CreditCard,
     },
     {
       label: hasInventoryAccess ? 'Inventaire' : '🔒 Inventaire',
@@ -203,6 +248,13 @@ export function Header() {
       icon: ClipboardList,
     },
   ];
+
+  const isNavItemActive = (href: string) =>
+    href === '/app'
+      ? pathname === '/app'
+      : pathname === href || (href !== '/' && !!pathname?.startsWith(href));
+
+  const gestionActive = gestionItems.some((item) => isNavItemActive(item.href));
 
   // Obtenir les initiales pour l'avatar
   const getInitials = (email: string) => {
@@ -257,11 +309,7 @@ export function Header() {
         <nav className="hidden md:flex items-center space-x-1">
           {navItems.map((item) => {
             const Icon = item.icon;
-            const isActive =
-              item.href === '/app'
-                ? pathname === '/app'
-                : pathname === item.href ||
-                  (item.href !== '/' && pathname?.startsWith(item.href));
+            const isActive = isNavItemActive(item.href);
             
             return (
               <Link key={item.href} href={item.href}>
@@ -280,6 +328,47 @@ export function Header() {
               </Link>
             );
           })}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant={gestionActive ? 'default' : 'ghost'}
+                className={cn(
+                  'flex items-center gap-2 text-white transition-colors',
+                  gestionActive
+                    ? 'bg-white/20 text-white hover:bg-white hover:text-[#0B1F33]'
+                    : 'hover:bg-white hover:text-[#0B1F33]'
+                )}
+                aria-label={isGoldPlan === false ? 'Gestion, formule Gold' : 'Gestion'}
+              >
+                <Briefcase className="h-4 w-4" aria-hidden />
+                Gestion
+                {isGoldPlan === false && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none text-amber-800">
+                    Gold
+                  </span>
+                )}
+                <ChevronDown className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {gestionItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = isNavItemActive(item.href);
+                return (
+                  <DropdownMenuItem key={item.href} asChild>
+                    <Link
+                      href={item.href}
+                      className={cn('flex cursor-pointer items-center gap-2', isActive && 'bg-accent font-medium')}
+                      aria-current={isActive ? 'page' : undefined}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
 
         {/* Menu utilisateur */}
@@ -314,9 +403,11 @@ export function Header() {
             >
             <div className="flex items-center justify-start gap-2 p-2">
               <div className="flex flex-col space-y-1 leading-none">
-                {userEmail && (
-                  <p className="font-medium text-sm text-slate-600">{userEmail}</p>
-                )}
+                <p className="font-medium text-sm text-slate-600 break-words">
+                  {companyLabel === null
+                    ? '…'
+                    : companyLabel || 'Société non renseignée'}
+                </p>
               </div>
             </div>
             <div className="h-px bg-border" />

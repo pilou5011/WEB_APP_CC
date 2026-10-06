@@ -5,6 +5,9 @@ export type CashInvoiceResolvedLine = {
   barcode: string;
   quantity: number;
   productDeleted: boolean;
+  /** Prix HT figé du BL (ou null pour anciens BL → fallback catalogue côté appelant) */
+  unit_price_ht: number | null;
+  product_price: number | null;
   subLines: Array<{ sub_product_id: string; sub_product_name: string; quantity: number }>;
 };
 
@@ -14,6 +17,8 @@ export type CashInvoiceImportLine = {
   productName: string;
   barcode: string;
   quantity: number;
+  /** Prix de cession HT issu du BL (figé) */
+  unitPriceHt: number;
 };
 
 /**
@@ -21,7 +26,8 @@ export type CashInvoiceImportLine = {
  * - produits sans sous-produits → quantité BL ;
  * - produits avec sous-produits → Σ quantités des sous-produits (aucun sous-produit en ligne) ;
  * - agrégation par product_id ;
- * - produits soft-deleted exclus.
+ * - produits soft-deleted exclus ;
+ * - prix = unit_price_ht figé du BL, sinon product_price catalogue.
  */
 export function convertResolvedLinesToCashInvoiceLines(
   resolved: CashInvoiceResolvedLine[]
@@ -38,15 +44,20 @@ export function convertResolvedLinesToCashInvoiceLines(
 
     if (quantity <= 0) continue;
 
+    const unitPriceHt =
+      line.unit_price_ht != null ? line.unit_price_ht : (line.product_price ?? 0);
+
     const existing = byProduct.get(line.product_id);
     if (existing) {
       existing.quantity += quantity;
+      // Conserver le premier prix rencontré (lignes tropique du même parent)
     } else {
       byProduct.set(line.product_id, {
         productId: line.product_id,
         productName: line.product_name,
         barcode: line.barcode,
         quantity,
+        unitPriceHt,
       });
     }
   }

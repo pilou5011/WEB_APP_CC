@@ -251,11 +251,14 @@ export default function InvoicePage() {
 
       for (const line of payload.lines) {
         const product = allProducts.find((p) => p.id === line.productId);
-        const unitPrice = product?.price ?? 0;
+        const unitPrice = line.unitPriceHt ?? product?.price ?? 0;
+        const isCustom =
+          product != null && Math.round(unitPrice * 100) !== Math.round(product.price * 100);
         const existing = byProduct.get(line.productId);
         if (existing) {
           const qty = (parseInt(existing.quantity) || 0) + line.quantity;
           existing.quantity = String(qty);
+          // Conserver le prix déjà présent sur la ligne de facture en cas de fusion
           existing.total_ht = calculateTotalHT(existing.quantity, existing.unit_price_ht);
         } else {
           byProduct.set(line.productId, {
@@ -266,7 +269,7 @@ export default function InvoicePage() {
             quantity: String(line.quantity),
             unit_price_ht: unitPrice,
             total_ht: line.quantity * unitPrice,
-            custom_price: null,
+            custom_price: isCustom ? unitPrice : null,
           });
         }
       }

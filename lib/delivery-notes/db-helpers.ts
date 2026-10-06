@@ -103,6 +103,10 @@ type SyncChildRow = {
   product_id: string;
   display_order: number;
   quantity?: number;
+  unit_price_ht?: number | null;
+  recommended_sale_price_ttc?: number | null;
+  unit_price_ht_is_custom?: boolean;
+  recommended_sale_price_ttc_is_custom?: boolean;
 };
 
 /**
@@ -158,6 +162,21 @@ export async function syncChildRowsByProduct(
       if (table === 'delivery_note_lines' && row.quantity !== undefined) {
         updatePayload.quantity = row.quantity;
       }
+      if (table === 'delivery_note_lines') {
+        if (row.unit_price_ht !== undefined) {
+          updatePayload.unit_price_ht = row.unit_price_ht;
+        }
+        if (row.recommended_sale_price_ttc !== undefined) {
+          updatePayload.recommended_sale_price_ttc = row.recommended_sale_price_ttc;
+        }
+        if (row.unit_price_ht_is_custom !== undefined) {
+          updatePayload.unit_price_ht_is_custom = row.unit_price_ht_is_custom;
+        }
+        if (row.recommended_sale_price_ttc_is_custom !== undefined) {
+          updatePayload.recommended_sale_price_ttc_is_custom =
+            row.recommended_sale_price_ttc_is_custom;
+        }
+      }
 
       const { error } = await deliveryNotesTable(table)
         .update(updatePayload)
@@ -174,6 +193,21 @@ export async function syncChildRowsByProduct(
       };
       if (table === 'delivery_note_lines' && row.quantity !== undefined) {
         insertPayload.quantity = row.quantity;
+      }
+      if (table === 'delivery_note_lines') {
+        if (row.unit_price_ht !== undefined) {
+          insertPayload.unit_price_ht = row.unit_price_ht;
+        }
+        if (row.recommended_sale_price_ttc !== undefined) {
+          insertPayload.recommended_sale_price_ttc = row.recommended_sale_price_ttc;
+        }
+        if (row.unit_price_ht_is_custom !== undefined) {
+          insertPayload.unit_price_ht_is_custom = row.unit_price_ht_is_custom;
+        }
+        if (row.recommended_sale_price_ttc_is_custom !== undefined) {
+          insertPayload.recommended_sale_price_ttc_is_custom =
+            row.recommended_sale_price_ttc_is_custom;
+        }
       }
 
       const { error } = await deliveryNotesTable(table).insert(insertPayload);

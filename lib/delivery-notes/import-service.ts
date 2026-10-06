@@ -15,9 +15,16 @@ import {
   convertResolvedLinesToCashInvoiceLines,
   type CashInvoiceImportLine,
 } from './cash-invoice-convert';
+import {
+  findCessionPriceConflicts,
+  resolveEffectiveDeliveryNotePrices,
+  type PriceConflict,
+} from './pricing';
+import { fetchClientProductPriceOverrides } from './validation-service';
 
 export type { CashInvoiceImportLine };
 export { convertResolvedLinesToCashInvoiceLines };
+export type { PriceConflict };
 
 export type DeliveryNoteImportSubLinePreview = {
   subProductId: string;
@@ -43,6 +50,8 @@ export type DeliveryNoteImportPreview = {
   lines: DeliveryNoteImportLinePreview[];
   added: DeliveryNoteImportLinePreview[];
   updated: DeliveryNoteImportLinePreview[];
+  /** Conflits de prix de cession HT avec Facturer (dépôt) — import bloqué si non vide */
+  priceConflicts: PriceConflict[];
 };
 
 export type CashInvoiceImportPreview = {
@@ -243,11 +252,55 @@ export async function buildDeliveryNoteImportPreview(
   companyId: string,
   deliveryNoteId: string
 ): Promise<DeliveryNoteImportPreview> {
+  await assertDeliveryNoteImportable(companyId, deliveryNoteId);
+
   const resolved = await resolveDeliveryNoteLines(deliveryNoteId, companyId, {
     mergeCurrentSubProducts: true,
   });
 
-  return buildDeliveryNoteImportPreviewFromResolved(clientId, companyId, resolved);
+  const preview = await buildDeliveryNoteImportPreviewFromResolved(
+    clientId,
+    companyId,
+    resolved
+  );
+
+  const overrides = await fetchClientProductPriceOverrides(
+    clientId,
+    companyId,
+    resolved.map((l) => l.product_id)
+  );
+
+  const conflictInputs = resolved.map((line) => {
+    const override = overrides.get(line.product_id) ?? null;
+    const effective = resolveEffectiveDeliveryNotePrices({
+      line: {
+        unit_price_ht: line.unit_price_ht,
+        recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+        unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+        recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
+      },
+      product: {
+        price: line.product_price ?? 0,
+        recommended_sale_price: line.product_recommended_sale_price,
+      },
+      clientOverride: override,
+      isDraft: false,
+    });
+
+    return {
+      productId: line.product_id,
+      productName: line.product_name,
+      blCessionHt: effective.cessionHt,
+      depositCessionHt: override
+        ? (override.custom_price ?? line.product_price ?? 0)
+        : null,
+    };
+  });
+
+  return {
+    ...preview,
+    priceConflicts: findCessionPriceConflicts(conflictInputs),
+  };
 }
 
 export async function buildDeliveryNoteImportPreviewFromResolved(
@@ -258,7 +311,7 @@ export async function buildDeliveryNoteImportPreviewFromResolved(
       product?: Product | null;
     }
   >
-): Promise<DeliveryNoteImportPreview> {
+): Promise<Omit<DeliveryNoteImportPreview, 'priceConflicts'>> {
   const productIds = lines.map((l) => l.product_id);
   const subProductIds = lines.flatMap((l) => l.subLines.map((s) => s.sub_product_id));
 
