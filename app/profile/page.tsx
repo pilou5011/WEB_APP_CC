@@ -12,6 +12,13 @@ import { Label } from '@/components/ui/label';
 import { ArrowLeft, Building2, User, MapPin, FileText, Mail, Phone, Edit } from 'lucide-react';
 import { toast } from 'sonner';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AddressAutocomplete } from '@/components/address-autocomplete';
 import { formatPhoneNumber, formatSIRETNumber, formatTVANumber } from '@/lib/utils';
 import {
@@ -21,6 +28,27 @@ import {
   hasFiscalClosingDate,
 } from '@/lib/fiscal-closing-date';
 
+const FISCAL_CLOSING_MONTHS: { value: number; label: string }[] = [
+  { value: 1, label: 'Janvier' },
+  { value: 2, label: 'Février' },
+  { value: 3, label: 'Mars' },
+  { value: 4, label: 'Avril' },
+  { value: 5, label: 'Mai' },
+  { value: 6, label: 'Juin' },
+  { value: 7, label: 'Juillet' },
+  { value: 8, label: 'Août' },
+  { value: 9, label: 'Septembre' },
+  { value: 10, label: 'Octobre' },
+  { value: 11, label: 'Novembre' },
+  { value: 12, label: 'Décembre' },
+];
+
+/** Max day for a month (29 for February to allow 29/02). */
+function maxDayForMonth(month: number): number {
+  if (month === 2) return 29;
+  if ([4, 6, 9, 11].includes(month)) return 30;
+  return 31;
+}
 export default function ProfilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -694,19 +722,80 @@ export default function ProfilePage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="fiscal_closing_date">Date de clôture comptable</Label>
-                  <Input
-                    id="fiscal_closing_date"
-                    type="date"
-                    value={formData.fiscal_closing_date}
-                    onChange={(e) =>
-                      setFormData({ ...formData, fiscal_closing_date: e.target.value })
-                    }
-                    className="mt-1.5 max-w-xs"
-                  />
+                  <Label>Date de clôture comptable</Label>
+                  <div className="mt-1.5 flex flex-wrap items-end gap-2">
+                    <div>
+                      <Label className="text-xs text-slate-600">Jour</Label>
+                      <Select
+                        value={(() => {
+                          const parts = dateInputToFiscalClosingParts(formData.fiscal_closing_date);
+                          return parts ? String(parts.day) : undefined;
+                        })()}
+                        onValueChange={(dayStr) => {
+                          const day = Number(dayStr);
+                          const current = dateInputToFiscalClosingParts(formData.fiscal_closing_date);
+                          const month = current?.month ?? 12;
+                          const maxDay = maxDayForMonth(month);
+                          const safeDay = Math.min(day, maxDay);
+                          setFormData({
+                            ...formData,
+                            fiscal_closing_date: fiscalClosingPartsToDateInput(month, safeDay),
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="mt-1 w-20">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from(
+                            {
+                              length: maxDayForMonth(
+                                dateInputToFiscalClosingParts(formData.fiscal_closing_date)?.month ?? 12
+                              ),
+                            },
+                            (_, i) => i + 1
+                          ).map((day) => (
+                            <SelectItem key={day} value={String(day)}>
+                              {String(day).padStart(2, '0')}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-600">Mois</Label>
+                      <Select
+                        value={(() => {
+                          const parts = dateInputToFiscalClosingParts(formData.fiscal_closing_date);
+                          return parts ? String(parts.month) : undefined;
+                        })()}
+                        onValueChange={(monthStr) => {
+                          const month = Number(monthStr);
+                          const current = dateInputToFiscalClosingParts(formData.fiscal_closing_date);
+                          const day = current?.day ?? 1;
+                          const safeDay = Math.min(day, maxDayForMonth(month));
+                          setFormData({
+                            ...formData,
+                            fiscal_closing_date: fiscalClosingPartsToDateInput(month, safeDay),
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="mt-1 w-40">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FISCAL_CLOSING_MONTHS.map((m) => (
+                            <SelectItem key={m.value} value={String(m.value)}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Optionnel. Jour et mois de clôture de l&apos;exercice (ex. 30/06). Utilisé par le
-                    tableau de bord.
+                    Optionnel. Jour et mois uniquement (ex. 30 avril) — la clôture se reporte chaque
+                    année. Utilisé par le tableau de bord.
                   </p>
                   {formData.fiscal_closing_date && (
                     <Button

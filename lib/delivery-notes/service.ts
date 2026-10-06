@@ -269,6 +269,13 @@ export type ResolvedDeliveryNoteLine = {
   quantity: number;
   subLines: ResolvedDeliveryNoteSubLine[];
   productDeleted: boolean;
+  unit_price_ht: number | null;
+  recommended_sale_price_ttc: number | null;
+  unit_price_ht_is_custom: boolean;
+  recommended_sale_price_ttc_is_custom: boolean;
+  /** Prix catalogue du produit (pour héritage / anciens BL) */
+  product_price: number | null;
+  product_recommended_sale_price: number | null;
 };
 
 function storedSubQuantityMap(
@@ -342,6 +349,14 @@ export async function resolveDeliveryNoteLines(
         quantity,
         subLines,
         productDeleted: Boolean(line.product?.deleted_at),
+        unit_price_ht: line.unit_price_ht ?? null,
+        recommended_sale_price_ttc: line.recommended_sale_price_ttc ?? null,
+        unit_price_ht_is_custom: Boolean(line.unit_price_ht_is_custom),
+        recommended_sale_price_ttc_is_custom: Boolean(
+          line.recommended_sale_price_ttc_is_custom
+        ),
+        product_price: line.product?.price ?? null,
+        product_recommended_sale_price: line.product?.recommended_sale_price ?? null,
       };
     });
 }
@@ -453,6 +468,10 @@ export async function saveDeliveryNoteLines(
     quantity: number;
     display_order: number;
     subLines?: Array<{ sub_product_id: string; quantity: number; display_order: number }>;
+    unit_price_ht?: number | null;
+    recommended_sale_price_ttc?: number | null;
+    unit_price_ht_is_custom?: boolean;
+    recommended_sale_price_ttc_is_custom?: boolean;
   }>
 ): Promise<void> {
   const { data: note, error: noteError } = await deliveryNotesTable('delivery_notes')
@@ -478,6 +497,12 @@ export async function saveDeliveryNoteLines(
       product_id: line.product_id,
       display_order: line.display_order,
       quantity: line.quantity,
+      unit_price_ht: line.unit_price_ht_is_custom ? (line.unit_price_ht ?? null) : null,
+      recommended_sale_price_ttc: line.recommended_sale_price_ttc_is_custom
+        ? (line.recommended_sale_price_ttc ?? null)
+        : null,
+      unit_price_ht_is_custom: Boolean(line.unit_price_ht_is_custom),
+      recommended_sale_price_ttc_is_custom: Boolean(line.recommended_sale_price_ttc_is_custom),
     }))
   );
 
@@ -501,6 +526,34 @@ export async function saveDeliveryNoteLines(
   );
 
   if (updateError) throw updateError;
+}
+
+/** Met à jour le texte libre PDF d'un bon de livraison (brouillon). */
+export async function updateDeliveryNoteFreeText(
+  deliveryNoteId: string,
+  companyId: string,
+  freeText: string | null
+): Promise<void> {
+  const { data: note, error: fetchError } = await deliveryNotesTable('delivery_notes')
+    .select('status, deleted_at')
+    .eq('id', deliveryNoteId)
+    .eq('company_id', companyId)
+    .single();
+
+  if (fetchError) throw fetchError;
+  if (!note || note.deleted_at || note.status !== 'draft') {
+    throw new Error('Seul un brouillon de bon de livraison peut être modifié');
+  }
+
+  const { error } = await deliveryNotesTable('delivery_notes')
+    .update({
+      free_text: freeText,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', deliveryNoteId)
+    .eq('company_id', companyId);
+
+  if (error) throw error;
 }
 
 export async function fetchImportableProducts(companyId: string): Promise<Product[]> {

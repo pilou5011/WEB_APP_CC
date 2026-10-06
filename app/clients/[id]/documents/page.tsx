@@ -1325,8 +1325,9 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number) => {
+  const handleConfirmStockUpdate = async (discountPercentage?: number, _invoiceDateParam?: string, freeTextParam?: string) => {
     if (!client) return;
+    const freeTextToSave = freeTextParam?.trim() ? freeTextParam.trim() : null;
 
     setSubmitting(true);
 
@@ -1387,7 +1388,8 @@ export default function ClientDetailPage() {
             total_stock_sold: totalStockSold,
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
-            status: 'processing'
+            status: 'processing',
+            free_text: freeTextToSave,
           }])
           .select()
           .single();
@@ -1882,6 +1884,7 @@ export default function ClientDetailPage() {
           invoice_number: null, // No invoice number when amount is 0
           status: 'processing', // Statut par défaut pour les dialogs
           invoice_date: new Date().toISOString().split('T')[0], // Date comptable (aujourd'hui par défaut)
+          free_text: freeTextToSave,
           created_at: new Date().toISOString()
         } as Invoice;
         
@@ -3496,6 +3499,7 @@ export default function ClientDetailPage() {
                           deposit_slip_email_sent_at: realInvoice?.deposit_slip_email_sent_at || null,
                           status: realInvoice?.status || 'completed', // Utiliser le statut de la facture réelle ou 'completed' par défaut
                           invoice_date: realInvoice?.invoice_date || new Date(stockUpdate.created_at).toISOString().split('T')[0], // Date comptable
+                          free_text: realInvoice?.free_text ?? null,
                           created_at: stockUpdate.created_at
                         };
                         

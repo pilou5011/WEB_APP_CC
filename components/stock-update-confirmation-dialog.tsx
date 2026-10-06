@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Euro, Package, TrendingDown, Percent } from 'lucide-react';
 import { Product } from '@/lib/supabase';
+import { DocumentFreeTextField } from '@/components/document-free-text-field';
+import { normalizeDocumentFreeText } from '@/lib/document-free-text';
 
 interface ProductUpdate {
   Product: Product;
@@ -30,7 +32,7 @@ interface PendingAdjustment {
 interface StockUpdateConfirmationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (discountPercentage?: number, invoiceDate?: string) => void;
+  onConfirm: (discountPercentage?: number, invoiceDate?: string, freeText?: string) => void;
   productUpdates: ProductUpdate[];
   pendingAdjustments?: PendingAdjustment[];
   loading?: boolean;
@@ -51,6 +53,7 @@ export function StockUpdateConfirmationDialog({
   const [discountMode, setDiscountMode] = useState<'percentage' | 'amount'>('percentage');
   const [discountPercentage, setDiscountPercentage] = useState<string>('');
   const [discountAmountInput, setDiscountAmountInput] = useState<string>('');
+  const [freeText, setFreeText] = useState('');
   const [invoiceDate, setInvoiceDate] = useState<string>(() => {
     // Initialize with today's date in YYYY-MM-DD format
     const today = new Date();
@@ -63,6 +66,7 @@ export function StockUpdateConfirmationDialog({
       setDiscountPercentage('');
       setDiscountAmountInput('');
       setDiscountMode('percentage');
+      setFreeText('');
       if (externalInvoiceDate) {
         setInvoiceDate(externalInvoiceDate);
       } else {
@@ -114,7 +118,8 @@ export function StockUpdateConfirmationDialog({
   
   const handleConfirm = () => {
     const discountToSave = discountPercentageEffective > 0 ? discountPercentageEffective : undefined;
-    onConfirm(discountToSave, invoiceDate);
+    const normalized = normalizeDocumentFreeText(freeText);
+    onConfirm(discountToSave, invoiceDate, normalized || undefined);
   };
 
   return (
@@ -172,6 +177,14 @@ export function StockUpdateConfirmationDialog({
               </div>
             </div>
           </div>
+
+          <DocumentFreeTextField
+            id="stock-update-free-text"
+            value={freeText}
+            onChange={setFreeText}
+            disabled={loading}
+            description="Repris sur la facture dépôt et le bon de dépôt (3 lignes max)."
+          />
 
           {/* Remise commerciale */}
           <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">

@@ -17,6 +17,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CreditNoteDialog } from '@/components/credit-note-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
+import { DocumentFreeTextField } from '@/components/document-free-text-field';
+import { normalizeDocumentFreeText } from '@/lib/document-free-text';
 import { useCreditNoteDraft } from '@/hooks/use-credit-note-draft';
 
 export default function CreditNotePage() {
@@ -39,11 +41,13 @@ export default function CreditNotePage() {
     operation_name: string;
     quantity: string;
     unit_price: string;
+    free_text: string;
   }>({
     invoice_id: '',
     operation_name: '',
     quantity: '',
-    unit_price: ''
+    unit_price: '',
+    free_text: '',
   });
   const [creditNoteConfirmDialogOpen, setCreditNoteConfirmDialogOpen] = useState(false);
   const [creatingCreditNote, setCreatingCreditNote] = useState(false);
@@ -106,7 +110,13 @@ export default function CreditNotePage() {
             setHasDraft(true);
             setDraftRecoveryOpen(true);
             // Immediately restore draft data to prevent it from being overwritten
-            setCreditNoteForm(draftData);
+            setCreditNoteForm({
+              invoice_id: draftData.invoice_id,
+              operation_name: draftData.operation_name,
+              quantity: draftData.quantity,
+              unit_price: draftData.unit_price,
+              free_text: draftData.free_text ?? '',
+            });
           }
         }
       }
@@ -230,7 +240,8 @@ export default function CreditNotePage() {
           total_amount: totalAmount,
           operation_name: creditNoteForm.operation_name,
           status: 'processing',
-          credit_note_date: creditNoteDate // Date comptable
+          credit_note_date: creditNoteDate, // Date comptable
+          free_text: normalizeDocumentFreeText(creditNoteForm.free_text) || null,
         })
         .select()
         .single();
@@ -349,7 +360,8 @@ export default function CreditNotePage() {
         invoice_id: '',
         operation_name: '',
         quantity: '',
-        unit_price: ''
+        unit_price: '',
+        free_text: '',
       });
       setInvoicePopoverOpen(false);
     } catch (error) {
@@ -392,7 +404,8 @@ export default function CreditNotePage() {
         invoice_id: '',
         operation_name: '',
         quantity: '',
-        unit_price: ''
+        unit_price: '',
+        free_text: '',
       });
       
       // Re-enable auto-save after a short delay
@@ -562,6 +575,12 @@ export default function CreditNotePage() {
                     required
                   />
                 </div>
+                <DocumentFreeTextField
+                  id="credit-note-free-text"
+                  value={creditNoteForm.free_text}
+                  onChange={(v) => setCreditNoteForm((f) => ({ ...f, free_text: v }))}
+                  disabled={creatingCreditNote}
+                />
                 <div>
                   <Label htmlFor="credit-note-quantity">Quantité</Label>
                   <Input

@@ -41,6 +41,7 @@ function formatSIRETNumber(siret: string | null): string {
 import { Client, Product, ClientProduct, UserProfile, StockUpdate, Invoice, supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { appendDepositSlipDateFields } from '@/lib/pdf-document-dates';
+import { drawPdfClientInfoFreeText } from '@/lib/document-free-text';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Download, Loader2, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -420,20 +421,28 @@ export function DepositSlipDialog({
       const rightBoxHeight = clientYPosition - rightBoxY + 1;
       doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
-      // Encart numéro de client
+      // Encart numéro de client — bordure retirée, curseur layout figé
       clientYPosition += 6;
       const infoBoxY = clientYPosition;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
       clientYPosition += 4;
+      let lastInfoBaselineY = clientYPosition;
       
       if (client.client_number) {
         doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
+        lastInfoBaselineY = clientYPosition;
         clientYPosition += 3;
       }
       
       const infoBoxHeight = clientYPosition - infoBoxY + 1;
-      doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+      void infoBoxHeight;
+      drawPdfClientInfoFreeText({
+        doc,
+        freeText: invoice?.free_text,
+        textX: rightBoxX + 2,
+        lastInfoBaselineY,
+      });
 
       yPosition = Math.max(yPosition, clientYPosition) + 10;
 

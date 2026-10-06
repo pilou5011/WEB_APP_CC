@@ -2,15 +2,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
-import { supabase, Client, Product, Invoice, StockDirectSold, UserProfile } from '@/lib/supabase';
-import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { supabase, Client, Product, Invoice, StockDirectSold, UserProfile, DeliveryNote } from '@/lib/supabase';
+import { getCurrentUserCompanyId, currentUserCanAccessFeature } from '@/lib/auth-helpers';
+import { FEATURES } from '@/lib/subscription';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Info, Plus, Trash2, Check, ChevronsUpDown, Calculator, Pencil } from 'lucide-react';
+import { ArrowLeft, Info, Plus, Trash2, Check, ChevronsUpDown, Calculator, Pencil, ChevronDown, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -21,6 +22,17 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { GlobalInvoiceDialog } from '@/components/global-invoice-dialog';
 import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
 import { useInvoiceDraft } from '@/hooks/use-invoice-draft';
+import { DocumentFreeTextField } from '@/components/document-free-text-field';
+import { normalizeDocumentFreeText } from '@/lib/document-free-text';
+import {
+  ImportCashInvoiceDeliveryNoteSection,
+  type CashInvoiceImportedPayload,
+} from '@/components/delivery-notes/import-cash-invoice-delivery-note-section';
+import {
+  fetchValidatedDeliveryNotesForImport,
+  markDeliveryNoteAsImported,
+  revertDeliveryNoteToValidated,
+} from '@/lib/delivery-notes';
 
 interface InvoiceRow {
   id: string;
@@ -32,6 +44,17 @@ interface InvoiceRow {
   total_ht: number;
   custom_price: number | null;
 }
+
+const emptyInvoiceRow = (): InvoiceRow => ({
+  id: '1',
+  product_id: null,
+  product_name: '',
+  barcode: '',
+  quantity: '',
+  unit_price_ht: 0,
+  total_ht: 0,
+  custom_price: null,
+});
 
 export default function InvoicePage() {
   const router = useRouter();
@@ -45,10 +68,9 @@ export default function InvoicePage() {
   const [client, setClient] = useState<Client | null>(null);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState<InvoiceRow[]>([
-    { id: '1', product_id: null, product_name: '', barcode: '', quantity: '', unit_price_ht: 0, total_ht: 0, custom_price: null }
-  ]);
+  const [rows, setRows] = useState<InvoiceRow[]>([emptyInvoiceRow()]);
   const [discountPercentage, setDiscountPercentage] = useState<number | null>(null);
+  const [freeText, setFreeText] = useState('');
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
   const [discountInput, setDiscountInput] = useState('');
   const [discountMode, setDiscountMode] = useState<'percentage' | 'amount'>('percentage');
@@ -79,6 +101,12 @@ export default function InvoicePage() {
     return today.toISOString().split('T')[0];
   });
 
+  // Import BL (Gold)
+  const [hasDeliveryNotesAccess, setHasDeliveryNotesAccess] = useState(false);
+  const [importDeliveryNoteSectionOpen, setImportDeliveryNoteSectionOpen] = useState(false);
+  const [validatedDeliveryNotes, setValidatedDeliveryNotes] = useState<DeliveryNote[]>([]);
+  const [importedDeliveryNoteId, setImportedDeliveryNoteId] = useState<string | null>(null);
+  const [importedDeliveryNumber, setImportedDeliveryNumber] = useState<string | null>(null);
   useEffect(() => {
     // Reset draft check flag when clientId or pathname changes (navigating to different client or page)
     draftCheckDoneRef.current = false;
@@ -122,6 +150,11 @@ export default function InvoicePage() {
             // Immediately restore draft data to prevent it from being overwritten
             setRows(draftData.rows);
             setDiscountPercentage(draftData.discountPercentage);
+            if (draftData.free_text) {
+              setFreeText(draftData.free_text);
+            }
+            setImportedDeliveryNoteId(draftData.imported_delivery_note_id ?? null);
+            setImportedDeliveryNumber(draftData.imported_delivery_number ?? null);
           }
         }
       }
@@ -169,12 +202,83 @@ export default function InvoicePage() {
       if (productsError) throw productsError;
       setAllProducts(productsData || []);
 
+      const deliveryNotesAccess = await currentUserCanAccessFeature(FEATURES.DELIVERY_NOTES);
+      setHasDeliveryNotesAccess(deliveryNotesAccess);
+      if (deliveryNotesAccess) {
+        const notes = await fetchValidatedDeliveryNotesForImport(clientId, companyId);
+        setValidatedDeliveryNotes(notes);
+      } else {
+        setValidatedDeliveryNotes([]);
+      }
+
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
     }
+  };
+
+  const reloadValidatedDeliveryNotes = async () => {
+    try {
+      const companyId = await getCurrentUserCompanyId();
+      if (!companyId || !hasDeliveryNotesAccess) return;
+      const notes = await fetchValidatedDeliveryNotesForImport(clientId, companyId);
+      setValidatedDeliveryNotes(notes);
+    } catch (error) {
+      console.error('Error reloading delivery notes:', error);
+    }
+  };
+
+  const handleCashInvoiceDeliveryNoteImported = (payload: CashInvoiceImportedPayload) => {
+    setImportedDeliveryNoteId(payload.deliveryNoteId);
+    setImportedDeliveryNumber(payload.deliveryNumber);
+
+    setRows((prevRows) => {
+      const byProduct = new Map<string, InvoiceRow>();
+
+      for (const row of prevRows) {
+        if (!row.product_id) continue;
+        const existing = byProduct.get(row.product_id);
+        if (existing) {
+          const qty = (parseInt(existing.quantity) || 0) + (parseInt(row.quantity) || 0);
+          existing.quantity = String(qty);
+          existing.total_ht = calculateTotalHT(existing.quantity, existing.unit_price_ht);
+        } else {
+          byProduct.set(row.product_id, { ...row });
+        }
+      }
+
+      for (const line of payload.lines) {
+        const product = allProducts.find((p) => p.id === line.productId);
+        const unitPrice = line.unitPriceHt ?? product?.price ?? 0;
+        const isCustom =
+          product != null && Math.round(unitPrice * 100) !== Math.round(product.price * 100);
+        const existing = byProduct.get(line.productId);
+        if (existing) {
+          const qty = (parseInt(existing.quantity) || 0) + line.quantity;
+          existing.quantity = String(qty);
+          // Conserver le prix déjà présent sur la ligne de facture en cas de fusion
+          existing.total_ht = calculateTotalHT(existing.quantity, existing.unit_price_ht);
+        } else {
+          byProduct.set(line.productId, {
+            id: `${Date.now()}-${line.productId}`,
+            product_id: line.productId,
+            product_name: line.productName || product?.name || '',
+            barcode: line.barcode || product?.barcode || '',
+            quantity: String(line.quantity),
+            unit_price_ht: unitPrice,
+            total_ht: line.quantity * unitPrice,
+            custom_price: isCustom ? unitPrice : null,
+          });
+        }
+      }
+
+      const merged = Array.from(byProduct.values());
+      return merged.length > 0 ? merged : [emptyInvoiceRow()];
+    });
+
+    void reloadValidatedDeliveryNotes();
   };
 
   const calculateTotalHT = (quantity: string, unitPrice: number): number => {
@@ -407,6 +511,7 @@ export default function InvoicePage() {
       deposit_slip_email_sent_at: null,
       status: 'processing', // Statut par défaut pour la prévisualisation
       invoice_date: new Date().toISOString().split('T')[0], // Date comptable par défaut (aujourd'hui)
+      free_text: normalizeDocumentFreeText(freeText) || null,
       created_at: new Date().toISOString()
     };
 
@@ -418,6 +523,7 @@ export default function InvoicePage() {
     if (!client) return;
 
     setGeneratingInvoice(true);
+    let claimedDeliveryNoteId: string | null = null;
     try {
       const companyId = await getCurrentUserCompanyId();
       if (!companyId) {
@@ -429,6 +535,18 @@ export default function InvoicePage() {
       if (validRows.length === 0) {
         toast.error('Veuillez ajouter au moins une ligne avec un produit et une quantité');
         return;
+      }
+
+      // Claim atomique du BL avant création facture (anti double-emploi dépôt / compte ferme).
+      // Si la génération échoue ensuite, le BL est remis en validated.
+      if (importedDeliveryNoteId) {
+        const claimed = await markDeliveryNoteAsImported(companyId, importedDeliveryNoteId);
+        if (!claimed) {
+          throw new Error(
+            "Ce bon de livraison n'est plus disponible car il a déjà été utilisé."
+          );
+        }
+        claimedDeliveryNoteId = importedDeliveryNoteId;
       }
 
       // Calculate totals
@@ -448,7 +566,8 @@ export default function InvoicePage() {
           total_amount: totalHTAfterDiscount,
           discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
           status: 'processing',
-          invoice_date: invoiceDate // Date comptable
+          invoice_date: invoiceDate, // Date comptable
+          free_text: normalizeDocumentFreeText(freeText) || null,
         }])
         .select()
         .single();
@@ -541,6 +660,9 @@ export default function InvoicePage() {
         throw pdfError;
       }
 
+      // Succès : conserver le claim (BL reste imported)
+      claimedDeliveryNoteId = null;
+
       toast.success('Facture générée avec succès');
       setConfirmDialogOpen(false);
       setPreviewDialogOpen(false);
@@ -571,19 +693,25 @@ export default function InvoicePage() {
       }
 
       // Reset form
-      setRows([{
-        id: '1',
-        product_id: null,
-        product_name: '',
-        barcode: '',
-        quantity: '',
-        unit_price_ht: 0,
-        total_ht: 0,
-        custom_price: null
-      }]);
+      setRows([emptyInvoiceRow()]);
       setDiscountPercentage(null);
+      setFreeText('');
+      setImportedDeliveryNoteId(null);
+      setImportedDeliveryNumber(null);
+      void reloadValidatedDeliveryNotes();
 
     } catch (error: any) {
+      if (claimedDeliveryNoteId) {
+        try {
+          const companyIdForRevert = await getCurrentUserCompanyId();
+          if (companyIdForRevert) {
+            await revertDeliveryNoteToValidated(companyIdForRevert, claimedDeliveryNoteId);
+          }
+        } catch (revertError) {
+          console.error('[Invoice Generation] Failed to revert delivery note:', revertError);
+        }
+      }
+
       console.error('Error generating invoice:', error);
       
       // Afficher un message d'erreur plus spécifique
@@ -635,17 +763,11 @@ export default function InvoicePage() {
       console.log('[Draft Invoice] Draft deleted successfully, reinitializing form');
       
       // Reinitialize form with default values
-      setRows([{
-        id: '1',
-        product_id: null,
-        product_name: '',
-        barcode: '',
-        quantity: '',
-        unit_price_ht: 0,
-        total_ht: 0,
-        custom_price: null
-      }]);
+      setRows([emptyInvoiceRow()]);
       setDiscountPercentage(null);
+      setFreeText('');
+      setImportedDeliveryNoteId(null);
+      setImportedDeliveryNumber(null);
       
       // Re-enable auto-save after a short delay
       setTimeout(() => {
@@ -684,10 +806,13 @@ export default function InvoicePage() {
     if (!loading && client && allProducts.length > 0 && !generatingInvoice) {
       draft.autoSave({
         rows,
-        discountPercentage
+        discountPercentage,
+        free_text: freeText,
+        imported_delivery_note_id: importedDeliveryNoteId,
+        imported_delivery_number: importedDeliveryNumber,
       });
     }
-  }, [rows, discountPercentage, loading, client, allProducts.length, generatingInvoice, draftRecoveryOpen, draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, discountPercentage, freeText, importedDeliveryNoteId, importedDeliveryNumber, loading, client, allProducts.length, generatingInvoice, draftRecoveryOpen, draft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -743,6 +868,56 @@ export default function InvoicePage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
+              {hasDeliveryNotesAccess && (
+                <>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setImportDeliveryNoteSectionOpen((open) => !open)}
+                      className="flex w-full items-center gap-2 text-left hover:opacity-80 transition-opacity"
+                      aria-expanded={importDeliveryNoteSectionOpen}
+                    >
+                      {importDeliveryNoteSectionOpen ? (
+                        <ChevronDown className="h-4 w-4 shrink-0 text-slate-600" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
+                      )}
+                      <span className="text-lg font-semibold text-slate-900">
+                        Importer un bon de livraison
+                        {validatedDeliveryNotes.length > 0 && (
+                          <span className="font-normal text-slate-600">
+                            {' '}
+                            — {validatedDeliveryNotes.length}{' '}
+                            {validatedDeliveryNotes.length === 1
+                              ? 'bon de livraison en attente'
+                              : 'bons de livraison en attente'}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <div className={cn(!importDeliveryNoteSectionOpen && 'hidden')}>
+                      <p className="mt-2 mb-4 text-sm text-slate-600">
+                        Importez un bon de livraison validé dans cette facture. Les sous-produits sont
+                        agrégés sur le produit parent. Le bon ne sera marqué comme utilisé qu&apos;après
+                        génération réussie de la facture.
+                      </p>
+                      {importedDeliveryNoteId && importedDeliveryNumber && (
+                        <p className="mb-3 text-sm text-slate-700">
+                          Bon lié à cette facture :{' '}
+                          <strong>{importedDeliveryNumber}</strong>
+                        </p>
+                      )}
+                      <ImportCashInvoiceDeliveryNoteSection
+                        clientId={clientId}
+                        validatedNotes={validatedDeliveryNotes}
+                        onImported={handleCashInvoiceDeliveryNoteImported}
+                      />
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
+
               {/* Tableau de facturation */}
               <div className="border border-slate-200 rounded-lg overflow-hidden">
                 <Table>
@@ -920,6 +1095,13 @@ export default function InvoicePage() {
                   className="w-36"
                 />
               </div>
+
+              <DocumentFreeTextField
+                id="invoice-free-text"
+                value={freeText}
+                onChange={setFreeText}
+                disabled={generatingInvoice}
+              />
 
               {/* Boutons d'action */}
               <div className="flex gap-3">

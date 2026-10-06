@@ -1,11 +1,35 @@
 export {
+  assertDeliveryNoteImportable,
+  buildCashInvoiceImportPreview,
   buildDeliveryNoteImportPreview,
+  convertResolvedLinesToCashInvoiceLines,
   executeDeliveryNoteImport,
   getLastAncienDepotByProduct,
+  markDeliveryNoteAsImported,
+  revertDeliveryNoteToValidated,
+  type CashInvoiceImportLine,
+  type CashInvoiceImportPreview,
   type DeliveryNoteImportLinePreview,
   type DeliveryNoteImportPreview,
   type DeliveryNoteImportSubLinePreview,
+  type PriceConflict,
 } from './import-service';
+
+export {
+  findCessionPriceConflicts,
+  formatPriceHt,
+  formatPriceTtc,
+  moneyEquals,
+  resolveDeliveryNotePdfPrices,
+  resolveDepositCustomPriceUpdatesFromBl,
+  resolveEffectiveDeliveryNotePrices,
+  resolveReferencePrices,
+  type ClientProductPriceOverride,
+  type DeliveryNoteLinePriceState,
+  type EffectiveDeliveryNotePrices,
+} from './pricing';
+
+export { fetchClientProductPriceOverrides } from './validation-service';
 
 export {
   fetchClientProductSalesByYear,
@@ -34,6 +58,7 @@ export {
   resolveDeliveryNoteLines,
   saveDeliveryNoteLines,
   setTemplateProducts,
+  updateDeliveryNoteFreeText,
   type ResolvedDeliveryNoteLine,
 } from './service';
 

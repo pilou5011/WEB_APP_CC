@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Check, ChevronsUpDown, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit2, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Product, SubProduct } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import {
+  formatPriceHt,
+  formatPriceTtc,
+  resolveEffectiveDeliveryNotePrices,
+  type ClientProductPriceOverride,
+} from '@/lib/delivery-notes/pricing';
 
 export type ProductLineSubRow = {
   id: string;
@@ -42,6 +48,11 @@ export type ProductLineRow = {
   barcode?: string;
   quantity?: string;
   subRows?: ProductLineSubRow[];
+  /** Prix BL (personnalisé ou figé) */
+  unit_price_ht?: number | null;
+  recommended_sale_price_ttc?: number | null;
+  unit_price_ht_is_custom?: boolean;
+  recommended_sale_price_ttc_is_custom?: boolean;
 };
 
 type ProductLinesEditorProps = {
@@ -61,6 +72,13 @@ type ProductLinesEditorProps = {
   scrollable?: boolean;
   /** En-têtes de colonnes plus compacts */
   compactHeader?: boolean;
+  /** Affiche colonnes prix + stylet (BL uniquement) */
+  showPrices?: boolean;
+  /** true = brouillon (héritage live) ; false = validé/importé (figé) */
+  pricesAreDraft?: boolean;
+  /** Prix client Facturer (dépôt) par product_id */
+  clientPriceOverrides?: Map<string, ClientProductPriceOverride>;
+  onEditPrice?: (row: ProductLineRow) => void;
 };
 
 function parentQuantityFromSubs(subRows: ProductLineSubRow[] | undefined): string {
@@ -107,6 +125,10 @@ function SortableEditorRow({
   salesYears,
   salesByProduct,
   salesBySubProduct,
+  showPrices,
+  pricesAreDraft,
+  clientPriceOverrides,
+  onEditPrice,
 }: {
   row: ProductLineRow;
   mode: 'template' | 'delivery-note';
@@ -121,6 +143,10 @@ function SortableEditorRow({
   salesYears?: number[];
   salesByProduct?: Map<string, Record<number, number>>;
   salesBySubProduct?: Map<string, Record<number, number>>;
+  showPrices?: boolean;
+  pricesAreDraft?: boolean;
+  clientPriceOverrides?: Map<string, ClientProductPriceOverride>;
+  onEditPrice?: (row: ProductLineRow) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: row.id,
@@ -139,6 +165,31 @@ function SortableEditorRow({
   const hasSubRows = mode === 'delivery-note' && (row.subRows?.length ?? 0) > 0;
   const parentQuantity = hasSubRows ? parentQuantityFromSubs(row.subRows) : (row.quantity ?? '');
 
+  const product = row.product_id ? allProducts.find((p) => p.id === row.product_id) : null;
+  const override = row.product_id ? clientPriceOverrides?.get(row.product_id) : undefined;
+  const effectivePrices =
+    showPrices && row.product_id
+      ? resolveEffectiveDeliveryNotePrices({
+          line: {
+            unit_price_ht: row.unit_price_ht ?? null,
+            recommended_sale_price_ttc: row.recommended_sale_price_ttc ?? null,
+            unit_price_ht_is_custom: Boolean(row.unit_price_ht_is_custom),
+            recommended_sale_price_ttc_is_custom: Boolean(row.recommended_sale_price_ttc_is_custom),
+          },
+          product: product
+            ? {
+                price: product.price,
+                recommended_sale_price: product.recommended_sale_price,
+              }
+            : { price: 0, recommended_sale_price: null },
+          clientOverride: override ?? null,
+          isDraft: Boolean(pricesAreDraft),
+        })
+      : null;
+
+  const priceLocked =
+    Boolean(pricesAreDraft) && Boolean(effectivePrices?.lockedFromDeposit);
+
   return (
     <TableRow ref={setNodeRef} style={style} className={hasSubRows ? 'bg-slate-50' : undefined}>
       <TableCell className="w-10">
@@ -154,9 +205,14 @@ function SortableEditorRow({
             {salesForYear(row, year, salesByProduct, salesBySubProduct)}
           </TableCell>
         ))}
-      <TableCell>
+      <TableCell className="min-w-0 overflow-hidden">
         {readOnly ? (
-          <span className={cn('text-sm', hasSubRows && 'font-semibold')}>{row.product_name || '-'}</span>
+          <span
+            className={cn('block truncate text-sm', hasSubRows && 'font-semibold')}
+            title={row.product_name || undefined}
+          >
+            {row.product_name || '-'}
+          </span>
         ) : (
           <Popover
             modal
@@ -167,11 +223,17 @@ function SortableEditorRow({
               <Button
                 variant="outline"
                 role="combobox"
-                className={cn('w-full justify-between', hasSubRows && 'font-semibold')}
+                className={cn(
+                  'w-full min-w-0 max-w-full justify-between gap-2 overflow-hidden',
+                  hasSubRows && 'font-semibold'
+                )}
                 type="button"
+                title={row.product_name || undefined}
               >
-                {row.product_name || 'Sélectionner un produit...'}
-                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                <span className="min-w-0 flex-1 truncate text-left">
+                  {row.product_name || 'Sélectionner un produit...'}
+                </span>
+                <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[400px] p-0" align="start">
@@ -180,21 +242,21 @@ function SortableEditorRow({
                 <CommandList className="max-h-[300px] overflow-y-auto">
                   <CommandEmpty>Aucun produit trouvé</CommandEmpty>
                   <CommandGroup>
-                    {availableProducts.map((product) => (
+                    {availableProducts.map((p) => (
                       <CommandItem
-                        key={product.id}
-                        value={`${product.name} ${product.id}`}
-                        onSelect={() => onSelectProduct(row.id, product.id)}
+                        key={p.id}
+                        value={`${p.name} ${p.id}`}
+                        onSelect={() => onSelectProduct(row.id, p.id)}
                         onMouseDown={(e) => e.preventDefault()}
                       >
                         <Check
                           className={cn(
                             'mr-2 h-4 w-4',
-                            row.product_id === product.id ? 'opacity-100' : 'opacity-0'
+                            row.product_id === p.id ? 'opacity-100' : 'opacity-0'
                           )}
                         />
-                        {product.name}
-                        {mode === 'delivery-note' ? '' : ` — ${product.price.toFixed(2)} €`}
+                        {p.name}
+                        {mode === 'delivery-note' ? '' : ` — ${p.price.toFixed(2)} €`}
                       </CommandItem>
                     ))}
                   </CommandGroup>
@@ -233,9 +295,53 @@ function SortableEditorRow({
           )}
         </TableCell>
       )}
+      {showPrices && (
+        <>
+          <TableCell className="text-center text-sm tabular-nums">
+            {row.product_id && effectivePrices
+              ? formatPriceHt(effectivePrices.cessionHt)
+              : '-'}
+          </TableCell>
+          <TableCell className="text-center text-sm tabular-nums">
+            {row.product_id && effectivePrices
+              ? formatPriceTtc(effectivePrices.recommendedTtc)
+              : '-'}
+          </TableCell>
+        </>
+      )}
       {!readOnly && (
         <TableCell>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-1">
+            {showPrices && row.product_id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                className={cn(
+                  'h-8 w-8 p-0',
+                  priceLocked
+                    ? 'text-slate-300 hover:text-slate-300 hover:bg-transparent'
+                    : 'text-slate-600 hover:text-[#0B1F33]'
+                )}
+                title={
+                  priceLocked
+                    ? 'Prix défini dans Facturer (dépôt)'
+                    : 'Modifier le prix'
+                }
+                aria-disabled={priceLocked}
+                onClick={() => {
+                  if (priceLocked) {
+                    toast.error(
+                      'Le prix de ce produit est déjà défini dans Facturer (dépôt). Il ne peut pas être modifié depuis le bon de livraison.'
+                    );
+                    return;
+                  }
+                  onEditPrice?.(row);
+                }}
+              >
+                <Edit2 className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -260,6 +366,9 @@ function SubProductEditorRow({
   salesYears,
   salesBySubProduct,
   actionColumn,
+  showPrices,
+  parentCessionHt,
+  parentRecommendedTtc,
   onQuantityChange,
 }: {
   parentRowId: string;
@@ -268,6 +377,9 @@ function SubProductEditorRow({
   salesYears?: number[];
   salesBySubProduct?: Map<string, Record<number, number>>;
   actionColumn: boolean;
+  showPrices?: boolean;
+  parentCessionHt: number | null;
+  parentRecommendedTtc: number | null;
   onQuantityChange: (parentRowId: string, subProductId: string, value: string) => void;
 }) {
   return (
@@ -301,6 +413,16 @@ function SubProductEditorRow({
           />
         )}
       </TableCell>
+      {showPrices && (
+        <>
+          <TableCell className="text-center text-xs tabular-nums text-slate-600">
+            {parentCessionHt != null ? formatPriceHt(parentCessionHt) : '-'}
+          </TableCell>
+          <TableCell className="text-center text-xs tabular-nums text-slate-600">
+            {formatPriceTtc(parentRecommendedTtc)}
+          </TableCell>
+        </>
+      )}
       {actionColumn && <TableCell />}
     </TableRow>
   );
@@ -320,6 +442,10 @@ export function ProductLinesEditor({
   allowEmpty = false,
   scrollable = false,
   compactHeader = false,
+  showPrices = false,
+  pricesAreDraft = true,
+  clientPriceOverrides,
+  onEditPrice,
 }: ProductLinesEditorProps) {
   const [openPopovers, setOpenPopovers] = useState<Record<string, boolean>>({});
 
@@ -344,6 +470,10 @@ export function ProductLinesEditor({
         product_name: '',
         barcode: '',
         quantity: mode === 'delivery-note' ? '0' : undefined,
+        unit_price_ht: null,
+        recommended_sale_price_ttc: null,
+        unit_price_ht_is_custom: false,
+        recommended_sale_price_ttc_is_custom: false,
       },
     ]);
   };
@@ -382,6 +512,11 @@ export function ProductLinesEditor({
           barcode: product.barcode || '',
           subRows,
           quantity: subRows.length > 0 ? parentQuantityFromSubs(subRows) : row.quantity ?? '0',
+          // Nouveau produit : hérite (pas custom)
+          unit_price_ht: null,
+          recommended_sale_price_ttc: null,
+          unit_price_ht_is_custom: false,
+          recommended_sale_price_ttc_is_custom: false,
         };
       })
     );
@@ -417,7 +552,9 @@ export function ProductLinesEditor({
   };
 
   const salesColumnCount = mode === 'delivery-note' ? (salesYears?.length ?? 0) : 0;
-  const totalColumns = 1 + salesColumnCount + 1 + (mode === 'delivery-note' ? 1 : 0) + (readOnly ? 0 : 1);
+  const priceColumnCount = showPrices ? 2 : 0;
+  const totalColumns =
+    1 + salesColumnCount + 1 + (mode === 'delivery-note' ? 1 : 0) + priceColumnCount + (readOnly ? 0 : 1);
 
   const headCompactClass = compactHeader ? 'h-7 py-0.5 px-2' : '';
   const yearHeadCompactClass = compactHeader ? 'h-6 py-0 px-0' : headCompactClass;
@@ -429,6 +566,64 @@ export function ProductLinesEditor({
     : '';
   const headerBgClass = scrollable ? 'bg-slate-50' : '';
   const headerShadowClass = scrollable ? 'shadow-sm' : '';
+
+  const blHeaderClass = 'text-center text-xs font-semibold';
+
+  const priceHeads = showPrices ? (
+    <>
+      <TableHead
+        rowSpan={2}
+        className={cn(
+          'w-[12%]',
+          blHeaderClass,
+          headCompactClass,
+          headStickyTopClass,
+          headerShadowClass
+        )}
+      >
+        Prix de cession (HT)
+      </TableHead>
+      <TableHead
+        rowSpan={2}
+        className={cn(
+          'w-[12%]',
+          blHeaderClass,
+          headCompactClass,
+          headStickyTopClass,
+          headerShadowClass
+        )}
+      >
+        Prix de vente conseillé (TTC)
+      </TableHead>
+    </>
+  ) : null;
+
+  const priceHeadsSimple = showPrices ? (
+    <>
+      <TableHead
+        className={cn(
+          'w-[12%]',
+          blHeaderClass,
+          headCompactClass,
+          headStickyTopClass,
+          headerShadowClass
+        )}
+      >
+        Prix de cession (HT)
+      </TableHead>
+      <TableHead
+        className={cn(
+          'w-[12%]',
+          blHeaderClass,
+          headCompactClass,
+          headStickyTopClass,
+          headerShadowClass
+        )}
+      >
+        Prix de vente conseillé (TTC)
+      </TableHead>
+    </>
+  ) : null;
 
   return (
     <div
@@ -461,7 +656,8 @@ export function ProductLinesEditor({
                   <TableHead
                     rowSpan={2}
                     className={cn(
-                      readOnly ? 'w-[45%]' : 'w-[30%]',
+                      readOnly ? 'w-[30%]' : 'w-[22%]',
+                      blHeaderClass,
                       headCompactClass,
                       headStickyTopClass,
                       headerShadowClass
@@ -471,14 +667,27 @@ export function ProductLinesEditor({
                   </TableHead>
                   <TableHead
                     rowSpan={2}
-                    className={cn('w-[12%]', headCompactClass, headStickyTopClass, headerShadowClass)}
+                    className={cn(
+                      'w-[10%]',
+                      blHeaderClass,
+                      headCompactClass,
+                      headStickyTopClass,
+                      headerShadowClass
+                    )}
                   >
                     Quantité
                   </TableHead>
+                  {priceHeads}
                   {!readOnly && (
                     <TableHead
                       rowSpan={2}
-                      className={cn('w-[15%]', headCompactClass, headStickyTopClass, headerShadowClass)}
+                      className={cn(
+                        'w-[12%]',
+                        blHeaderClass,
+                        headCompactClass,
+                        headStickyTopClass,
+                        headerShadowClass
+                      )}
                     >
                       Actions
                     </TableHead>
@@ -503,6 +712,7 @@ export function ProductLinesEditor({
                 <TableHead
                   className={cn(
                     mode === 'template' ? 'w-[70%]' : 'w-[25%]',
+                    mode === 'delivery-note' ? blHeaderClass : '',
                     headCompactClass,
                     headStickyTopClass,
                     headerShadowClass
@@ -512,14 +722,27 @@ export function ProductLinesEditor({
                 </TableHead>
                 {mode === 'delivery-note' && (
                   <TableHead
-                    className={cn('w-[12%]', headCompactClass, headStickyTopClass, headerShadowClass)}
+                    className={cn(
+                      'w-[12%]',
+                      blHeaderClass,
+                      headCompactClass,
+                      headStickyTopClass,
+                      headerShadowClass
+                    )}
                   >
                     Quantité
                   </TableHead>
                 )}
+                {priceHeadsSimple}
                 {!readOnly && (
                   <TableHead
-                    className={cn('w-[15%]', headCompactClass, headStickyTopClass, headerShadowClass)}
+                    className={cn(
+                      'w-[15%]',
+                      mode === 'delivery-note' ? blHeaderClass : '',
+                      headCompactClass,
+                      headStickyTopClass,
+                      headerShadowClass
+                    )}
                   >
                     Actions
                   </TableHead>
@@ -529,38 +752,75 @@ export function ProductLinesEditor({
           </TableHeader>
           <TableBody>
             <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
-              {rows.map((row) => (
-                <React.Fragment key={row.id}>
-                  <SortableEditorRow
-                    row={row}
-                    mode={mode}
-                    readOnly={readOnly}
-                    allProducts={allProducts}
-                    usedProductIds={usedProductIds}
-                    openPopovers={openPopovers}
-                    setOpenPopovers={setOpenPopovers}
-                    onSelectProduct={handleSelectProduct}
-                    onQuantityChange={handleQuantityChange}
-                    onDelete={handleDeleteRow}
-                    salesYears={salesYears}
-                    salesByProduct={salesByProduct}
-                    salesBySubProduct={salesBySubProduct}
-                  />
-                  {mode === 'delivery-note' &&
-                    row.subRows?.map((subRow) => (
-                      <SubProductEditorRow
-                        key={subRow.id}
-                        parentRowId={row.id}
-                        subRow={subRow}
-                        readOnly={readOnly}
-                        salesYears={salesYears}
-                        salesBySubProduct={salesBySubProduct}
-                        actionColumn={!readOnly}
-                        onQuantityChange={handleSubQuantityChange}
-                      />
-                    ))}
-                </React.Fragment>
-              ))}
+              {rows.map((row) => {
+                const product = row.product_id
+                  ? allProducts.find((p) => p.id === row.product_id)
+                  : null;
+                const override = row.product_id
+                  ? clientPriceOverrides?.get(row.product_id)
+                  : undefined;
+                const parentEffective =
+                  showPrices && row.product_id
+                    ? resolveEffectiveDeliveryNotePrices({
+                        line: {
+                          unit_price_ht: row.unit_price_ht ?? null,
+                          recommended_sale_price_ttc: row.recommended_sale_price_ttc ?? null,
+                          unit_price_ht_is_custom: Boolean(row.unit_price_ht_is_custom),
+                          recommended_sale_price_ttc_is_custom: Boolean(
+                            row.recommended_sale_price_ttc_is_custom
+                          ),
+                        },
+                        product: product
+                          ? {
+                              price: product.price,
+                              recommended_sale_price: product.recommended_sale_price,
+                            }
+                          : { price: 0, recommended_sale_price: null },
+                        clientOverride: override ?? null,
+                        isDraft: Boolean(pricesAreDraft),
+                      })
+                    : null;
+
+                return (
+                  <React.Fragment key={row.id}>
+                    <SortableEditorRow
+                      row={row}
+                      mode={mode}
+                      readOnly={readOnly}
+                      allProducts={allProducts}
+                      usedProductIds={usedProductIds}
+                      openPopovers={openPopovers}
+                      setOpenPopovers={setOpenPopovers}
+                      onSelectProduct={handleSelectProduct}
+                      onQuantityChange={handleQuantityChange}
+                      onDelete={handleDeleteRow}
+                      salesYears={salesYears}
+                      salesByProduct={salesByProduct}
+                      salesBySubProduct={salesBySubProduct}
+                      showPrices={showPrices}
+                      pricesAreDraft={pricesAreDraft}
+                      clientPriceOverrides={clientPriceOverrides}
+                      onEditPrice={onEditPrice}
+                    />
+                    {mode === 'delivery-note' &&
+                      row.subRows?.map((subRow) => (
+                        <SubProductEditorRow
+                          key={subRow.id}
+                          parentRowId={row.id}
+                          subRow={subRow}
+                          readOnly={readOnly}
+                          salesYears={salesYears}
+                          salesBySubProduct={salesBySubProduct}
+                          actionColumn={!readOnly}
+                          showPrices={showPrices}
+                          parentCessionHt={parentEffective?.cessionHt ?? null}
+                          parentRecommendedTtc={parentEffective?.recommendedTtc ?? null}
+                          onQuantityChange={handleSubQuantityChange}
+                        />
+                      ))}
+                  </React.Fragment>
+                );
+              })}
             </SortableContext>
             {!readOnly && (
               <TableRow className="bg-slate-50">

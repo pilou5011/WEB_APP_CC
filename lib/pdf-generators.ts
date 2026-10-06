@@ -11,8 +11,10 @@ import { formatWeekScheduleData } from '@/components/opening-hours-editor';
 import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
 import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
 import { formatDepartment } from '@/lib/postal-code-utils';
-import { appendDepositSlipDateFields, appendDeliveryNoteDateFields, appendInvoiceDepositDateFields, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { appendDepositSlipDateFields, appendDeliveryNoteDateFields, appendInvoiceDepositDateFields, formatPdfDocumentDateFr, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { drawPdfClientInfoFreeText } from '@/lib/document-free-text';
 import type { ResolvedDeliveryNoteLine } from '@/lib/delivery-notes/service';
+import { resolveDeliveryNotePdfPrices } from '@/lib/delivery-notes/pricing';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -348,6 +350,7 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
     // Encart numéro de client et numéro de facture (en dessous du DÉTAILLANT)
+    // Bordure retirée — position / largeur / hauteur logique inchangées (curseur layout figé).
     clientYPosition += 6;
     const infoBoxY = clientYPosition;
     doc.setFont('helvetica', 'bold');
@@ -362,10 +365,17 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
     // Utiliser le numéro de facture stocké dans la base de données
     const invoiceNumber = invoice.invoice_number || 'N/A';
     doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
+    const lastInfoBaselineY = clientYPosition;
     clientYPosition += 3;
     
     const infoBoxHeight = clientYPosition - infoBoxY + 1;
-    doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+    void infoBoxHeight; // zone logique conservée (plus de doc.rect)
+    drawPdfClientInfoFreeText({
+      doc,
+      freeText: invoice.free_text,
+      textX: rightBoxX + 2,
+      lastInfoBaselineY,
+    });
 
     // Dates facture / dépôt précédent
     yPosition = Math.max(yPosition, clientYPosition) + 10;
@@ -1596,19 +1606,28 @@ export async function generateAndSaveDepositSlipPDF(params: GenerateDepositSlipP
     doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
     // Encart numéro de client
+    // Bordure retirée — position / largeur / hauteur logique inchangées (curseur layout figé).
     clientYPosition += 6;
     const infoBoxY = clientYPosition;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     clientYPosition += 4;
+    let lastInfoBaselineY = clientYPosition;
     
     if (client.client_number) {
       doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
+      lastInfoBaselineY = clientYPosition;
       clientYPosition += 3;
     }
     
     const infoBoxHeight = clientYPosition - infoBoxY + 1;
-    doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+    void infoBoxHeight;
+    drawPdfClientInfoFreeText({
+      doc,
+      freeText: invoice.free_text,
+      textX: rightBoxX + 2,
+      lastInfoBaselineY,
+    });
 
     yPosition = Math.max(yPosition, clientYPosition) + 10;
 
@@ -2085,6 +2104,7 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
     // Encart numéro de client et numéro d'avoir (en dessous du DÉTAILLANT)
+    // Bordure retirée — position / largeur / hauteur logique inchangées (curseur layout figé).
     clientYPosition += 6;
     const infoBoxY = clientYPosition;
     doc.setFont('helvetica', 'bold');
@@ -2104,16 +2124,27 @@ export async function generateAndSaveCreditNotePDF(params: GenerateCreditNotePDF
     // Numéro de facture d'origine
     const invoiceNumber = invoice.invoice_number || 'N/A';
     doc.text(`N° Facture: ${invoiceNumber}`, rightBoxX + 2, clientYPosition);
+    const lastInfoBaselineY = clientYPosition;
     clientYPosition += 3;
     
     const infoBoxHeight = clientYPosition - infoBoxY + 1;
-    doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+    void infoBoxHeight;
+    drawPdfClientInfoFreeText({
+      doc,
+      freeText: creditNote.free_text,
+      textX: rightBoxX + 2,
+      lastInfoBaselineY,
+    });
 
     // Date de l'avoir
     yPosition = Math.max(yPosition, clientYPosition) + 10;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
-    doc.text(`Date: ${new Date(creditNote.credit_note_date).toLocaleDateString('fr-FR')}`, globalLeftMargin, yPosition);
+    doc.text(
+      `Date: ${formatPdfDocumentDateFr(creditNote.credit_note_date)}`,
+      globalLeftMargin,
+      yPosition
+    );
     const responsableName = client.responsable_name?.trim();
     if (responsableName) {
       doc.text(`Nom du responsable : ${responsableName}`, globalLeftMargin, yPosition + 5);
@@ -2741,6 +2772,10 @@ export async function generateClientInfoPDF(
         value: client.email || '',
         column: 'right',
       },
+      {
+        label: 'Téléphone 1',
+        value: client.phone_1_info || '',
+      },
       { 
         label: 'Téléphone 2', 
         value: [
@@ -3058,21 +3093,39 @@ export async function generateAndSaveDeliveryNotePDF(
   const rightBoxHeight = clientYPosition - rightBoxY + 1;
   doc.rect(rightBoxX, rightBoxY, rightBoxWidth, rightBoxHeight);
 
+  // Encart numéro de client — bordure retirée, curseur layout figé
   clientYPosition += 6;
   const infoBoxY = clientYPosition;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   clientYPosition += 4;
+  let lastInfoBaselineY = clientYPosition;
   if (client.client_number) {
     doc.text(`N° Client: ${client.client_number}`, rightBoxX + 2, clientYPosition);
+    lastInfoBaselineY = clientYPosition;
     clientYPosition += 3;
   }
   const infoBoxHeight = clientYPosition - infoBoxY + 1;
-  doc.rect(rightBoxX, infoBoxY, rightBoxWidth, infoBoxHeight);
+  void infoBoxHeight;
+  drawPdfClientInfoFreeText({
+    doc,
+    freeText: deliveryNote.free_text,
+    textX: rightBoxX + 2,
+    lastInfoBaselineY,
+  });
 
   yPosition = Math.max(yPosition, clientYPosition) + 10;
 
-  const documentDate = deliveryNote.validated_at || deliveryNote.created_at;
+  // Date PDF = date de validation (jamais created_at pour un BL validé).
+  // Fallback created_at uniquement pour un éventuel aperçu brouillon.
+  const documentDate =
+    deliveryNote.validated_at ??
+    (deliveryNote.status === 'draft' ? deliveryNote.created_at : deliveryNote.validated_at);
+  if (!documentDate) {
+    throw new Error(
+      'Impossible de générer le PDF : date de validation manquante (validated_at)'
+    );
+  }
   yPosition = appendDeliveryNoteDateFields(
     doc,
     15,
@@ -3093,21 +3146,41 @@ export async function generateAndSaveDeliveryNotePDF(
 
   const tableData = lines.map((line) => {
     const prod = productsById.get(line.product_id);
-    const cp = clientProductById.get(line.product_id);
+    const cp = clientProductById.get(line.product_id) as
+      | {
+          custom_price?: number | null;
+          custom_recommended_sale_price?: number | null;
+        }
+      | undefined;
     const barcode = prod?.barcode || line.barcode || '';
-    const effectivePrice =
-      (cp as { custom_price?: number | null } | undefined)?.custom_price ?? prod?.price ?? 0;
-    const effectiveRecommendedSalePrice =
-      (cp as { custom_recommended_sale_price?: number | null } | undefined)
-        ?.custom_recommended_sale_price ?? prod?.recommended_sale_price ?? null;
+    // Source de vérité = prix effectifs du BL (figés à la validation), pas le catalogue live.
+    const effective = resolveDeliveryNotePdfPrices({
+      line: {
+        unit_price_ht: line.unit_price_ht,
+        recommended_sale_price_ttc: line.recommended_sale_price_ttc,
+        unit_price_ht_is_custom: line.unit_price_ht_is_custom,
+        recommended_sale_price_ttc_is_custom: line.recommended_sale_price_ttc_is_custom,
+      },
+      product: {
+        price: line.product_price ?? prod?.price ?? 0,
+        recommended_sale_price:
+          line.product_recommended_sale_price ?? prod?.recommended_sale_price ?? null,
+      },
+      clientOverride: cp
+        ? {
+            custom_price: cp.custom_price ?? null,
+            custom_recommended_sale_price: cp.custom_recommended_sale_price ?? null,
+          }
+        : null,
+    });
 
     return [
       line.product_name || prod?.name || 'Produit',
       String(line.quantity),
       barcode,
-      `${Number(effectivePrice).toFixed(2)} €`,
-      effectiveRecommendedSalePrice !== null
-        ? `${Number(effectiveRecommendedSalePrice).toFixed(2)} €`
+      `${Number(effective.cessionHt).toFixed(2)} €`,
+      effective.recommendedTtc !== null
+        ? `${Number(effective.recommendedTtc).toFixed(2)} €`
         : '-',
     ];
   });
