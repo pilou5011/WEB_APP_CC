@@ -8,7 +8,7 @@ import {
 } from '@/lib/payments/email-html';
 import {
   canSendPaymentReminder,
-  tryResolveInvoiceDueDate,
+  resolveEffectiveDueDate,
 } from '@/lib/payments/due-date';
 import { buildInvoiceEmailFileName } from '@/lib/payments/invoice-attachment';
 import { formatPdfDocumentDateFr } from '@/lib/pdf-document-dates';
@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
         id,
         invoice_number,
         invoice_date,
+        due_date,
         created_at,
         total_amount,
         paid_at,
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dueDate = tryResolveInvoiceDueDate(invoice.invoice_date);
+    const dueDate = resolveEffectiveDueDate(invoice.due_date, invoice.invoice_date);
     if (!dueDate) {
       return NextResponse.json(
         {

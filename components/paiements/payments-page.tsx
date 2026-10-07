@@ -21,7 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
 import { saveListFilters, useRestoreListFilters } from '@/lib/list-filter-storage';
 import {
-  tryResolveInvoiceDueDate,
+  resolveEffectiveDueDate,
   isInvoicePaid,
   getInvoicePaymentStatus,
   canSendPaymentReminder,
@@ -243,6 +243,7 @@ export function PaymentsClientPage() {
           client_id,
           invoice_number,
           invoice_date,
+          due_date,
           total_amount,
           paid_at,
           status,
@@ -278,7 +279,7 @@ export function PaymentsClientPage() {
           clientEmail: inv.clients?.email ?? null,
           invoiceNumber: inv.invoice_number,
           invoiceDate: inv.invoice_date ?? null,
-          dueDate: tryResolveInvoiceDueDate(inv.invoice_date),
+          dueDate: resolveEffectiveDueDate(inv.due_date, inv.invoice_date),
           totalAmount: Number(inv.total_amount) || 0,
           paidAt: inv.paid_at ?? null,
           pdfPath: inv.invoice_pdf_path ?? null,

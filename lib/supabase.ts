@@ -238,6 +238,8 @@ export type Invoice = {
   paid_at?: string | null;
   status: 'processing' | 'completed' | 'failed'; // Statut du document
   invoice_date: string; // Date comptable de la facture (modifiable par l'utilisateur)
+  /** Échéance choisie à l'établissement. NULL = facture antérieure (secours = invoice_date). */
+  due_date?: string | null;
   /** Texte libre PDF (max 3 lignes) — facture + bon de dépôt associé */
   free_text: string | null;
   created_at: string; // Date technique de création (jamais modifiée)

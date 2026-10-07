@@ -1,20 +1,3 @@
-import { addCalendarDays, formatPdfDocumentDateFr } from '@/lib/pdf-document-dates';
-
-/** Échéance affichée / utilisée pour les relances = date d'émission + 30 jours. */
-export const DEFAULT_PAYMENT_TERM_DAYS = 30;
-
-/**
- * Date d'échéance d'une facture.
- * Aucune colonne due_date en base : aligné sur le PDF (émission + 30 jours).
- */
-export function resolveInvoiceDueDate(invoiceDate: string): string {
-  return addCalendarDays(invoiceDate, DEFAULT_PAYMENT_TERM_DAYS);
-}
-
-export function formatInvoiceDueDateFr(invoiceDate: string): string {
-  return formatPdfDocumentDateFr(resolveInvoiceDueDate(invoiceDate));
-}
-
 export function isInvoicePaid(paidAt: string | null | undefined): boolean {
   return Boolean(paidAt);
 }
@@ -47,11 +30,18 @@ export function getTodayCalendarIso(now = new Date()): string {
   }).format(now);
 }
 
-export function tryResolveInvoiceDueDate(
+/**
+ * Échéance effective d'une facture.
+ * Date enregistrée si elle existe, sinon date de facture (factures antérieures).
+ * Ne recalcule jamais une échéance à partir de la date de facture.
+ */
+export function resolveEffectiveDueDate(
+  storedDueDate: string | null | undefined,
   invoiceDate: string | null | undefined
 ): string | null {
-  if (!isValidCalendarDate(invoiceDate)) return null;
-  return resolveInvoiceDueDate(invoiceDate);
+  if (isValidCalendarDate(storedDueDate)) return storedDueDate.slice(0, 10);
+  if (isValidCalendarDate(invoiceDate)) return invoiceDate.slice(0, 10);
+  return null;
 }
 
 /**
