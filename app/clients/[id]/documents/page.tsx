@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote, DeliveryNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { isValidCalendarDate } from '@/lib/payments/due-date';
 import { fetchDocumentDeliveryNotes } from '@/lib/delivery-notes';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -1325,9 +1326,18 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number, _invoiceDateParam?: string, freeTextParam?: string) => {
+  const handleConfirmStockUpdate = async (
+    discountPercentage?: number,
+    _invoiceDateParam?: string,
+    freeTextParam?: string,
+    dueDateParam?: string
+  ) => {
     if (!client) return;
     const freeTextToSave = freeTextParam?.trim() ? freeTextParam.trim() : null;
+    if (!isValidCalendarDate(dueDateParam)) {
+      toast.error("Veuillez indiquer une date d'échéance valide");
+      return;
+    }
 
     setSubmitting(true);
 
@@ -1389,6 +1399,7 @@ export default function ClientDetailPage() {
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
             status: 'processing',
+            due_date: dueDateParam,
             free_text: freeTextToSave,
           }])
           .select()

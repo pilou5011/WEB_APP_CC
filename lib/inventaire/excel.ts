@@ -25,7 +25,7 @@ function formatDateFr(dateYmd: string): string {
 }
 
 /**
- * Génère un Buffer XLSX à 3 onglets : Stocks, Prix par produit, Valeur par produit.
+ * Génère un Buffer XLSX à 3 onglets : Stocks, Prix d'achat HT, Valeur par produit.
  * Totaux uniquement sur Stocks et Valeur (pas sur Prix).
  * Import dynamique d'exceljs pour rester compatible Next.js (client).
  */
@@ -167,7 +167,7 @@ export async function buildInventoryWorkbook(
       views: [{ state: 'frozen', xSplit: 3, ySplit: 4 }],
     });
     const priceColCount = 3 + products.length;
-    writeTitleBlock(sheet, 'Inventaire — Prix de cession HT (actuels)', priceColCount);
+    writeTitleBlock(sheet, "Inventaire — Prix d'achat HT", priceColCount);
 
     const headerRow = sheet.getRow(4);
     setIdHeaders(headerRow);

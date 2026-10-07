@@ -1,5 +1,5 @@
 /**
- * Self-test dates PDF (échéance +30 jours + avance curseur).
+ * Self-test dates PDF (échéance enregistrée ou date facture, avance curseur).
  * Exécuter : npx tsx lib/pdf-document-dates.selftest.ts
  */
 import assert from 'node:assert/strict';
@@ -49,7 +49,7 @@ function testCursorAdvanceUnchangedWithDueDate() {
   assert.ok(doc.texts.some((t) => t.text.startsWith("Date d'échéance :")));
   const due = doc.texts.find((t) => t.text.startsWith("Date d'échéance :"));
   assert.equal(due?.y, start + 10);
-  assert.match(due!.text, /31\/10\/2026/);
+  assert.match(due!.text, /01\/10\/2026/);
 
   const doc2 = makeDoc();
   const end2 = appendInvoiceDepositDateFields(
@@ -63,7 +63,20 @@ function testCursorAdvanceUnchangedWithDueDate() {
   assert.equal(end2, start + PDF_DATE_BLOCK_CURSOR_ADVANCE.withResponsable);
   const due2 = doc2.texts.find((t) => t.text.startsWith("Date d'échéance :"));
   assert.equal(due2?.y, start + 15);
-  assert.match(due2!.text, /14\/11\/2026/);
+  assert.match(due2!.text, /15\/10\/2026/);
+
+  const doc3 = makeDoc();
+  appendInvoiceDepositDateFields(
+    doc3,
+    15,
+    start,
+    '2026-10-07',
+    null,
+    null,
+    '2026-11-30'
+  );
+  const due3 = doc3.texts.find((t) => t.text.startsWith("Date d'échéance :"));
+  assert.match(due3!.text, /30\/11\/2026/);
 }
 
 function testDepositDeliveryStillAlign() {

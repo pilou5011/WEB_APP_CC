@@ -14,6 +14,7 @@ import {
   formatPdfDocumentDateFr,
   getSimpleDateBlockDueDateY,
 } from '@/lib/pdf-document-dates';
+import { resolveEffectiveDueDate } from '@/lib/payments/due-date';
 
 // Helper to add page numbers like "1/2" at bottom-right of each page
 // Helper functions for formatting
@@ -351,11 +352,14 @@ export async function generateAndSaveDirectInvoicePDF(params: GenerateDirectInvo
       yPosition += 10;
     }
     // Échéance en coordonnées fixes — n'avance pas le curseur (titre/tableau inchangés)
+    const dueDate =
+      resolveEffectiveDueDate(invoice.due_date, invoice.invoice_date) ??
+      invoice.invoice_date;
     drawPdfDueDateLine(
       doc,
       globalLeftMargin,
       getSimpleDateBlockDueDateY(dateBlockStartY, Boolean(responsableName)),
-      invoice.invoice_date
+      dueDate
     );
 
     // Titre "Facture N°[numero_facture]" en gras

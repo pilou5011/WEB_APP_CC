@@ -10,6 +10,7 @@ import { Euro, Package, TrendingDown, Percent } from 'lucide-react';
 import { Product } from '@/lib/supabase';
 import { DocumentFreeTextField } from '@/components/document-free-text-field';
 import { normalizeDocumentFreeText } from '@/lib/document-free-text';
+import { getTodayCalendarIso } from '@/lib/payments/due-date';
 
 interface ProductUpdate {
   Product: Product;
@@ -32,7 +33,12 @@ interface PendingAdjustment {
 interface StockUpdateConfirmationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (discountPercentage?: number, invoiceDate?: string, freeText?: string) => void;
+  onConfirm: (
+    discountPercentage?: number,
+    invoiceDate?: string,
+    freeText?: string,
+    dueDate?: string
+  ) => void;
   productUpdates: ProductUpdate[];
   pendingAdjustments?: PendingAdjustment[];
   loading?: boolean;
@@ -59,6 +65,7 @@ export function StockUpdateConfirmationDialog({
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
+  const [dueDate, setDueDate] = useState<string>(() => getTodayCalendarIso());
   
   // Réinitialiser la remise quand le dialogue s'ouvre
   useEffect(() => {
@@ -75,6 +82,12 @@ export function StockUpdateConfirmationDialog({
       }
     }
   }, [open, externalInvoiceDate]);
+
+  useEffect(() => {
+    if (open) {
+      setDueDate(getTodayCalendarIso());
+    }
+  }, [open]);
   
   const handleInvoiceDateChange = (date: string) => {
     setInvoiceDate(date);
@@ -119,7 +132,7 @@ export function StockUpdateConfirmationDialog({
   const handleConfirm = () => {
     const discountToSave = discountPercentageEffective > 0 ? discountPercentageEffective : undefined;
     const normalized = normalizeDocumentFreeText(freeText);
-    onConfirm(discountToSave, invoiceDate, normalized || undefined);
+    onConfirm(discountToSave, invoiceDate, normalized || undefined, dueDate);
   };
 
   return (
@@ -159,22 +172,35 @@ export function StockUpdateConfirmationDialog({
 
           <Separator />
 
-          {/* Date du document */}
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <div className="flex items-center gap-2 text-slate-700 mb-3">
-              <h3 className="font-semibold">Date du document</h3>
-            </div>
-            <div className="flex items-end gap-3">
-              <div>
-                <Input
-                  id="invoice-date"
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => handleInvoiceDateChange(e.target.value)}
-                  className="w-36"
-                  autoFocus={false}
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+              <div className="flex items-center gap-2 text-slate-700 mb-3">
+                <h3 className="font-semibold">Date du document</h3>
               </div>
+              <Input
+                id="invoice-date"
+                type="date"
+                value={invoiceDate}
+                onChange={(e) => handleInvoiceDateChange(e.target.value)}
+                className="w-36"
+                autoFocus={false}
+              />
+            </div>
+            <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+              <div className="flex items-center gap-2 text-slate-700 mb-3">
+                <h3 id="due-date-label" className="font-semibold">
+                  Date d&apos;échéance
+                </h3>
+              </div>
+              <Input
+                id="due-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
+                className="w-36"
+                disabled={loading}
+                aria-labelledby="due-date-label"
+              />
             </div>
           </div>
 

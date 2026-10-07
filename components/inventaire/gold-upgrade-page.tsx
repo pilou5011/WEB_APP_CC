@@ -29,7 +29,7 @@ export function InventaireGoldUpgradePage() {
           </CardHeader>
           <CardContent className="space-y-6 text-center">
             <p className="text-sm text-slate-600">
-              Exportez les stocks, prix de cession HT et valeurs de stock de vos clients
+              Exportez les stocks, les prix d&apos;achat HT et les valeurs de stock de vos clients
               à une date donnée, au format Excel.
             </p>
             <Button asChild size="lg" className="bg-amber-600 hover:bg-amber-700">

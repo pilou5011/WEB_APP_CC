@@ -24,6 +24,7 @@ import { DraftRecoveryDialog } from '@/components/draft-recovery-dialog';
 import { useInvoiceDraft } from '@/hooks/use-invoice-draft';
 import { DocumentFreeTextField } from '@/components/document-free-text-field';
 import { normalizeDocumentFreeText } from '@/lib/document-free-text';
+import { getTodayCalendarIso, isValidCalendarDate } from '@/lib/payments/due-date';
 import {
   ImportCashInvoiceDeliveryNoteSection,
   type CashInvoiceImportedPayload,
@@ -100,6 +101,7 @@ export default function InvoicePage() {
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
+  const [dueDate, setDueDate] = useState<string>(() => getTodayCalendarIso());
 
   // Import BL (Gold)
   const [hasDeliveryNotesAccess, setHasDeliveryNotesAccess] = useState(false);
@@ -494,6 +496,11 @@ export default function InvoicePage() {
       return;
     }
 
+    if (!isValidCalendarDate(dueDate)) {
+      toast.error("Veuillez indiquer une date d'échéance valide");
+      return;
+    }
+
     const totalQuantity = validRows.reduce((sum, row) => sum + (parseInt(row.quantity) || 0), 0);
 
     // Create invoice preview
@@ -511,6 +518,7 @@ export default function InvoicePage() {
       deposit_slip_email_sent_at: null,
       status: 'processing', // Statut par défaut pour la prévisualisation
       invoice_date: new Date().toISOString().split('T')[0], // Date comptable par défaut (aujourd'hui)
+      due_date: dueDate,
       free_text: normalizeDocumentFreeText(freeText) || null,
       created_at: new Date().toISOString()
     };
@@ -534,6 +542,11 @@ export default function InvoicePage() {
       const validRows = rows.filter(row => row.product_id && row.quantity && parseInt(row.quantity) > 0);
       if (validRows.length === 0) {
         toast.error('Veuillez ajouter au moins une ligne avec un produit et une quantité');
+        return;
+      }
+
+      if (!isValidCalendarDate(dueDate)) {
+        toast.error("Veuillez indiquer une date d'échéance valide");
         return;
       }
 
@@ -567,6 +580,7 @@ export default function InvoicePage() {
           discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
           status: 'processing',
           invoice_date: invoiceDate, // Date comptable
+          due_date: dueDate,
           free_text: normalizeDocumentFreeText(freeText) || null,
         }])
         .select()
@@ -696,6 +710,7 @@ export default function InvoicePage() {
       setRows([emptyInvoiceRow()]);
       setDiscountPercentage(null);
       setFreeText('');
+      setDueDate(getTodayCalendarIso());
       setImportedDeliveryNoteId(null);
       setImportedDeliveryNumber(null);
       void reloadValidatedDeliveryNotes();
@@ -1082,18 +1097,32 @@ export default function InvoicePage() {
                 </Table>
               </div>
 
-              {/* Date du document */}
-              <div className="flex items-center gap-4">
-                <Label htmlFor="invoice-date" className="text-sm font-medium">
-                  Date du document
-                </Label>
-                <Input
-                  id="invoice-date"
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="w-36"
-                />
+              {/* Date du document et échéance */}
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+                <div className="flex items-center gap-4">
+                  <Label htmlFor="invoice-date" className="text-sm font-medium">
+                    Date du document
+                  </Label>
+                  <Input
+                    id="invoice-date"
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    className="w-36"
+                  />
+                </div>
+                <div className="flex items-center gap-4">
+                  <Label htmlFor="due-date" className="text-sm font-medium">
+                    Date d&apos;échéance
+                  </Label>
+                  <Input
+                    id="due-date"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-36"
+                  />
+                </div>
               </div>
 
               <DocumentFreeTextField
