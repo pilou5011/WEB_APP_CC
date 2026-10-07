@@ -66,7 +66,7 @@ export async function loadInventoryMatrixForDate(dateYmd: string): Promise<Inven
       fetchAllRows<InventoryProductRow>(async (from, to) => {
         const { data, error } = await supabase
           .from('products')
-          .select('id, name, price, created_at, deleted_at')
+          .select('id, name, price, purchase_price_ht, created_at, deleted_at')
           .eq('company_id', companyId)
           .lte('created_at', endIso)
           .order('created_at', { ascending: true })

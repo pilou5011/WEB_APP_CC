@@ -87,7 +87,7 @@ export function formatPdfDocumentDateFr(isoOrDate: string): string {
 
 /**
  * Dessine « Date d'échéance : … » à une position fixe (aucun reflow).
- * Échéance = date d'émission + 30 jours calendaires.
+ * La date affichée est celle déjà retenue (enregistrée, ou date facture en secours).
  */
 export function drawPdfDueDateLine(
   doc: {
@@ -97,12 +97,11 @@ export function drawPdfDueDateLine(
   },
   x: number,
   y: number,
-  emissionDate: string
+  dueDate: string
 ): void {
-  const dueIso = addCalendarDays(emissionDate, 30);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text(`Date d'échéance : ${formatPdfDocumentDateFr(dueIso)}`, x, y);
+  doc.text(`Date d'échéance : ${formatPdfDocumentDateFr(dueDate)}`, x, y);
 }
 
 /**
@@ -194,7 +193,8 @@ export function appendInvoiceDepositDateFields(
   yPosition: number,
   invoiceDate: string,
   previousDepositDate: string | null,
-  responsableName?: string | null
+  responsableName?: string | null,
+  dueDate?: string | null
 ): number {
   const blockStart = yPosition;
   doc.setFont('helvetica', 'normal');
@@ -222,7 +222,7 @@ export function appendInvoiceDepositDateFields(
   const dueY = trimmedResponsable
     ? blockStart + PDF_DATE_LINE_GAP_MM * 3
     : blockStart + PDF_DATE_LINE_GAP_MM * 2;
-  drawPdfDueDateLine(doc, x, dueY, invoiceDate);
+  drawPdfDueDateLine(doc, x, dueY, dueDate?.trim() ? dueDate : invoiceDate);
 
   if (trimmedResponsable) {
     return blockStart + PDF_DATE_BLOCK_CURSOR_ADVANCE.withResponsable;

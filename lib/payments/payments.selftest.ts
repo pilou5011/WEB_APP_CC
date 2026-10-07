@@ -3,9 +3,8 @@
  * Exécuter : npx tsx lib/payments/payments.selftest.ts
  */
 import {
-  resolveInvoiceDueDate,
   isInvoicePaid,
-  tryResolveInvoiceDueDate,
+  resolveEffectiveDueDate,
   getInvoicePaymentStatus,
   canSendPaymentReminder,
   getTodayCalendarIso,
@@ -25,8 +24,24 @@ function assertEq<T>(actual: T, expected: T, message: string) {
   }
 }
 
-assertEq(resolveInvoiceDueDate('2026-01-01'), '2026-01-31', 'due +30');
-assertEq(resolveInvoiceDueDate('2026-01-15'), '2026-02-14', 'due mid-month');
+assertEq(
+  resolveEffectiveDueDate('2026-11-30', '2026-10-07'),
+  '2026-11-30',
+  'stored due date'
+);
+assertEq(
+  resolveEffectiveDueDate(null, '2026-09-15'),
+  '2026-09-15',
+  'legacy fallback is invoice date'
+);
+assertEq(
+  resolveEffectiveDueDate(undefined, '2026-09-15'),
+  '2026-09-15',
+  'missing due date fallback'
+);
+assertEq(resolveEffectiveDueDate('pas-une-date', '2026-09-15'), '2026-09-15', 'invalid stored due');
+assertEq(resolveEffectiveDueDate(null, null), null, 'both missing');
+assertEq(resolveEffectiveDueDate('2026-02-31', '2026-09-15'), '2026-09-15', 'impossible stored due');
 assertEq(isInvoicePaid(null), false, 'unpaid null');
 assertEq(isInvoicePaid('2026-03-01T10:00:00Z'), true, 'paid');
 
@@ -53,11 +68,6 @@ if (!html.includes('FAC-1') || !html.includes('12.50 €') || !html.includes('Je
 if (html.includes('<script>')) {
   throw new Error('unescaped script');
 }
-
-assertEq(tryResolveInvoiceDueDate('2026-01-01'), '2026-01-31', 'try due');
-assertEq(tryResolveInvoiceDueDate(null), null, 'try due null');
-assertEq(tryResolveInvoiceDueDate('pas-une-date'), null, 'try due invalid');
-assertEq(tryResolveInvoiceDueDate('2026-02-31'), null, 'try due impossible');
 
 assertEq(getInvoicePaymentStatus(null, '2026-03-01', '2026-03-01'), 'unpaid', 'due today');
 assertEq(getInvoicePaymentStatus(null, '2026-03-01', '2026-03-02'), 'overdue', 'due past');

@@ -12,6 +12,7 @@ import { formatMarketDaysScheduleData } from '@/components/market-days-editor';
 import { formatVacationPeriods, VacationPeriod } from '@/components/vacation-periods-editor';
 import { formatDepartment } from '@/lib/postal-code-utils';
 import { appendDepositSlipDateFields, appendDeliveryNoteDateFields, appendInvoiceDepositDateFields, formatPdfDocumentDateFr, fetchPreviousDepositDate } from '@/lib/pdf-document-dates';
+import { resolveEffectiveDueDate } from '@/lib/payments/due-date';
 import { drawPdfClientInfoFreeText } from '@/lib/document-free-text';
 import type { ResolvedDeliveryNoteLine } from '@/lib/delivery-notes/service';
 import { resolveDeliveryNotePdfPrices } from '@/lib/delivery-notes/pricing';
@@ -377,17 +378,50 @@ export async function generateAndSaveInvoicePDF(params: GenerateInvoicePDFParams
       lastInfoBaselineY,
     });
 
-    // Dates facture / dépôt précédent
-    yPosition = Math.max(yPosition, clientYPosition) + 10;
+    // Dates facture / dépôt précédent.
+    // Le relevé de stock démarre son bloc d'infos 10 mm sous le bas des colonnes.
+    // Ici la colonne détaillant descend souvent plus bas que l'encart Distributeur
+    // (n° facture, texte libre). « Date facture » est donc calée sur le bas du
+    // Distributeur + 10 mm. Le titre reste sous la colonne de droite.
+    // Une ligne trop longue pour tenir à gauche du détaillant conserve l'ancien
+    // placement, sous les deux colonnes, afin d'éviter un chevauchement.
+    const distributorBottom = yPosition;
+    const detailColumnBottom = clientYPosition;
+    const columnGapMm = 10;
+    const belowColumns = Math.max(distributorBottom, detailColumnBottom) + columnGapMm;
+    const underDistributor = distributorBottom + columnGapMm;
+
     const previousDepositDate = await fetchPreviousDepositDate(client.id, companyId, invoice.created_at);
-    yPosition = appendInvoiceDepositDateFields(
+    const effectiveDueDate =
+      resolveEffectiveDueDate(invoice.due_date, invoice.invoice_date) ?? invoice.invoice_date;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    const responsableName = client.responsable_name?.trim() || '';
+    const dateLines = [
+      `Date facture : ${formatPdfDocumentDateFr(invoice.invoice_date)}`,
+      previousDepositDate
+        ? `Date dépôt précédent : ${formatPdfDocumentDateFr(previousDepositDate)}`
+        : 'Date dépôt précédent : -',
+      ...(responsableName ? [`Nom du responsable : ${responsableName}`] : []),
+      `Date d'échéance : ${formatPdfDocumentDateFr(effectiveDueDate)}`,
+    ];
+    const maxDateLineWidth = rightBoxX - globalLeftMargin - 3;
+    const dateLineOverflowsRightColumn = dateLines.some(
+      (line) => doc.getTextWidth(line) > maxDateLineWidth
+    );
+    const dateBlockStart = dateLineOverflowsRightColumn ? belowColumns : underDistributor;
+
+    const dateBlockEnd = appendInvoiceDepositDateFields(
       doc,
       globalLeftMargin,
-      yPosition,
+      dateBlockStart,
       invoice.invoice_date,
       previousDepositDate,
-      client.responsable_name
+      client.responsable_name,
+      effectiveDueDate
     );
+    yPosition = Math.max(dateBlockEnd, belowColumns + (dateBlockEnd - dateBlockStart));
 
     // Titre "Facture N°[numero_facture]" en gras
     doc.setFont('helvetica', 'bold');

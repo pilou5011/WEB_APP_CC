@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { supabase, Client, StockUpdate, Product, ClientProduct, Invoice, SubProduct, ClientSubProduct, CreditNote } from '@/lib/supabase';
 import { getCurrentUserCompanyId } from '@/lib/auth-helpers';
+import { isValidCalendarDate } from '@/lib/payments/due-date';
 import { cn, formatPhoneNumber } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1375,11 +1376,20 @@ export default function ClientDetailPage() {
     }
   };
 
-  const handleConfirmStockUpdate = async (discountPercentage?: number, invoiceDateParam?: string, freeTextParam?: string) => {
+  const handleConfirmStockUpdate = async (
+    discountPercentage?: number,
+    invoiceDateParam?: string,
+    freeTextParam?: string,
+    dueDateParam?: string
+  ) => {
     // Use the date from the dialog if provided, otherwise use the state
     const finalInvoiceDate = invoiceDateParam || invoiceDate;
     const freeTextToSave = freeTextParam?.trim() ? freeTextParam.trim() : null;
     if (!client) return;
+    if (!isValidCalendarDate(dueDateParam)) {
+      toast.error("Veuillez indiquer une date d'échéance valide");
+      return;
+    }
 
     setSubmitting(true);
 
@@ -1441,6 +1451,7 @@ export default function ClientDetailPage() {
             total_amount: finalTotalAmount,
             discount_percentage: discountPercentage && discountPercentage > 0 ? discountPercentage : null,
             status: 'processing',
+            due_date: dueDateParam,
             free_text: freeTextToSave,
           }])
           .select()

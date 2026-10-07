@@ -23,7 +23,10 @@ export type InventoryClientRow = {
 export type InventoryProductRow = {
   id: string;
   name: string;
+  /** Prix de cession catalogue. Non utilisé pour la valorisation inventaire. */
   price: number | null;
+  /** Prix d'achat HT du produit, identique pour tous les clients. */
+  purchase_price_ht: number | null;
   created_at: string;
   deleted_at?: string | null;
 };
@@ -46,7 +49,7 @@ export type InventoryStockUpdateRow = {
   invoice_id: string | null;
 };
 
-/** Association client_products (y compris soft-deleted) pour stock + prix. */
+/** Association client_products (y compris soft-deleted) : détermine si le stock est compté. */
 export type InventoryClientProductPrice = {
   client_id: string;
   product_id: string;
@@ -62,9 +65,9 @@ export type InventoryMatrix = {
   products: InventoryProductRow[];
   /** stock[clientId][productId] */
   stocks: Record<string, Record<string, number>>;
-  /** price[clientId][productId] */
+  /** Prix d'achat HT du produit, répété sur chaque client. */
   prices: Record<string, Record<string, InventoryPriceCell>>;
-  /** value[clientId][productId] — number or N/A */
+  /** Quantité × prix d'achat HT. N/A si le prix d'achat n'est pas renseigné. */
   values: Record<string, Record<string, InventoryPriceCell>>;
 };
 
@@ -114,30 +117,53 @@ export function clampNonNegativeInt(value: number): number {
 }
 
 /**
- * Prix de cession HT actuel :
- * - si association client_products : custom_price ?? products.price
- * - si produit jamais présent chez le client : products.price (prix catalogue)
- * - si aucun prix numérique : N/A
+ * Prix d'achat HT du produit.
+ * Absent ou non numérique → N/A, comme l'ancien prix de cession manquant.
+ * 0 est conservé : le formulaire produit l'accepte (seul un montant négatif est refusé).
  */
-export function resolveCessionPriceHt(params: {
-  catalogPrice: number | null | undefined;
-  customPrice: number | null | undefined;
-  hasClientProductAssociation: boolean;
-}): InventoryPriceCell {
-  const { catalogPrice, customPrice, hasClientProductAssociation } = params;
-
-  if (hasClientProductAssociation) {
-    const raw = customPrice ?? catalogPrice;
-    if (raw === null || raw === undefined || !Number.isFinite(Number(raw))) {
-      return 'N/A';
-    }
-    return Number(raw);
-  }
-
-  if (catalogPrice === null || catalogPrice === undefined || !Number.isFinite(Number(catalogPrice))) {
+export function resolvePurchasePriceHt(
+  purchasePriceHt: number | string | null | undefined
+): InventoryPriceCell {
+  if (purchasePriceHt === null || purchasePriceHt === undefined || purchasePriceHt === '') {
     return 'N/A';
   }
-  return Number(catalogPrice);
+  const raw = Number(purchasePriceHt);
+  if (!Number.isFinite(raw)) return 'N/A';
+  return raw;
+}
+
+export type InventoryProductMissingPurchasePrice = {
+  id: string;
+  name: string;
+};
+
+/**
+ * Produits de la matrice inventaire qui ont du stock et un prix d'achat HT absent.
+ * Un prix à 0 reste renseigné. Un produit sans quantité n'est pas listé.
+ * Une seule entrée par produit, même s'il est en stock chez plusieurs clients.
+ */
+export function listProductsMissingPurchasePrice(
+  matrix: InventoryMatrix
+): InventoryProductMissingPurchasePrice[] {
+  return matrix.products
+    .filter((product) => {
+      const hasStock = matrix.clients.some(
+        (client) => (matrix.stocks[client.id]?.[product.id] ?? 0) > 0
+      );
+      if (!hasStock) return false;
+      const price = matrix.clients
+        .map((client) => matrix.prices[client.id]?.[product.id])
+        .find((cell) => cell !== undefined);
+      return price === 'N/A';
+    })
+    .map((product) => ({ id: product.id, name: product.name }));
+}
+
+export function formatMissingPurchasePriceAlert(count: number): string {
+  if (count === 1) {
+    return "Attention : 1 produit a un Prix d'achat (HT) non renseigné.";
+  }
+  return `Attention : ${count} produits ont un Prix d'achat (HT) non renseigné.`;
 }
 
 export function computeValueCell(
@@ -229,14 +255,6 @@ export function buildInventoryMatrix(params: {
     associationsByKey.set(key, list);
   }
 
-  /** Prix « actuellement enregistré » : association non soft-deleted aujourd'hui */
-  const currentPriceByKey = new Map<string, number | null>();
-  for (const cp of params.clientProductPrices) {
-    if (cp.deleted_at == null) {
-      currentPriceByKey.set(`${cp.client_id}::${cp.product_id}`, cp.custom_price);
-    }
-  }
-
   const stocks: Record<string, Record<string, number>> = {};
   const prices: Record<string, Record<string, InventoryPriceCell>> = {};
   const values: Record<string, Record<string, InventoryPriceCell>> = {};
@@ -269,12 +287,7 @@ export function buildInventoryMatrix(params: {
         });
       }
 
-      const hasCurrentAssoc = currentPriceByKey.has(assocKey);
-      const price = resolveCessionPriceHt({
-        catalogPrice: product.price,
-        customPrice: hasCurrentAssoc ? currentPriceByKey.get(assocKey) : null,
-        hasClientProductAssociation: hasCurrentAssoc,
-      });
+      const price = resolvePurchasePriceHt(product.purchase_price_ht);
       stocks[client.id][product.id] = qty;
       prices[client.id][product.id] = price;
       values[client.id][product.id] = computeValueCell(price, qty);
