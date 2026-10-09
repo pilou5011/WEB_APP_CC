@@ -12,6 +12,8 @@ import {
   summarizeOutstandingPayments,
 } from './due-date';
 import { buildInvoiceEmailFileName } from './invoice-attachment';
+import { formatInvoiceAmountFr, invoiceTotalTtcFromStoredHt } from './invoice-amount';
+import { comparePaymentInvoicesDesc } from './sort-invoices';
 import {
   buildPaymentReminderSubject,
   escapeHtml,
@@ -62,7 +64,7 @@ const html = buildPaymentReminderEmailHtml({
   senderCompanyName: 'ACME',
   senderPhone: '0600000000',
 });
-if (!html.includes('FAC-1') || !html.includes('12.50 €') || !html.includes('Jean')) {
+if (!html.includes('FAC-1') || !html.includes('Montant TTC : 12.50 €') || !html.includes('Jean')) {
   throw new Error('reminder html missing fields');
 }
 if (html.includes('<script>')) {
@@ -109,5 +111,35 @@ assertEq(totals.unpaidCount, 4, 'unpaid count excludes paid');
 assertEq(totals.overdueCount, 1, 'overdue count skips due today');
 assertEq(totals.unpaidAmount, 80.5, 'unpaid amount is remaining due');
 assertEq(totals.overdueAmount, 25.5, 'overdue amount');
+
+assertEq(invoiceTotalTtcFromStoredHt(100), 120, '100 HT gives 120 TTC');
+assertEq(invoiceTotalTtcFromStoredHt(0), 0, 'zero HT stays zero TTC');
+assertEq(invoiceTotalTtcFromStoredHt(Number.NaN), 0, 'invalid amount');
+assertEq(formatInvoiceAmountFr(invoiceTotalTtcFromStoredHt(100)), '120,00 €', 'email amount label');
+
+const reminderWithTtc = buildPaymentReminderEmailHtml({
+  invoiceNumber: 'FAC-2026-0103',
+  amountLabel: formatInvoiceAmountFr(invoiceTotalTtcFromStoredHt(100)),
+  dueDateLabel: '08/10/2026',
+});
+if (!reminderWithTtc.includes('Montant TTC : 120,00 €')) {
+  throw new Error('reminder html must state the TTC amount');
+}
+if (reminderWithTtc.includes('100,00') || reminderWithTtc.includes('100.00')) {
+  throw new Error('reminder html must not show the HT amount');
+}
+
+const sameDay = [
+  { id: '0101', invoiceDate: '2026-10-08', createdAt: '2026-10-08T08:00:00.000Z' },
+  { id: '0104', invoiceDate: '2026-10-07', createdAt: '2026-10-07T20:00:00.000Z' },
+  { id: '0103', invoiceDate: '2026-10-08T00:00:00.000Z', createdAt: '2026-10-08T18:00:00.000Z' },
+  { id: '0102', invoiceDate: '2026-10-08', createdAt: '2026-10-08T12:00:00.000Z' },
+  { id: 'sans-date', invoiceDate: null, createdAt: '2026-10-09T12:00:00.000Z' },
+].sort(comparePaymentInvoicesDesc);
+assertEq(
+  sameDay.map((row) => row.id).join(','),
+  '0103,0102,0101,0104,sans-date',
+  'invoice date desc then created_at desc'
+);
 
 console.log('payments.selftest: OK');
