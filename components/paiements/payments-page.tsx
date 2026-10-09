@@ -28,6 +28,8 @@ import {
   summarizeOutstandingPayments,
   type InvoicePaymentStatus,
 } from '@/lib/payments/due-date';
+import { formatInvoiceAmountFr, invoiceTotalTtcFromStoredHt } from '@/lib/payments/invoice-amount';
+import { comparePaymentInvoicesDesc } from '@/lib/payments/sort-invoices';
 import type { PaymentInvoiceRow, PaymentsListFilters } from '@/lib/payments/types';
 import { DOCUMENT_TYPE_LABELS } from '@/lib/types/library';
 import { StoredPdfPreviewDialog } from '@/components/stored-pdf-preview-dialog';
@@ -93,10 +95,6 @@ const formatFilterDateFr = (dateValue: string) => {
   if (!year || !month || !day) return dateValue;
   return `${day}/${month}/${year}`;
 };
-
-function formatAmount(amount: number): string {
-  return `${Number(amount).toFixed(2)} €`;
-}
 
 function markPaidDetail(count: number): string {
   if (count <= 1) {
@@ -244,6 +242,7 @@ export function PaymentsClientPage() {
           invoice_number,
           invoice_date,
           due_date,
+          created_at,
           total_amount,
           paid_at,
           status,
@@ -253,8 +252,7 @@ export function PaymentsClientPage() {
         `
         )
         .eq('company_id', companyId)
-        .eq('status', 'completed')
-        .order('invoice_date', { ascending: false });
+        .eq('status', 'completed');
       if (error) throw error;
       if (requestId !== loadRequestRef.current) return;
 
@@ -279,14 +277,18 @@ export function PaymentsClientPage() {
           clientEmail: inv.clients?.email ?? null,
           invoiceNumber: inv.invoice_number,
           invoiceDate: inv.invoice_date ?? null,
+          createdAt: inv.created_at ?? null,
           dueDate: resolveEffectiveDueDate(inv.due_date, inv.invoice_date),
           totalAmount: Number(inv.total_amount) || 0,
+          totalAmountTtc: invoiceTotalTtcFromStoredHt(Number(inv.total_amount) || 0),
           paidAt: inv.paid_at ?? null,
           pdfPath: inv.invoice_pdf_path ?? null,
           reminderCount: reminders.length,
           lastReminderAt,
         };
       });
+
+      mapped.sort(comparePaymentInvoicesDesc);
 
       setRows(mapped);
       setSelectedIds(new Set());
@@ -729,7 +731,7 @@ export function PaymentsClientPage() {
                     <TableHead className={stickyHeadClass}>N° facture</TableHead>
                     <TableHead className={stickyHeadClass}>Date facture</TableHead>
                     <TableHead className={stickyHeadClass}>Date d&apos;échéance</TableHead>
-                    <TableHead className={stickyHeadClass}>Montant</TableHead>
+                    <TableHead className={stickyHeadClass}>Montant (TTC)</TableHead>
                     <TableHead className={stickyHeadClass}>Relances</TableHead>
                     <TableHead className={stickyHeadClass}>Dernière relance</TableHead>
                     <TableHead className={cn(stickyHeadClass, 'w-44')}>Statut</TableHead>
@@ -779,7 +781,7 @@ export function PaymentsClientPage() {
                         </TableCell>
                         <TableCell>{formatDocumentDateCell(row.invoiceDate)}</TableCell>
                         <TableCell>{formatDocumentDateCell(row.dueDate)}</TableCell>
-                        <TableCell>{formatAmount(row.totalAmount)}</TableCell>
+                        <TableCell>{formatInvoiceAmountFr(row.totalAmountTtc)}</TableCell>
                         <TableCell>
                           {row.reminderCount > 0 ? row.reminderCount : '-'}
                         </TableCell>
@@ -901,8 +903,8 @@ export function PaymentsClientPage() {
                     <strong>{reminderTarget.invoiceNumber || '—'}</strong>
                   </p>
                   <p>
-                    <span className="text-slate-500">Montant :</span>{' '}
-                    <strong>{formatAmount(reminderTarget.totalAmount)}</strong>
+                    <span className="text-slate-500">Montant TTC :</span>{' '}
+                    <strong>{formatInvoiceAmountFr(reminderTarget.totalAmountTtc)}</strong>
                   </p>
                   <p>
                     <span className="text-slate-500">Échéance :</span>{' '}
