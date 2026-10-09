@@ -40,8 +40,8 @@ export function buildPaymentReminderEmailHtml(params: PaymentReminderEmailParams
         <div style="font-family: Arial, sans-serif; width: 100%; text-align: left; color: #0f172a; line-height: 1.6;">
           <p style="margin: 0 0 12px 0;">Bonjour,</p>
           <p style="margin: 0 0 12px 0;">
-            Dans le cadre du suivi de nos règlements, la facture n° <strong>${invoiceNumber}</strong>
-            d'un montant de <strong>${amountLabel}</strong>, dont l'échéance était fixée au
+            Dans le cadre du suivi de nos règlements, la facture n° <strong>${invoiceNumber}</strong>,
+            <strong>Montant TTC : ${amountLabel}</strong>, dont l'échéance était fixée au
             <strong>${dueDateLabel}</strong>, apparaît à ce jour comme non réglée dans nos registres.
           </p>
           <p style="margin: 0 0 12px 0;">

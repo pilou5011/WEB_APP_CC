@@ -11,14 +11,11 @@ import {
   resolveEffectiveDueDate,
 } from '@/lib/payments/due-date';
 import { buildInvoiceEmailFileName } from '@/lib/payments/invoice-attachment';
+import { formatInvoiceAmountFr, invoiceTotalTtcFromStoredHt } from '@/lib/payments/invoice-amount';
 import { formatPdfDocumentDateFr } from '@/lib/pdf-document-dates';
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function formatAmountFr(amount: number): string {
-  return `${Number(amount).toFixed(2)} €`;
 }
 
 export async function POST(request: NextRequest) {
@@ -172,7 +169,9 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const invoiceNumber = invoice.invoice_number || '—';
-    const amountLabel = formatAmountFr(Number(invoice.total_amount) || 0);
+    const amountLabel = formatInvoiceAmountFr(
+      invoiceTotalTtcFromStoredHt(Number(invoice.total_amount) || 0)
+    );
     const dueDateLabel = formatPdfDocumentDateFr(dueDate);
     const senderName =
       `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || undefined;
